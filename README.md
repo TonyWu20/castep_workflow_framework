@@ -51,7 +51,6 @@ The framework follows a hierarchical directory structure for job organization:
 - Child jobs are placed in subdirectories of their parent's working directory (e.g., `./jobs/my_calculation/DOS`)
 - The framework automatically creates these subdirectories when setting up dependent jobs
 - Only the `.check` file is copied between jobs for continuation purposes
-- If a directory already exists, it will be reused (not cleared or failed)
 
 ### Job Identification Model
 
@@ -74,57 +73,16 @@ The framework employs a precise async/sync boundary:
 
 2. **Job Monitoring**: Async polling
 
-   - Non-blocking status checks at regular intervals (default: 5 seconds)
+   - Non-blocking status checks at regular intervals
    - Implemented with `tokio::time::interval` for efficient resource usage
    - Cancellable futures for graceful shutdown
 
 3. **Graceful Shutdown**
    - Signal handler captures termination signals (SIGINT, SIGTERM)
    - Cancels all running jobs through appropriate mechanisms:
-     - Local jobs: `SIGTERM` → `SIGKILL` after 5 seconds timeout
+     - Local jobs: `SIGTERM` → `SIGKILL` after timeout
      - SLURM jobs: `scancel` command
    - Ensures no orphaned processes remain after termination
-
-### Configuration
-
-The framework provides configurable parameters:
-
-- **CASTEP command**: Configurable command path/name to support different CASTEP binaries
-- **Polling interval**: Global setting for job status monitoring (default: 5 seconds)
-- **Shutdown timeout**: Time to wait before force-killing local processes (fixed: 5 seconds)
-
-### Error Handling Strategy
-
-When a job fails:
-
-- Dependent jobs are automatically cancelled
-- Other independent branches of the DAG continue execution
-- No automatic retry mechanism for failed jobs
-
-### Hook System
-
-The framework supports external command hooks for pre/post-processing:
-
-- **Pre-run hooks**: Execute before job starts
-  - Failure fails the entire workflow
-- **Post-run hooks**: Execute after successful job completion
-  - Failure logs error and continues workflow
-- Hooks run synchronously to maintain clear execution order
-- Hooks execute immediately after job completion (before next job starts)
-
-### Job Scheduler Integration
-
-For HPC environments, the framework supports job schedulers:
-
-- Users provide complete scheduler submission scripts with all parameters
-- Framework executes submission commands:
-  - SLURM: `sbatch`
-  - Torque/OpenPBS: `qsub`
-  - Others as needed
-- Framework monitors jobs using scheduler commands:
-  - SLURM: `squeue`
-  - Torque/OpenPBS: `qstat`
-- All scheduler-specific parameters are handled in user-provided scripts
 
 ### Example usage:
 
@@ -160,16 +118,14 @@ For HPC environments, the framework supports job schedulers:
 
    - Separate responsibilities into focused modules:
      - `core`: Job definitions, DAG construction
-     - `runners`: Execution backends (local, SLURM, Torque)
+     - `runners`: Execution backends (local, SLURM)
      - `hooks`: Pre/post-processing hooks
-     - `monitor`: Job status monitoring
    - Reduce overall building time through careful module separation
 
 5. **Hexagonal architecture**:
 
    - Implement dependency injection through traits
    - Define `JobRunner` trait for execution backends
-   - Define `JobMonitor` trait for status monitoring
    - Enable comprehensive unit testing with mock implementations
 
 6. **Async considerations**:
@@ -177,7 +133,6 @@ For HPC environments, the framework supports job schedulers:
    - Confine async operations to job monitoring only
    - Keep submission and file operations synchronous
    - Implement cancellable monitoring futures
-   - Use `tokio` as the async runtime
 
 7. **Resource management**:
 
