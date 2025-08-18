@@ -142,4 +142,3 @@ The framework employs a precise async/sync boundary:
 8. **Hook system**:
    - Implement pre/post-processing through external command execution only
    - No support for Rust function hooks (avoid FFI complexity)
-   - Synchronous execution of hooks to maintain clear execution order
