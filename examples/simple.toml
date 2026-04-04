@@ -1,0 +1,17 @@
+[workflow]
+name = "simple_example"
+working_dir = "/tmp/simple_workflow"
+
+[executors.local]
+type = "local"
+parallelism = 2
+
+[[tasks]]
+id = "scf"
+code = "castep"
+executor = "local"
+workdir = "/tmp/simple_workflow/scf"
+
+[tasks.inputs]
+TASK = "SinglePoint"
+CUT_OFF_ENERGY = "400"
