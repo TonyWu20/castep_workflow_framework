@@ -61,6 +61,19 @@ impl Scheduler {
                 });
         }
 
+        // Fix Bug 2: Re-hydrate live_executors for tasks already Submitted/Running in DB.
+        // On a fresh start live_executors is empty; without this, those tasks are polled
+        // forever with no executor and the scheduler never terminates.
+        for task in self.pipeline.tasks() {
+            if let Some(record) = self.state_map.get(&task.id) {
+                if matches!(record.state, TaskState::Submitted | TaskState::Running) {
+                    if let Ok(executor) = self.registry.build(task) {
+                        self.live_executors.insert(task.id.clone(), executor);
+                    }
+                }
+            }
+        }
+
         loop {
             // 1. Promote Pending → Ready if all deps completed
             let ready_ids: Vec<String> = self.pipeline.tasks()
@@ -83,7 +96,16 @@ impl Scheduler {
             }
 
             // 2. Submit Ready tasks (respecting parallelism cap)
+            // Fix Bug 1: seed with already-active tasks so the cap is respected across cycles.
             let mut submitted_count: HashMap<String, usize> = HashMap::new();
+            for task in self.pipeline.tasks() {
+                if matches!(
+                    self.state_map.get(&task.id).map(|r| &r.state),
+                    Some(TaskState::Submitted) | Some(TaskState::Running)
+                ) {
+                    *submitted_count.entry(task.executor.clone()).or_insert(0) += 1;
+                }
+            }
             let mut submit_ids = Vec::new();
             for task in self.pipeline.tasks() {
                 if self.state_map.get(&task.id).map(|r| r.state == TaskState::Ready).unwrap_or(false) {
@@ -225,24 +247,16 @@ mod tests {
     use async_trait::async_trait;
     use std::sync::{Arc, Mutex};
 
-    struct MockExecutor {
-        _submitted: Arc<Mutex<Vec<String>>>,
-    }
-
+    // Completes immediately.
+    struct MockExecutor;
     #[async_trait]
     impl Executor for MockExecutor {
-        async fn submit(&self) -> Result<JobHandle> {
-            Ok(JobHandle { raw: "mock".into() })
-        }
-        async fn poll(&self, _h: &JobHandle) -> Result<JobStatus> {
-            Ok(JobStatus::Completed)
-        }
-        async fn cancel(&self, _h: &JobHandle) -> Result<()> {
-            Ok(())
-        }
+        async fn submit(&self) -> Result<JobHandle> { Ok(JobHandle { raw: "mock".into() }) }
+        async fn poll(&self, _h: &JobHandle) -> Result<JobStatus> { Ok(JobStatus::Completed) }
+        async fn cancel(&self, _h: &JobHandle) -> Result<()> { Ok(()) }
     }
 
-    fn make_task(id: &str, deps: Vec<&str>) -> ConcreteTask {
+    fn make_task(id: &str, deps: Vec<&str>, parallelism: usize) -> ConcreteTask {
         ConcreteTask {
             id: id.into(),
             code: "test".into(),
@@ -250,8 +264,37 @@ mod tests {
             workdir: "/tmp".into(),
             depends_on: deps.into_iter().map(String::from).collect(),
             inputs: HashMap::new(),
-            executor_def: ExecutorDef::Local { parallelism: 4 },
+            executor_def: ExecutorDef::Local { parallelism },
         }
+    }
+
+    struct MockFactory;
+    impl crate::executor::ExecutorFactory for MockFactory {
+        fn code_name(&self) -> &'static str { "test" }
+        fn build(&self, _t: &ConcreteTask) -> Result<Box<dyn Executor>> {
+            Ok(Box::new(MockExecutor))
+        }
+    }
+
+    fn mock_registry() -> ExecutorRegistry {
+        let mut r = ExecutorRegistry::default();
+        r.register(MockFactory);
+        r
+    }
+
+    #[tokio::test]
+    async fn three_task_chain_completes() {
+        let tasks = vec![
+            make_task("a", vec![], 4),
+            make_task("b", vec!["a"], 4),
+            make_task("c", vec!["b"], 4),
+        ];
+        let pipeline = Pipeline::from_tasks(tasks).unwrap();
+        let db = StateDb::open(std::path::Path::new(":memory:")).await.unwrap();
+        let mut sched = Scheduler::new(pipeline, mock_registry(), db);
+        sched.run().await.unwrap();
+        let records = sched.state_db.load().await.unwrap();
+        assert!(records.iter().all(|r| r.state == TaskState::Completed));
     }
 
     #[tokio::test]
@@ -277,7 +320,7 @@ mod tests {
         }
 
         let cancelled = Arc::new(Mutex::new(false));
-        let pipeline = Pipeline::from_tasks(vec![make_task("a", vec![])]).unwrap();
+        let pipeline = Pipeline::from_tasks(vec![make_task("a", vec![], 4)]).unwrap();
         let db = StateDb::open(std::path::Path::new(":memory:")).await.unwrap();
         let mut registry = ExecutorRegistry::default();
         registry.register(SlowFactory(cancelled.clone()));
@@ -300,29 +343,123 @@ mod tests {
         ));
     }
 
+    /// Bug 1 regression: parallelism cap must count already-active tasks, not just
+    /// tasks submitted this cycle. With parallelism=2 and 4 ready tasks, at most 2
+    /// should ever be Submitted/Running simultaneously.
     #[tokio::test]
-    async fn three_task_chain_completes() {
-        let tasks = vec![
-            make_task("a", vec![]),
-            make_task("b", vec!["a"]),
-            make_task("c", vec!["b"]),
-        ];
-        let pipeline = Pipeline::from_tasks(tasks).unwrap();
-        let db = StateDb::open(std::path::Path::new(":memory:")).await.unwrap();
+    async fn parallelism_cap_is_respected() {
+        // Latch executors: stay Running until we release them.
+        let latches: Vec<Arc<Mutex<bool>>> = (0..4).map(|_| Arc::new(Mutex::new(false))).collect();
+        let peak_concurrent = Arc::new(Mutex::new(0usize));
+        let current_running = Arc::new(Mutex::new(0usize));
 
-        let mut registry = ExecutorRegistry::default();
-        struct TestFactory;
-        impl crate::executor::ExecutorFactory for TestFactory {
+        struct CountingExecutor {
+            done: Arc<Mutex<bool>>,
+            peak: Arc<Mutex<usize>>,
+            current: Arc<Mutex<usize>>,
+        }
+        #[async_trait]
+        impl Executor for CountingExecutor {
+            async fn submit(&self) -> Result<JobHandle> {
+                let mut cur = self.current.lock().unwrap();
+                *cur += 1;
+                let mut peak = self.peak.lock().unwrap();
+                if *cur > *peak { *peak = *cur; }
+                Ok(JobHandle { raw: "c".into() })
+            }
+            async fn poll(&self, _h: &JobHandle) -> Result<JobStatus> {
+                if *self.done.lock().unwrap() {
+                    *self.current.lock().unwrap() -= 1;
+                    Ok(JobStatus::Completed)
+                } else {
+                    Ok(JobStatus::Running)
+                }
+            }
+            async fn cancel(&self, _h: &JobHandle) -> Result<()> { Ok(()) }
+        }
+
+        let peak_c = peak_concurrent.clone();
+        let cur_c = current_running.clone();
+        let latches_c = latches.clone();
+        struct CountingFactory {
+            latches: Vec<Arc<Mutex<bool>>>,
+            idx: Mutex<usize>,
+            peak: Arc<Mutex<usize>>,
+            current: Arc<Mutex<usize>>,
+        }
+        impl crate::executor::ExecutorFactory for CountingFactory {
             fn code_name(&self) -> &'static str { "test" }
-            fn build(&self, _task: &ConcreteTask) -> Result<Box<dyn Executor>> {
-                Ok(Box::new(MockExecutor {
-                    _submitted: Arc::new(Mutex::new(vec![])),
+            fn build(&self, _t: &ConcreteTask) -> Result<Box<dyn Executor>> {
+                let mut i = self.idx.lock().unwrap();
+                let done = self.latches[*i].clone();
+                *i += 1;
+                Ok(Box::new(CountingExecutor {
+                    done,
+                    peak: self.peak.clone(),
+                    current: self.current.clone(),
                 }))
             }
         }
-        registry.register(TestFactory);
+
+        // 4 independent tasks, parallelism = 2
+        let tasks: Vec<_> = (0..4).map(|i| make_task(&format!("t{i}"), vec![], 2)).collect();
+        let pipeline = Pipeline::from_tasks(tasks).unwrap();
+        let db = StateDb::open(std::path::Path::new(":memory:")).await.unwrap();
+        let mut registry = ExecutorRegistry::default();
+        registry.register(CountingFactory {
+            latches: latches_c,
+            idx: Mutex::new(0),
+            peak: peak_c,
+            current: cur_c,
+        });
+
+        // Release all latches after a short delay so the scheduler can observe concurrency.
+        let latches_release = latches.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+            for l in &latches_release { *l.lock().unwrap() = true; }
+        });
 
         let mut sched = Scheduler::new(pipeline, registry, db);
         sched.run().await.unwrap();
+
+        assert!(
+            *peak_concurrent.lock().unwrap() <= 2,
+            "peak concurrent was {}, expected ≤ 2",
+            *peak_concurrent.lock().unwrap()
+        );
+    }
+
+    /// Bug 2 regression: after a restart, tasks that were Submitted/Running in the DB
+    /// must be re-hydrated and polled to completion — not silently skipped forever.
+    #[tokio::test]
+    async fn resume_rehydrates_submitted_tasks() {
+        // Use a temp file so the DB survives across two Scheduler instances.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp.path().to_path_buf();
+
+        // First run: submit task "a", then drop the scheduler mid-flight (simulate crash).
+        // We do this by pre-seeding the DB directly with a Submitted record.
+        {
+            let db = StateDb::open(&db_path).await.unwrap();
+            db.upsert(&TaskRecord {
+                id: "a".into(),
+                state: TaskState::Submitted,
+                handle: Some(crate::executor::JobHandle { raw: "mock".into() }),
+            }).await.unwrap();
+        }
+
+        // Second run: new scheduler, same DB. Should pick up "a" as Submitted,
+        // re-hydrate an executor, poll it to Completed, and terminate.
+        let pipeline = Pipeline::from_tasks(vec![make_task("a", vec![], 4)]).unwrap();
+        let db = StateDb::open(&db_path).await.unwrap();
+        let mut sched = Scheduler::new(pipeline, mock_registry(), db);
+        sched.run().await.unwrap();
+
+        let records = sched.state_db.load().await.unwrap();
+        assert_eq!(
+            records.iter().find(|r| r.id == "a").unwrap().state,
+            TaskState::Completed
+        );
     }
 }
