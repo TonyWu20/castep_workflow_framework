@@ -1,0 +1,14 @@
+[package]
+name = "workflow_core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+petgraph = { workspace = true }
+tokio-rusqlite = { workspace = true }
+rusqlite = { version = "0.31", features = ["bundled"] }
+async-trait = { workspace = true }

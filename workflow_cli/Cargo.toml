@@ -1,0 +1,16 @@
+[package]
+name = "workflow_cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "workflow"
+path = "src/main.rs"
+
+[dependencies]
+workflow_core = { workspace = true }
+castep_adapter = { path = "../castep_adapter" }
+lammps_adapter = { path = "../lammps_adapter" }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+toml = { workspace = true }

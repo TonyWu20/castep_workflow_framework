@@ -1,0 +1,18 @@
+[workspace]
+members = [
+    "workflow_core",
+    "castep_adapter",
+    "lammps_adapter",
+    "workflow_cli",
+]
+resolver = "2"
+
+[workspace.dependencies]
+workflow_core = { path = "workflow_core" }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+petgraph = "0.6"
+tokio-rusqlite = "0.5"
+async-trait = "0.1"
