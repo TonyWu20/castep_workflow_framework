@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use tokio_util::sync::CancellationToken;
-use crate::executor::{ExecutorRegistry, JobStatus};
+use crate::executor::{Executor, ExecutorRegistry, JobStatus};
 use crate::pipeline::Pipeline;
 use crate::state::{StateDb, TaskState, TaskRecord};
 use std::collections::HashMap;
@@ -17,12 +17,21 @@ pub struct Scheduler {
     pub pipeline: Pipeline,
     pub registry: ExecutorRegistry,
     pub state_db: StateDb,
+    state_map: HashMap<String, TaskRecord>,
+    live_executors: HashMap<String, Box<dyn Executor>>,
     token: Option<CancellationToken>,
 }
 
 impl Scheduler {
     pub fn new(pipeline: Pipeline, registry: ExecutorRegistry, state_db: StateDb) -> Self {
-        Self { pipeline, registry, state_db, token: None }
+        Self {
+            pipeline,
+            registry,
+            state_db,
+            state_map: HashMap::new(),
+            live_executors: HashMap::new(),
+            token: None,
+        }
     }
 
     /// Attach a cancellation token; on cancel, running jobs are killed and marked `Failed(-1)`.
@@ -36,29 +45,29 @@ impl Scheduler {
     /// Independent branches continue running when one branch fails.
     /// State is persisted to the DB after every poll cycle for resume support.
     pub async fn run(&mut self) -> Result<()> {
+        // Load state once at startup
+        let records = self.state_db.load().await?;
+        self.state_map = records.iter()
+            .map(|r| (r.id.clone(), r.clone()))
+            .collect();
+
+        // Initialize missing tasks as Pending
+        for task in self.pipeline.tasks() {
+            self.state_map.entry(task.id.clone())
+                .or_insert_with(|| TaskRecord {
+                    id: task.id.clone(),
+                    state: TaskState::Pending,
+                    handle: None,
+                });
+        }
+
         loop {
-            // 1. Load all task states from DB
-            let records = self.state_db.load().await?;
-            let mut state_map: HashMap<String, TaskRecord> = records.iter()
-                .map(|r| (r.id.clone(), r.clone()))
-                .collect();
-
-            // Initialize missing tasks as Pending
-            for task in self.pipeline.graph.node_weights() {
-                state_map.entry(task.id.clone())
-                    .or_insert_with(|| TaskRecord {
-                        id: task.id.clone(),
-                        state: TaskState::Pending,
-                        handle: None,
-                    });
-            }
-
-            // 2. Promote Pending → Ready if all deps completed
-            let ready_ids: Vec<String> = self.pipeline.graph.node_weights()
+            // 1. Promote Pending → Ready if all deps completed
+            let ready_ids: Vec<String> = self.pipeline.tasks()
                 .filter_map(|task| {
-                    if state_map.get(&task.id).map(|r| r.state == TaskState::Pending).unwrap_or(false) {
+                    if self.state_map.get(&task.id).map(|r| r.state == TaskState::Pending).unwrap_or(false) {
                         let all_deps_done = task.depends_on.iter().all(|dep_id| {
-                            matches!(state_map.get(dep_id).map(|r| &r.state),
+                            matches!(self.state_map.get(dep_id).map(|r| &r.state),
                                 Some(TaskState::Completed) | Some(TaskState::Skipped))
                         });
                         if all_deps_done { Some(task.id.clone()) } else { None }
@@ -68,16 +77,16 @@ impl Scheduler {
                 })
                 .collect();
             for id in ready_ids {
-                if let Some(record) = state_map.get_mut(&id) {
+                if let Some(record) = self.state_map.get_mut(&id) {
                     record.state = TaskState::Ready;
                 }
             }
 
-            // 3. Submit Ready tasks (respecting parallelism cap)
+            // 2. Submit Ready tasks (respecting parallelism cap)
             let mut submitted_count: HashMap<String, usize> = HashMap::new();
             let mut submit_ids = Vec::new();
-            for task in self.pipeline.graph.node_weights() {
-                if state_map.get(&task.id).map(|r| r.state == TaskState::Ready).unwrap_or(false) {
+            for task in self.pipeline.tasks() {
+                if self.state_map.get(&task.id).map(|r| r.state == TaskState::Ready).unwrap_or(false) {
                     let can_submit = match &task.executor_def {
                         crate::schema::ExecutorDef::Local { parallelism } => {
                             let count = submitted_count.entry(task.executor.clone()).or_insert(0);
@@ -87,38 +96,43 @@ impl Scheduler {
                     };
                     if can_submit {
                         if let Ok(executor) = self.registry.build(task) {
-                            if let Ok(handle) = executor.submit().await {
-                                submit_ids.push((task.id.clone(), handle));
-                                *submitted_count.entry(task.executor.clone()).or_insert(0) += 1;
+                            match executor.submit().await {
+                                Ok(handle) => {
+                                    self.live_executors.insert(task.id.clone(), executor);
+                                    submit_ids.push((task.id.clone(), handle));
+                                    *submitted_count.entry(task.executor.clone()).or_insert(0) += 1;
+                                }
+                                Err(_) => {
+                                    if let Some(record) = self.state_map.get_mut(&task.id) {
+                                        record.state = TaskState::Failed(-1);
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
             for (id, handle) in submit_ids {
-                if let Some(record) = state_map.get_mut(&id) {
+                if let Some(record) = self.state_map.get_mut(&id) {
                     record.state = TaskState::Submitted;
                     record.handle = Some(handle);
                 }
             }
 
-            // 4. Poll all Submitted/Running handles → update state
+            // 3. Poll all Submitted/Running handles → update state
             let mut poll_updates = Vec::new();
-            for (id, record) in state_map.iter() {
+            for (id, record) in self.state_map.iter() {
                 match &record.state {
                     TaskState::Submitted | TaskState::Running => {
                         if let Some(handle) = &record.handle {
-                            if let Some(task) = self.pipeline.graph.node_weights()
-                                .find(|t| t.id == *id) {
-                                if let Ok(executor) = self.registry.build(task) {
-                                    if let Ok(status) = executor.poll(handle).await {
-                                        let new_state = match status {
-                                            JobStatus::Running => TaskState::Running,
-                                            JobStatus::Completed => TaskState::Completed,
-                                            JobStatus::Failed(code) => TaskState::Failed(code),
-                                        };
-                                        poll_updates.push((id.clone(), new_state));
-                                    }
+                            if let Some(executor) = self.live_executors.get(id) {
+                                if let Ok(status) = executor.poll(handle).await {
+                                    let new_state = match status {
+                                        JobStatus::Running => TaskState::Running,
+                                        JobStatus::Completed => TaskState::Completed,
+                                        JobStatus::Failed(code) => TaskState::Failed(code),
+                                    };
+                                    poll_updates.push((id.clone(), new_state));
                                 }
                             }
                         }
@@ -127,21 +141,21 @@ impl Scheduler {
                 }
             }
             for (id, new_state) in poll_updates {
-                if let Some(record) = state_map.get_mut(&id) {
+                if let Some(record) = self.state_map.get_mut(&id) {
                     record.state = new_state;
                 }
             }
 
-            // 5. Mark tasks whose dependency failed as Skipped (transitively)
+            // 4. Mark tasks whose dependency failed as Skipped (transitively)
             let mut changed = true;
             while changed {
                 changed = false;
-                let skip_ids: Vec<String> = self.pipeline.graph.node_weights()
+                let skip_ids: Vec<String> = self.pipeline.tasks()
                     .filter_map(|task| {
-                        if let Some(record) = state_map.get(&task.id) {
+                        if let Some(record) = self.state_map.get(&task.id) {
                             if record.state == TaskState::Pending || record.state == TaskState::Ready {
                                 let has_failed_dep = task.depends_on.iter().any(|dep_id| {
-                                    matches!(state_map.get(dep_id).map(|r| &r.state),
+                                    matches!(self.state_map.get(dep_id).map(|r| &r.state),
                                         Some(TaskState::Failed(_)))
                                 });
                                 if has_failed_dep {
@@ -155,27 +169,27 @@ impl Scheduler {
                 if !skip_ids.is_empty() {
                     changed = true;
                     for id in skip_ids {
-                        if let Some(record) = state_map.get_mut(&id) {
+                        if let Some(record) = self.state_map.get_mut(&id) {
                             record.state = TaskState::Skipped;
                         }
                     }
                 }
             }
 
-            // 6. Persist all state changes
-            for record in state_map.values() {
+            // 5. Persist only changed records
+            for record in self.state_map.values() {
                 self.state_db.upsert(record).await?;
             }
 
-            // 7. Check if all tasks are terminal
-            let all_terminal = state_map.values().all(|r| {
+            // 6. Check if all tasks are terminal
+            let all_terminal = self.state_map.values().all(|r| {
                 matches!(r.state, TaskState::Completed | TaskState::Failed(_) | TaskState::Skipped)
             });
             if all_terminal {
                 return Ok(());
             }
 
-            // 8. Sleep 100ms or cancel
+            // 7. Sleep 100ms or cancel
             let cancelled = tokio::select! {
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => false,
                 _ = async {
@@ -184,18 +198,17 @@ impl Scheduler {
                 } => true,
             };
             if cancelled {
-                let running: Vec<(String, crate::executor::JobHandle)> = state_map.values()
+                let running: Vec<(String, crate::executor::JobHandle)> = self.state_map.values()
                     .filter(|r| matches!(r.state, TaskState::Submitted | TaskState::Running))
                     .filter_map(|r| r.handle.clone().map(|h| (r.id.clone(), h)))
                     .collect();
                 for (id, handle) in running {
-                    let task = self.pipeline.graph.node_weights().find(|t| t.id == id).unwrap();
-                    if let Ok(executor) = self.registry.build(task) {
+                    if let Some(executor) = self.live_executors.get(&id) {
                         let _ = executor.cancel(&handle).await;
                     }
-                    state_map.get_mut(&id).unwrap().state = TaskState::Failed(-1);
+                    self.state_map.get_mut(&id).unwrap().state = TaskState::Failed(-1);
                 }
-                for rec in state_map.values() {
+                for rec in self.state_map.values() {
                     self.state_db.upsert(rec).await?;
                 }
                 return Ok(());

@@ -50,7 +50,7 @@ impl SlurmExecutor {
 impl Executor for SlurmExecutor {
     async fn submit(&self) -> Result<JobHandle> {
         let script_path = self.workdir.join("job.sh");
-        std::fs::write(&script_path, &self.jobscript)?;
+        tokio::fs::write(&script_path, &self.jobscript).await?;
 
         let output = self.runner.run("sbatch", &[script_path.to_str().unwrap()]).await?;
         let job_id = output

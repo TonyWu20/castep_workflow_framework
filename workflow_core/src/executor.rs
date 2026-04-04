@@ -28,7 +28,7 @@ pub enum JobStatus {
 /// Implement this trait in adapter crates (e.g. `castep_adapter`) to support
 /// a new HPC code or execution backend.
 #[async_trait]
-pub trait Executor: Send {
+pub trait Executor: Send + Sync {
     /// Submit the job and return a handle for tracking it.
     async fn submit(&self) -> Result<JobHandle>;
     /// Query the current status of a previously submitted job.

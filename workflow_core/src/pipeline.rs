@@ -12,7 +12,7 @@ use crate::schema::ConcreteTask;
 /// Edges point from dependency to dependent (parent → child).
 pub struct Pipeline {
     /// The underlying petgraph DAG. Nodes are concrete tasks; edges are dependencies.
-    pub graph: DiGraph<ConcreteTask, ()>,
+    graph: DiGraph<ConcreteTask, ()>,
     index: HashMap<String, NodeIndex>,
 }
 
@@ -87,6 +87,11 @@ impl Pipeline {
     pub fn node_index(&self, id: &str) -> Option<NodeIndex> {
         self.index.get(id).copied()
     }
+
+    /// Return an iterator over all tasks in the pipeline.
+    pub fn tasks(&self) -> impl Iterator<Item = &ConcreteTask> {
+        self.graph.node_weights()
+    }
 }
 
 #[cfg(test)]
@@ -114,9 +119,9 @@ mod tests {
             task("c", vec!["b"]),
         ]).unwrap();
 
-        let order: Vec<&str> = pipeline.topological_order().iter()
-            .map(|&ni| pipeline.graph[ni].id.as_str())
-            .collect();
+        let topo = pipeline.topological_order();
+        let tasks: Vec<&ConcreteTask> = topo.iter().map(|&ni| pipeline.tasks().find(|t| pipeline.node_index(&t.id) == Some(ni)).unwrap()).collect();
+        let order: Vec<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
 
         let pos = |id| order.iter().position(|&x| x == id).unwrap();
         assert!(pos("a") < pos("b"));

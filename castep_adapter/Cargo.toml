@@ -7,4 +7,5 @@ edition = "2021"
 workflow_core = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+tokio = { workspace = true }
 toml = { workspace = true }
