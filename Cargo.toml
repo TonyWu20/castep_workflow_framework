@@ -16,3 +16,4 @@ toml = "0.8"
 petgraph = "0.6"
 tokio-rusqlite = "0.5"
 async-trait = "0.1"
+tokio-util = { version = "0.7" }

@@ -12,3 +12,4 @@ petgraph = { workspace = true }
 tokio-rusqlite = { workspace = true }
 rusqlite = { version = "0.31", features = ["bundled"] }
 async-trait = { workspace = true }
+tokio-util = { workspace = true }

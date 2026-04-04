@@ -1,11 +1,11 @@
 //! Scheduler skeleton — drives the pipeline execution loop.
 
 use anyhow::Result;
+use tokio_util::sync::CancellationToken;
 use crate::executor::{ExecutorRegistry, JobStatus};
 use crate::pipeline::Pipeline;
 use crate::state::{StateDb, TaskState, TaskRecord};
 use std::collections::HashMap;
-use tokio::time::{sleep, Duration};
 
 /// Drives execution of a [`Pipeline`], persisting state to [`StateDb`].
 ///
@@ -17,12 +17,18 @@ pub struct Scheduler {
     pub pipeline: Pipeline,
     pub registry: ExecutorRegistry,
     pub state_db: StateDb,
+    token: Option<CancellationToken>,
 }
 
 impl Scheduler {
-    /// Create a new scheduler from a resolved pipeline, executor registry, and state DB.
     pub fn new(pipeline: Pipeline, registry: ExecutorRegistry, state_db: StateDb) -> Self {
-        Self { pipeline, registry, state_db }
+        Self { pipeline, registry, state_db, token: None }
+    }
+
+    /// Attach a cancellation token; on cancel, running jobs are killed and marked `Failed(-1)`.
+    pub fn with_cancellation(mut self, token: CancellationToken) -> Self {
+        self.token = Some(token);
+        self
     }
 
     /// Run the pipeline to completion (or until all tasks are settled).
@@ -169,8 +175,31 @@ impl Scheduler {
                 return Ok(());
             }
 
-            // 8. Sleep 100ms, repeat
-            sleep(Duration::from_millis(100)).await;
+            // 8. Sleep 100ms or cancel
+            let cancelled = tokio::select! {
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => false,
+                _ = async {
+                    if let Some(t) = &self.token { t.cancelled().await }
+                    else { std::future::pending::<()>().await }
+                } => true,
+            };
+            if cancelled {
+                let running: Vec<(String, crate::executor::JobHandle)> = state_map.values()
+                    .filter(|r| matches!(r.state, TaskState::Submitted | TaskState::Running))
+                    .filter_map(|r| r.handle.clone().map(|h| (r.id.clone(), h)))
+                    .collect();
+                for (id, handle) in running {
+                    let task = self.pipeline.graph.node_weights().find(|t| t.id == id).unwrap();
+                    if let Ok(executor) = self.registry.build(task) {
+                        let _ = executor.cancel(&handle).await;
+                    }
+                    state_map.get_mut(&id).unwrap().state = TaskState::Failed(-1);
+                }
+                for rec in state_map.values() {
+                    self.state_db.upsert(rec).await?;
+                }
+                return Ok(());
+            }
         }
     }
 }
@@ -210,6 +239,52 @@ mod tests {
             inputs: HashMap::new(),
             executor_def: ExecutorDef::Local { parallelism: 4 },
         }
+    }
+
+    #[tokio::test]
+    async fn cancellation_marks_running_tasks_failed() {
+        use tokio_util::sync::CancellationToken;
+
+        struct SlowExecutor(Arc<Mutex<bool>>);
+        #[async_trait]
+        impl Executor for SlowExecutor {
+            async fn submit(&self) -> Result<JobHandle> { Ok(JobHandle { raw: "x".into() }) }
+            async fn poll(&self, _h: &JobHandle) -> Result<JobStatus> { Ok(JobStatus::Running) }
+            async fn cancel(&self, _h: &JobHandle) -> Result<()> {
+                *self.0.lock().unwrap() = true;
+                Ok(())
+            }
+        }
+        struct SlowFactory(Arc<Mutex<bool>>);
+        impl crate::executor::ExecutorFactory for SlowFactory {
+            fn code_name(&self) -> &'static str { "test" }
+            fn build(&self, _t: &ConcreteTask) -> Result<Box<dyn Executor>> {
+                Ok(Box::new(SlowExecutor(self.0.clone())))
+            }
+        }
+
+        let cancelled = Arc::new(Mutex::new(false));
+        let pipeline = Pipeline::from_tasks(vec![make_task("a", vec![])]).unwrap();
+        let db = StateDb::open(std::path::Path::new(":memory:")).await.unwrap();
+        let mut registry = ExecutorRegistry::default();
+        registry.register(SlowFactory(cancelled.clone()));
+
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+            token_clone.cancel();
+        });
+
+        let mut sched = Scheduler::new(pipeline, registry, db).with_cancellation(token);
+        sched.run().await.unwrap();
+
+        assert!(*cancelled.lock().unwrap());
+        let records = sched.state_db.load().await.unwrap();
+        assert!(matches!(
+            records.iter().find(|r| r.id == "a").unwrap().state,
+            TaskState::Failed(-1)
+        ));
     }
 
     #[tokio::test]
