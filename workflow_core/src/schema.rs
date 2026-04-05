@@ -95,6 +95,8 @@ pub struct TaskDef {
     pub sweep: Option<SweepDef>,
     #[serde(default)]
     pub inputs: HashMap<String, toml::Value>,
+    #[serde(default)]
+    pub wall_time_secs: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Default, PartialEq)]
@@ -129,6 +131,7 @@ pub struct ConcreteTask {
     pub depends_on: Vec<String>,
     pub inputs: HashMap<String, toml::Value>,
     pub executor_def: ExecutorDef,
+    pub wall_time_secs: Option<u64>,
 }
 
 fn val_to_str(v: &toml::Value) -> String {
@@ -156,6 +159,7 @@ fn make_task(base: &TaskDef, bindings: &[(&str, &str)], extra_inputs: HashMap<St
         depends_on: base.depends_on.iter().map(|d| apply_bindings(d, bindings)).collect(),
         inputs,
         executor_def,
+        wall_time_secs: base.wall_time_secs,
     }
 }
 
@@ -211,6 +215,7 @@ pub fn expand_sweeps(def: WorkflowDef) -> anyhow::Result<Vec<ConcreteTask>> {
                 depends_on: task.depends_on.clone(),
                 inputs:     task.inputs.clone(),
                 executor_def: executor_def.clone(),
+                wall_time_secs: task.wall_time_secs,
             }),
             Some(sweep) => {
                 for binding_set in expand_bindings(sweep)? {
@@ -259,7 +264,7 @@ mod tests {
             tasks: vec![TaskDef {
                 id: "scf".into(), code: "castep".into(), executor: "local".into(),
                 workdir: "runs/scf".into(), depends_on: vec![], sweep: None,
-                inputs: HashMap::new(),
+                inputs: HashMap::new(), wall_time_secs: None,
             }],
         };
         let tasks = expand_sweeps(def).unwrap();
@@ -309,7 +314,7 @@ mod tests {
                 id: "scf_U{u}".into(), code: "castep".into(), executor: "local".into(),
                 workdir: "runs/U{u}".into(), depends_on: vec!["base_U{u}".into()],
                 sweep: Some(make_sweep_def(SweepMode::Zip, vec![("u", ints(&[2, 3]))])),
-                inputs: HashMap::new(),
+                inputs: HashMap::new(), wall_time_secs: None,
             }],
         };
         let tasks = expand_sweeps(def).unwrap();

@@ -107,6 +107,7 @@ mod tests {
             depends_on: depends_on.into_iter().map(str::to_owned).collect(),
             inputs: std::collections::HashMap::new(),
             executor_def: crate::schema::ExecutorDef::Local { parallelism: 1 },
+            wall_time_secs: None,
         }
     }
 

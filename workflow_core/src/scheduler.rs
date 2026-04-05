@@ -58,6 +58,7 @@ impl Scheduler {
                     id: task.id.clone(),
                     state: TaskState::Pending,
                     handle: None,
+                    submitted_at: None,
                 });
         }
 
@@ -81,7 +82,7 @@ impl Scheduler {
                     if self.state_map.get(&task.id).map(|r| r.state == TaskState::Pending).unwrap_or(false) {
                         let all_deps_done = task.depends_on.iter().all(|dep_id| {
                             matches!(self.state_map.get(dep_id).map(|r| &r.state),
-                                Some(TaskState::Completed) | Some(TaskState::Skipped))
+                                Some(TaskState::Completed) | Some(TaskState::Skipped) | Some(TaskState::TimedOut))
                         });
                         if all_deps_done { Some(task.id.clone()) } else { None }
                     } else {
@@ -138,6 +139,12 @@ impl Scheduler {
                 if let Some(record) = self.state_map.get_mut(&id) {
                     record.state = TaskState::Submitted;
                     record.handle = Some(handle);
+                    record.submitted_at = Some(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                    );
                 }
             }
 
@@ -165,6 +172,33 @@ impl Scheduler {
             for (id, new_state) in poll_updates {
                 if let Some(record) = self.state_map.get_mut(&id) {
                     record.state = new_state;
+                }
+            }
+
+            // 3b: Cancel tasks that have exceeded their wall-time limit.
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let timeout_ids: Vec<String> = self.pipeline.tasks()
+                .filter_map(|task| {
+                    let limit = task.wall_time_secs?;
+                    let record = self.state_map.get(&task.id)?;
+                    if !matches!(record.state, TaskState::Submitted | TaskState::Running) {
+                        return None;
+                    }
+                    let start = record.submitted_at?;
+                    if now_secs.saturating_sub(start) >= limit { Some(task.id.clone()) } else { None }
+                })
+                .collect();
+            for id in timeout_ids {
+                if let Some(executor) = self.live_executors.remove(&id) {
+                    if let Some(handle) = self.state_map.get(&id).and_then(|r| r.handle.as_ref()) {
+                        let _ = executor.cancel(handle).await;
+                    }
+                }
+                if let Some(record) = self.state_map.get_mut(&id) {
+                    record.state = TaskState::TimedOut;
                 }
             }
 
@@ -205,7 +239,7 @@ impl Scheduler {
 
             // 6. Check if all tasks are terminal
             let all_terminal = self.state_map.values().all(|r| {
-                matches!(r.state, TaskState::Completed | TaskState::Failed(_) | TaskState::Skipped)
+                matches!(r.state, TaskState::Completed | TaskState::Failed(_) | TaskState::Skipped | TaskState::TimedOut)
             });
             if all_terminal {
                 return Ok(());
@@ -265,6 +299,7 @@ mod tests {
             depends_on: deps.into_iter().map(String::from).collect(),
             inputs: HashMap::new(),
             executor_def: ExecutorDef::Local { parallelism },
+            wall_time_secs: None,
         }
     }
 
@@ -446,6 +481,7 @@ mod tests {
                 id: "a".into(),
                 state: TaskState::Submitted,
                 handle: Some(crate::executor::JobHandle { raw: "mock".into() }),
+                submitted_at: None,
             }).await.unwrap();
         }
 
@@ -454,6 +490,102 @@ mod tests {
         let pipeline = Pipeline::from_tasks(vec![make_task("a", vec![], 4)]).unwrap();
         let db = StateDb::open(&db_path).await.unwrap();
         let mut sched = Scheduler::new(pipeline, mock_registry(), db);
+        sched.run().await.unwrap();
+
+        let records = sched.state_db.load().await.unwrap();
+        assert_eq!(
+            records.iter().find(|r| r.id == "a").unwrap().state,
+            TaskState::Completed
+        );
+    }
+
+    // Always returns Running; used for timeout tests.
+    struct SlowExecutor;
+    #[async_trait]
+    impl Executor for SlowExecutor {
+        async fn submit(&self) -> Result<JobHandle> { Ok(JobHandle { raw: "slow".into() }) }
+        async fn poll(&self, _h: &JobHandle) -> Result<JobStatus> { Ok(JobStatus::Running) }
+        async fn cancel(&self, _h: &JobHandle) -> Result<()> { Ok(()) }
+    }
+
+    struct SlowFactory;
+    impl crate::executor::ExecutorFactory for SlowFactory {
+        fn code_name(&self) -> &'static str { "slow" }
+        fn build(&self, _t: &ConcreteTask) -> Result<Box<dyn Executor>> {
+            Ok(Box::new(SlowExecutor))
+        }
+    }
+
+    struct FastFactory;
+    impl crate::executor::ExecutorFactory for FastFactory {
+        fn code_name(&self) -> &'static str { "fast" }
+        fn build(&self, _t: &ConcreteTask) -> Result<Box<dyn Executor>> {
+            Ok(Box::new(MockExecutor))
+        }
+    }
+
+    #[tokio::test]
+    async fn task_with_zero_wall_time_times_out() {
+        let mut task = make_task("a", vec![], 4);
+        task.code = "slow".into();
+        task.wall_time_secs = Some(0);
+
+        let pipeline = Pipeline::from_tasks(vec![task]).unwrap();
+        let db = StateDb::open(std::path::Path::new(":memory:")).await.unwrap();
+        let mut registry = ExecutorRegistry::default();
+        registry.register(SlowFactory);
+
+        let mut sched = Scheduler::new(pipeline, registry, db);
+        sched.run().await.unwrap();
+
+        let records = sched.state_db.load().await.unwrap();
+        assert_eq!(
+            records.iter().find(|r| r.id == "a").unwrap().state,
+            TaskState::TimedOut
+        );
+    }
+
+    #[tokio::test]
+    async fn child_of_timed_out_parent_still_runs() {
+        let mut parent = make_task("parent", vec![], 4);
+        parent.code = "slow".into();
+        parent.wall_time_secs = Some(0);
+
+        let mut child = make_task("child", vec!["parent"], 4);
+        child.code = "fast".into();
+
+        let pipeline = Pipeline::from_tasks(vec![parent, child]).unwrap();
+        let db = StateDb::open(std::path::Path::new(":memory:")).await.unwrap();
+        let mut registry = ExecutorRegistry::default();
+        registry.register(SlowFactory);
+        registry.register(FastFactory);
+
+        let mut sched = Scheduler::new(pipeline, registry, db);
+        sched.run().await.unwrap();
+
+        let records = sched.state_db.load().await.unwrap();
+        assert_eq!(
+            records.iter().find(|r| r.id == "parent").unwrap().state,
+            TaskState::TimedOut
+        );
+        assert_eq!(
+            records.iter().find(|r| r.id == "child").unwrap().state,
+            TaskState::Completed
+        );
+    }
+
+    #[tokio::test]
+    async fn task_within_wall_time_limit_completes() {
+        let mut task = make_task("a", vec![], 4);
+        task.code = "fast".into();
+        task.wall_time_secs = Some(3600);
+
+        let pipeline = Pipeline::from_tasks(vec![task]).unwrap();
+        let db = StateDb::open(std::path::Path::new(":memory:")).await.unwrap();
+        let mut registry = ExecutorRegistry::default();
+        registry.register(FastFactory);
+
+        let mut sched = Scheduler::new(pipeline, registry, db);
         sched.run().await.unwrap();
 
         let records = sched.state_db.load().await.unwrap();

@@ -1,13 +1,29 @@
 use anyhow::Result;
 use tokio_util::sync::CancellationToken;
 use workflow_core::{
-    executor::ExecutorRegistry,
+    executor::{ExecutorFactory, ExecutorRegistry},
+    executors::local::LocalExecutor,
     pipeline::Pipeline,
     scheduler::Scheduler,
-    schema::expand_sweeps,
+    schema::{ConcreteTask, expand_sweeps},
     state::StateDb,
 };
 use castep_adapter::CastepFactory;
+
+struct ShellFactory;
+impl ExecutorFactory for ShellFactory {
+    fn code_name(&self) -> &'static str { "shell" }
+    fn build(&self, task: &ConcreteTask) -> Result<Box<dyn workflow_core::executor::Executor>> {
+        let cmd = task.inputs.get("command")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("shell task '{}' missing inputs.command", task.id))?;
+        let args: Vec<String> = task.inputs.get("args")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        Ok(Box::new(LocalExecutor::new(cmd, args, &task.workdir)))
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -36,6 +52,7 @@ async fn main() -> Result<()> {
 
     let mut registry = ExecutorRegistry::default();
     registry.register(CastepFactory);
+    registry.register(ShellFactory);
 
     let state_db = StateDb::open(&state_path).await?;
 

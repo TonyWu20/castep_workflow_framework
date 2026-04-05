@@ -22,6 +22,8 @@ pub enum TaskState {
     Failed(i32),
     /// Skipped because all upstream paths failed or were skipped.
     Skipped,
+    /// Execution exceeded time limit.
+    TimedOut,
 }
 
 impl TaskState {
@@ -34,6 +36,7 @@ impl TaskState {
             TaskState::Completed  => ("Completed".into(), None),
             TaskState::Failed(c)  => ("Failed".into(), Some(*c)),
             TaskState::Skipped    => ("Skipped".into(), None),
+            TaskState::TimedOut   => ("TimedOut".into(), None),
         }
     }
 
@@ -45,6 +48,7 @@ impl TaskState {
             "Completed" => TaskState::Completed,
             "Failed"    => TaskState::Failed(code.unwrap_or(-1)),
             "Skipped"   => TaskState::Skipped,
+            "TimedOut"  => TaskState::TimedOut,
             _           => TaskState::Pending,
         }
     }
@@ -59,6 +63,8 @@ pub struct TaskRecord {
     pub state: TaskState,
     /// Executor handle, present once the task has been submitted.
     pub handle: Option<JobHandle>,
+    /// Unix timestamp when the task was submitted.
+    pub submitted_at: Option<u64>,
 }
 
 /// SQLite-backed store for [`TaskRecord`]s.
@@ -82,6 +88,11 @@ impl StateDb {
                     handle TEXT
                 );"
             )?;
+            match c.execute("ALTER TABLE tasks ADD COLUMN submitted_at INTEGER", []) {
+                Ok(_) => Ok(()),
+                Err(rusqlite::Error::SqliteFailure(e, _)) if e.extended_code == 1 => Ok(()),
+                Err(e) => Err(e),
+            }?;
             Ok(())
         }).await?;
         Ok(Self { conn })
@@ -91,7 +102,7 @@ impl StateDb {
     pub async fn load(&self) -> Result<Vec<TaskRecord>> {
         self.conn.call(|c| {
             let mut stmt = c.prepare(
-                "SELECT id, state, exit_code, handle FROM tasks"
+                "SELECT id, state, exit_code, handle, submitted_at FROM tasks"
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok((
@@ -99,14 +110,16 @@ impl StateDb {
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<i32>>(2)?,
                     row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
                 ))
             })?;
             rows.map(|r| {
-                let (id, state_str, code, handle_raw) = r?;
+                let (id, state_str, code, handle_raw, submitted_at) = r?;
                 Ok(TaskRecord {
                     id,
                     state: TaskState::from_db(&state_str, code),
                     handle: handle_raw.map(|raw| JobHandle { raw }),
+                    submitted_at: submitted_at.map(|t| t as u64),
                 })
             }).collect()
         }).await.map_err(|e| anyhow::anyhow!(e))
@@ -117,16 +130,18 @@ impl StateDb {
         let (state_str, code) = record.state.to_db();
         let id = record.id.clone();
         let handle_raw = record.handle.as_ref().map(|h| h.raw.clone());
+        let submitted_at = record.submitted_at.map(|t| t as i64);
         self.conn.call(move |c| {
             c.execute(
-                "INSERT INTO tasks (id, state, exit_code, handle)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(id) DO UPDATE SET state=?2, exit_code=?3, handle=?4",
+                "INSERT INTO tasks (id, state, exit_code, handle, submitted_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(id) DO UPDATE SET state=?2, exit_code=?3, handle=?4, submitted_at=?5",
                 params![
                     id,
                     state_str,
                     code,
                     handle_raw,
+                    submitted_at,
                 ],
             )?;
             Ok(())
