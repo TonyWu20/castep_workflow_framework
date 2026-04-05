@@ -84,19 +84,58 @@ pub enum ExecutorDef {
     Slurm { partition: String, ntasks: u32, walltime: String },
 }
 
+/// Task definition from TOML workflow file.
+///
+/// A task can either be a root task (with optional parameter sweep) or attached to a parent task.
 #[derive(Debug, Deserialize)]
 pub struct TaskDef {
+    /// Unique task identifier, may contain template placeholders like `"scf_U{u}"`.
     pub id: String,
+    /// Code to execute (e.g., `"castep"`, `"lammps"`).
     pub code: String,
+    /// Executor name referencing an entry in `[executors]`.
     pub executor: String,
+    /// Working directory, may contain template placeholders.
     pub workdir: String,
+    /// Task IDs this task depends on (DAG edges). May contain template placeholders.
     #[serde(default)]
     pub depends_on: Vec<String>,
+    /// Parameter sweep definition. Mutually exclusive with `attached_to`.
     pub sweep: Option<SweepDef>,
+    /// Input parameters passed to the executor (code-specific).
     #[serde(default)]
     pub inputs: HashMap<String, toml::Value>,
+    /// Optional wall-time limit in seconds. Tasks exceeding this are cancelled and marked `TimedOut`.
     #[serde(default)]
     pub wall_time_secs: Option<u64>,
+    /// Attach this task to a parent task's sweep instances.
+    ///
+    /// When set, this task inherits the parent's sweep bindings and is instantiated once per
+    /// parent instance. The parent's `id` (before template substitution) is used as the key.
+    ///
+    /// # Example
+    ///
+    /// ```toml
+    /// [[tasks]]
+    /// id = "scf_U{u}"
+    /// [tasks.sweep]
+    /// params = [{ name = "u", values = [2, 3, 4] }]
+    ///
+    /// [[tasks]]
+    /// id = "dos_U{u}"
+    /// attached_to = "scf_U{u}"  # Inherits u=2, u=3, u=4 from parent
+    /// ```
+    ///
+    /// This produces 3 SCF tasks and 3 DOS tasks, each DOS sharing the same workdir and
+    /// parameter bindings as its parent SCF.
+    ///
+    /// # Invariants
+    ///
+    /// - `attached_to` and `sweep` are mutually exclusive (enforced by `expand_sweeps`)
+    /// - The referenced parent task must exist and be processed before this task
+    /// - Attached tasks implicitly depend on their parent instance
+    #[serde(default)]
+    pub attached_to: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default, PartialEq)]
@@ -122,16 +161,42 @@ pub struct SweepDef {
     pub params: Vec<ParamSweep>,
 }
 
+/// Concrete task instance after sweep expansion.
+///
+/// Created by [`expand_sweeps`] from [`TaskDef`]. All template placeholders are resolved,
+/// and sweep parameters are bound to specific values.
 #[derive(Debug, Clone)]
 pub struct ConcreteTask {
+    /// Resolved task ID (e.g., `"scf_U2"` from template `"scf_U{u}"` with `u=2`).
     pub id: String,
+    /// Code to execute.
     pub code: String,
+    /// Executor name.
     pub executor: String,
+    /// Resolved working directory.
     pub workdir: String,
+    /// Resolved dependency IDs (concrete task IDs, not templates).
     pub depends_on: Vec<String>,
+    /// Input parameters with sweep bindings applied.
     pub inputs: HashMap<String, toml::Value>,
+    /// Executor configuration.
     pub executor_def: ExecutorDef,
+    /// Optional wall-time limit in seconds.
     pub wall_time_secs: Option<u64>,
+    /// Sweep parameter bindings that produced this instance.
+    ///
+    /// Maps parameter names to their string values (e.g., `{"u": "2", "cutoff": "500"}`).
+    /// Empty for tasks without sweeps.
+    ///
+    /// Used by attached tasks to inherit parent bindings during expansion.
+    pub bindings: HashMap<String, String>,
+    /// Working directories of tasks this task depends on.
+    ///
+    /// Maps dependency task IDs to their workdir paths. Populated during the final pass of
+    /// [`expand_sweeps`] after all tasks are expanded.
+    ///
+    /// Used by adapters to locate output files from dependencies (e.g., CASTEP `.check` files).
+    pub dep_workdirs: HashMap<String, String>,
 }
 
 fn val_to_str(v: &toml::Value) -> String {
@@ -151,6 +216,9 @@ fn apply_bindings(template: &str, bindings: &[(&str, &str)]) -> String {
 fn make_task(base: &TaskDef, bindings: &[(&str, &str)], extra_inputs: HashMap<String, toml::Value>, executor_def: ExecutorDef) -> ConcreteTask {
     let mut inputs = base.inputs.clone();
     inputs.extend(extra_inputs);
+    let bindings_map: HashMap<String, String> = bindings.iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
     ConcreteTask {
         id:         apply_bindings(&base.id, bindings),
         code:       base.code.clone(),
@@ -160,6 +228,8 @@ fn make_task(base: &TaskDef, bindings: &[(&str, &str)], extra_inputs: HashMap<St
         inputs,
         executor_def,
         wall_time_secs: base.wall_time_secs,
+        bindings: bindings_map,
+        dep_workdirs: HashMap::new(),
     }
 }
 
@@ -198,41 +268,138 @@ fn expand_bindings(sweep: &SweepDef) -> anyhow::Result<Vec<Vec<(&str, String, to
     }
 }
 
+/// Expand workflow definition into concrete task instances.
+///
+/// Performs three passes:
+///
+/// 1. **Root task expansion**: Tasks without `attached_to` are expanded according to their
+///    `sweep` definition (or passed through as-is if no sweep). A template map is built
+///    for attached task resolution.
+///
+/// 2. **Attached task expansion**: Tasks with `attached_to` inherit their parent's sweep
+///    bindings. One child instance is created per parent instance, sharing the same parameter
+///    values. Attached tasks implicitly depend on their parent instance.
+///
+/// 3. **Dependency workdir resolution**: For each task, `dep_workdirs` is populated by
+///    looking up the workdir of each dependency by ID.
+///
+/// # Example
+///
+/// ```toml
+/// [[tasks]]
+/// id = "scf_U{u}"
+/// [tasks.sweep]
+/// params = [{ name = "u", values = [2, 3] }]
+///
+/// [[tasks]]
+/// id = "dos_U{u}"
+/// attached_to = "scf_U{u}"
+/// ```
+///
+/// Produces 4 concrete tasks:
+/// - `scf_U2` (bindings: `{u: "2"}`)
+/// - `scf_U3` (bindings: `{u: "3"}`)
+/// - `dos_U2` (bindings: `{u: "2"}`, depends_on: `["scf_U2"]`)
+/// - `dos_U3` (bindings: `{u: "3"}`, depends_on: `["scf_U3"]`)
+///
+/// # Errors
+///
+/// - Unknown executor referenced by a task
+/// - `attached_to` references a non-existent parent task
+/// - Task has both `attached_to` and `sweep` (mutually exclusive)
+/// - Zip sweep with mismatched parameter value lengths
 pub fn expand_sweeps(def: WorkflowDef) -> anyhow::Result<Vec<ConcreteTask>> {
     let mut out = Vec::new();
+    // template_id → concrete instances, for attached_to resolution
+    let mut template_map: HashMap<String, Vec<ConcreteTask>> = HashMap::new();
+
+    // Pass 1: expand root tasks (no attached_to)
     for task in &def.tasks {
+        if task.attached_to.is_some() { continue; }
         let executor_def = def.executors.get(&task.executor)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!(
                 "task '{}' references unknown executor '{}'", task.id, task.executor
             ))?;
-        match &task.sweep {
-            None => out.push(ConcreteTask {
-                id:         task.id.clone(),
-                code:       task.code.clone(),
-                executor:   task.executor.clone(),
-                workdir:    task.workdir.clone(),
-                depends_on: task.depends_on.clone(),
-                inputs:     task.inputs.clone(),
-                executor_def: executor_def.clone(),
+        let instances: Vec<ConcreteTask> = match &task.sweep {
+            None => vec![ConcreteTask {
+                id:           task.id.clone(),
+                code:         task.code.clone(),
+                executor:     task.executor.clone(),
+                workdir:      task.workdir.clone(),
+                depends_on:   task.depends_on.clone(),
+                inputs:       task.inputs.clone(),
+                executor_def,
                 wall_time_secs: task.wall_time_secs,
-            }),
+                bindings:     HashMap::new(),
+                dep_workdirs: HashMap::new(),
+            }],
             Some(sweep) => {
+                let mut v = Vec::new();
                 for binding_set in expand_bindings(sweep)? {
                     let str_bindings: Vec<(String, String)> = binding_set.iter()
-                        .map(|(k, v, _)| (k.to_string(), v.clone()))
+                        .map(|(k, s, _)| (k.to_string(), s.clone()))
                         .collect();
                     let refs: Vec<(&str, &str)> = str_bindings.iter()
-                        .map(|(k, v)| (k.as_str(), v.as_str()))
+                        .map(|(k, s)| (k.as_str(), s.as_str()))
                         .collect();
                     let extra: HashMap<String, toml::Value> = binding_set.into_iter()
                         .map(|(k, _, v)| (k.to_owned(), v))
                         .collect();
-                    out.push(make_task(task, &refs, extra, executor_def.clone()));
+                    v.push(make_task(task, &refs, extra, executor_def.clone()));
                 }
+                v
             }
+        };
+        template_map.insert(task.id.clone(), instances.clone());
+        out.extend(instances);
+    }
+
+    // Pass 2: expand attached_to tasks — one child per parent instance
+    for task in &def.tasks {
+        let parent_template_id = match &task.attached_to {
+            Some(id) => id,
+            None => continue,
+        };
+        if task.sweep.is_some() {
+            anyhow::bail!(
+                "task '{}' has both attached_to and sweep — only one is allowed",
+                task.id
+            );
+        }
+        let executor_def = def.executors.get(&task.executor)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!(
+                "task '{}' references unknown executor '{}'", task.id, task.executor
+            ))?;
+        let parents = template_map.get(parent_template_id)
+            .ok_or_else(|| anyhow::anyhow!(
+                "task '{}' attached_to '{}' which was not found",
+                task.id, parent_template_id
+            ))?;
+        for parent in parents {
+            let refs: Vec<(&str, &str)> = parent.bindings.iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
+            let mut child = make_task(task, &refs, HashMap::new(), executor_def.clone());
+            // attached child implicitly depends on its parent instance
+            child.depends_on.push(parent.id.clone());
+            out.push(child);
         }
     }
+
+    // Pass 3: populate dep_workdirs from resolved task ids
+    let workdir_lookup: HashMap<String, String> = out.iter()
+        .map(|t| (t.id.clone(), t.workdir.clone()))
+        .collect();
+    for task in &mut out {
+        task.dep_workdirs = task.depends_on.iter()
+            .filter_map(|dep_id| {
+                workdir_lookup.get(dep_id).map(|wd| (dep_id.clone(), wd.clone()))
+            })
+            .collect();
+    }
+
     Ok(out)
 }
 
@@ -264,7 +431,7 @@ mod tests {
             tasks: vec![TaskDef {
                 id: "scf".into(), code: "castep".into(), executor: "local".into(),
                 workdir: "runs/scf".into(), depends_on: vec![], sweep: None,
-                inputs: HashMap::new(), wall_time_secs: None,
+                inputs: HashMap::new(), wall_time_secs: None, attached_to: None,
             }],
         };
         let tasks = expand_sweeps(def).unwrap();
@@ -314,7 +481,7 @@ mod tests {
                 id: "scf_U{u}".into(), code: "castep".into(), executor: "local".into(),
                 workdir: "runs/U{u}".into(), depends_on: vec!["base_U{u}".into()],
                 sweep: Some(make_sweep_def(SweepMode::Zip, vec![("u", ints(&[2, 3]))])),
-                inputs: HashMap::new(), wall_time_secs: None,
+                inputs: HashMap::new(), wall_time_secs: None, attached_to: None,
             }],
         };
         let tasks = expand_sweeps(def).unwrap();

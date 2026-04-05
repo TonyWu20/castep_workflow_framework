@@ -300,6 +300,8 @@ mod tests {
             inputs: HashMap::new(),
             executor_def: ExecutorDef::Local { parallelism },
             wall_time_secs: None,
+            bindings: HashMap::new(),
+            dep_workdirs: HashMap::new(),
         }
     }
 

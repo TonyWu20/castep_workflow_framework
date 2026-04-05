@@ -108,6 +108,8 @@ mod tests {
             inputs: std::collections::HashMap::new(),
             executor_def: crate::schema::ExecutorDef::Local { parallelism: 1 },
             wall_time_secs: None,
+            bindings: std::collections::HashMap::new(),
+            dep_workdirs: std::collections::HashMap::new(),
         }
     }
 
