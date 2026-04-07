@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::time::Duration;
 use anyhow::{Context, Result};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
-
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct TaskExecutor {
     workdir: PathBuf,
@@ -98,10 +97,10 @@ impl ExecutionHandle {
 
     pub fn is_running(&self) -> bool {
         use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-        match waitpid(Pid::from_raw(self.pid), Some(WaitPidFlag::WNOHANG)) {
-            Ok(WaitStatus::StillAlive) => true,
-            _ => false,
-        }
+        matches!(
+            waitpid(Pid::from_raw(self.pid), Some(WaitPidFlag::WNOHANG)),
+            Ok(WaitStatus::StillAlive)
+        )
     }
 
     pub fn terminate(&self) -> Result<()> {
