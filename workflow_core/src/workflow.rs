@@ -55,10 +55,8 @@ impl Workflow {
         Ok(self.build_dag()?.topological_order())
     }
 
-    /// Resume a workflow by name.
+    /// Resume a workflow by name, loading prior state from `state_dir` when `run()` is called.
     pub fn resume(name: impl Into<String>, state_dir: impl Into<PathBuf>) -> Result<Self> {
-        // Just create a new workflow with the given name
-        // State will be loaded from file in run() if available
         Self::builder().name(name.into()).state_dir(state_dir.into()).build()
     }
 
@@ -80,13 +78,13 @@ impl Workflow {
             .map(|(id, t)| (id.clone(), Arc::clone(&t.execute_fn)))
             .collect();
 
-        let _monitors: HashMap<String, Vec<workflow_utils::MonitoringHook>> = self
+        let monitors: HashMap<String, Vec<workflow_utils::MonitoringHook>> = self
             .tasks
             .iter()
             .map(|(id, t)| (id.clone(), t.monitors.clone()))
             .collect();
 
-        let _task_workdirs: HashMap<String, std::path::PathBuf> = self
+        let task_workdirs: HashMap<String, std::path::PathBuf> = self
             .tasks
             .iter()
             .map(|(id, t)| (id.clone(), t.workdir.clone()))
@@ -112,10 +110,10 @@ impl Workflow {
                 match result {
                     Ok(()) => {
                         s.mark_completed(&id);
-                        if let Some(hooks) = _monitors.get(&id) {
+                        if let Some(hooks) = monitors.get(&id) {
                             let ctx = HookContext {
                                 task_id: id.clone(),
-                                workdir: _task_workdirs[&id].clone(),
+                                workdir: task_workdirs[&id].clone(),
                                 state: "completed".to_string(),
                                 exit_code: Some(0),
                             };
@@ -126,10 +124,10 @@ impl Workflow {
                     }
                     Err(e) => {
                         s.mark_failed(&id, e.to_string());
-                        if let Some(hooks) = _monitors.get(&id) {
+                        if let Some(hooks) = monitors.get(&id) {
                             let ctx = HookContext {
                                 task_id: id.clone(),
-                                workdir: _task_workdirs[&id].clone(),
+                                workdir: task_workdirs[&id].clone(),
                                 state: "failed".to_string(),
                                 exit_code: None,
                             };
@@ -201,10 +199,10 @@ impl Workflow {
                     if let Some(f) = fns.get(&id).cloned() {
                         // task threads don't hold the lock when they panic — poisoning is not expected
                         state.lock().unwrap().mark_running(&id);
-                        if let Some(hooks) = _monitors.get(&id) {
+                        if let Some(hooks) = monitors.get(&id) {
                             let ctx = HookContext {
                                 task_id: id.clone(),
-                                workdir: _task_workdirs[&id].clone(),
+                                workdir: task_workdirs[&id].clone(),
                                 state: "running".to_string(),
                                 exit_code: None,
                             };
