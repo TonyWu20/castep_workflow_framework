@@ -6,6 +6,7 @@ use bon::bon;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use workflow_utils::{HookContext, HookTrigger};
 
 pub struct Workflow {
     pub name: String,
@@ -79,6 +80,18 @@ impl Workflow {
             .map(|(id, t)| (id.clone(), Arc::clone(&t.execute_fn)))
             .collect();
 
+        let _monitors: HashMap<String, Vec<workflow_utils::MonitoringHook>> = self
+            .tasks
+            .iter()
+            .map(|(id, t)| (id.clone(), t.monitors.clone()))
+            .collect();
+
+        let _task_workdirs: HashMap<String, std::path::PathBuf> = self
+            .tasks
+            .iter()
+            .map(|(id, t)| (id.clone(), t.workdir.clone()))
+            .collect();
+
         let mut handles: HashMap<String, std::thread::JoinHandle<anyhow::Result<()>>> =
             HashMap::new();
 
@@ -89,20 +102,48 @@ impl Workflow {
                 .cloned()
                 .collect();
             for id in finished {
+                // task threads don't hold the lock when they panic — poisoning is not expected
+                let mut s = state.lock().unwrap();
                 let result = handles
                     .remove(&id)
-                    .unwrap()
+                    .expect("id was just confirmed present in finished list")
                     .join()
                     .unwrap_or_else(|_| Err(anyhow::anyhow!("thread panicked")));
-                let mut s = state.lock().unwrap();
                 match result {
-                    Ok(()) => s.mark_completed(&id),
-                    Err(e) => s.mark_failed(&id, e.to_string()),
+                    Ok(()) => {
+                        s.mark_completed(&id);
+                        if let Some(hooks) = _monitors.get(&id) {
+                            let ctx = HookContext {
+                                task_id: id.clone(),
+                                workdir: _task_workdirs[&id].clone(),
+                                state: "completed".to_string(),
+                                exit_code: Some(0),
+                            };
+                            for hook in hooks.iter().filter(|h| matches!(h.trigger, HookTrigger::OnComplete)) {
+                                let _ = hook.execute(&ctx);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        s.mark_failed(&id, e.to_string());
+                        if let Some(hooks) = _monitors.get(&id) {
+                            let ctx = HookContext {
+                                task_id: id.clone(),
+                                workdir: _task_workdirs[&id].clone(),
+                                state: "failed".to_string(),
+                                exit_code: None,
+                            };
+                            for hook in hooks.iter().filter(|h| matches!(h.trigger, HookTrigger::OnFailure)) {
+                                let _ = hook.execute(&ctx);
+                            }
+                        }
+                    }
                 }
                 s.save(&self.state_path)?;
             }
 
             {
+                // task threads don't hold the lock when they panic — poisoning is not expected
                 let mut s = state.lock().unwrap();
                 let mut changed = true;
                 while changed {
@@ -137,6 +178,7 @@ impl Workflow {
                 s.save(&self.state_path)?;
             }
 
+            // task threads don't hold the lock when they panic — poisoning is not expected
             let statuses: HashMap<String, TaskStatus> = state.lock().unwrap().tasks.clone();
             let done_set: HashSet<String> = statuses
                 .iter()
@@ -157,7 +199,19 @@ impl Workflow {
                 }
                 if matches!(statuses.get(&id), Some(TaskStatus::Pending)) {
                     if let Some(f) = fns.get(&id).cloned() {
+                        // task threads don't hold the lock when they panic — poisoning is not expected
                         state.lock().unwrap().mark_running(&id);
+                        if let Some(hooks) = _monitors.get(&id) {
+                            let ctx = HookContext {
+                                task_id: id.clone(),
+                                workdir: _task_workdirs[&id].clone(),
+                                state: "running".to_string(),
+                                exit_code: None,
+                            };
+                            for hook in hooks.iter().filter(|h| matches!(h.trigger, HookTrigger::OnStart)) {
+                                let _ = hook.execute(&ctx);
+                            }
+                        }
                         let handle = std::thread::spawn(move || f());
                         handles.insert(id, handle);
                     }
@@ -165,6 +219,7 @@ impl Workflow {
             }
 
             let all_done = {
+                // task threads don't hold the lock when they panic — poisoning is not expected
                 let s = state.lock().unwrap();
                 dag.task_ids().all(|id| {
                     matches!(
@@ -196,12 +251,6 @@ impl Workflow {
         }
         Ok(dag)
     }
-}
-
-fn num_cpus() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
 }
 
 #[cfg(test)]
