@@ -33,6 +33,11 @@ impl Task {
         self.monitors.push(hook);
         self
     }
+
+    pub fn workdir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.workdir = path.into();
+        self
+    }
 }
 
 #[cfg(test)]
