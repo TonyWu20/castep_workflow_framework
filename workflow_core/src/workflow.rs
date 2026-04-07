@@ -57,7 +57,10 @@ impl Workflow {
 
     /// Resume a workflow by name, loading prior state from `state_dir` when `run()` is called.
     pub fn resume(name: impl Into<String>, state_dir: impl Into<PathBuf>) -> Result<Self> {
-        Self::builder().name(name.into()).state_dir(state_dir.into()).build()
+        Self::builder()
+            .name(name.into())
+            .state_dir(state_dir.into())
+            .build()
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -117,7 +120,10 @@ impl Workflow {
                                 state: "completed".to_string(),
                                 exit_code: Some(0),
                             };
-                            for hook in hooks.iter().filter(|h| matches!(h.trigger, HookTrigger::OnComplete)) {
+                            for hook in hooks
+                                .iter()
+                                .filter(|h| matches!(h.trigger, HookTrigger::OnComplete))
+                            {
                                 let _ = hook.execute(&ctx);
                             }
                         }
@@ -131,7 +137,10 @@ impl Workflow {
                                 state: "failed".to_string(),
                                 exit_code: None,
                             };
-                            for hook in hooks.iter().filter(|h| matches!(h.trigger, HookTrigger::OnFailure)) {
+                            for hook in hooks
+                                .iter()
+                                .filter(|h| matches!(h.trigger, HookTrigger::OnFailure))
+                            {
                                 let _ = hook.execute(&ctx);
                             }
                         }
@@ -141,7 +150,6 @@ impl Workflow {
             }
 
             {
-                // task threads don't hold the lock when they panic — poisoning is not expected
                 let mut s = state.lock().unwrap();
                 let mut changed = true;
                 while changed {
@@ -176,7 +184,6 @@ impl Workflow {
                 s.save(&self.state_path)?;
             }
 
-            // task threads don't hold the lock when they panic — poisoning is not expected
             let statuses: HashMap<String, TaskStatus> = state.lock().unwrap().tasks.clone();
             let done_set: HashSet<String> = statuses
                 .iter()
@@ -197,7 +204,6 @@ impl Workflow {
                 }
                 if matches!(statuses.get(&id), Some(TaskStatus::Pending)) {
                     if let Some(f) = fns.get(&id).cloned() {
-                        // task threads don't hold the lock when they panic — poisoning is not expected
                         state.lock().unwrap().mark_running(&id);
                         if let Some(hooks) = monitors.get(&id) {
                             let ctx = HookContext {
@@ -206,7 +212,10 @@ impl Workflow {
                                 state: "running".to_string(),
                                 exit_code: None,
                             };
-                            for hook in hooks.iter().filter(|h| matches!(h.trigger, HookTrigger::OnStart)) {
+                            for hook in hooks
+                                .iter()
+                                .filter(|h| matches!(h.trigger, HookTrigger::OnStart))
+                            {
                                 let _ = hook.execute(&ctx);
                             }
                         }
@@ -353,20 +362,22 @@ mod tests {
             .build()
             .unwrap();
         wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))?;
-        assert!(wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(()))).is_err());
+        assert!(wf
+            .add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))
+            .is_err());
         Ok(())
     }
 
     #[test]
     fn valid_dependency_add() -> anyhow::Result<()> {
-        let dir = tempdir().unwrap();
         let mut wf = Workflow::builder()
             .name("wf_dep".to_string())
-            .state_dir(dir.path().to_path_buf())
             .build()
             .unwrap();
         wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))?;
-        assert!(wf.add_task(Task::new("b", || Ok::<(), anyhow::Error>(())).depends_on("a")).is_ok());
+        assert!(wf
+            .add_task(Task::new("b", || Ok::<(), anyhow::Error>(())).depends_on("a"))
+            .is_ok());
         Ok(())
     }
 
@@ -406,11 +417,13 @@ mod tests {
             .state_dir(dir.path().to_path_buf())
             .build()
             .unwrap();
-        wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(()))).unwrap();
+        wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))
+            .unwrap();
         wf.run().unwrap();
 
         let mut wf2 = Workflow::resume("wf_resume", dir.path()).unwrap();
-        wf2.add_task(Task::new("a", || Err(anyhow::anyhow!("should not re-run")))).unwrap();
+        wf2.add_task(Task::new("a", || Err(anyhow::anyhow!("should not re-run"))))
+            .unwrap();
         wf2.run().unwrap();
         let state = WorkflowState::load(dir.path().join(".wf_resume.workflow.json")).unwrap();
         assert!(matches!(state.tasks["a"], TaskStatus::Completed));
