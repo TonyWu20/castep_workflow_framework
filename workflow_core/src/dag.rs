@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{bail, Result};
 use petgraph::algo;
 use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::visit::Topo;
 
 pub struct Dag {
     graph: DiGraph<String, ()>,
@@ -30,7 +29,7 @@ impl Dag {
         let &t = self.node_map.get(to)
             .ok_or_else(|| anyhow::anyhow!("unknown task: {to}"))?;
         let eid = self.graph.add_edge(f, t, ());
-        if algo::is_cyclic_directed(&self.graph) {
+        if algo::toposort(&self.graph, None).is_err() {
             self.graph.remove_edge(eid);
             bail!("adding edge {from}→{to} would create a cycle");
         }
@@ -38,12 +37,11 @@ impl Dag {
     }
 
     pub fn topological_order(&self) -> Vec<String> {
-        let mut topo = Topo::new(&self.graph);
-        let mut order = Vec::new();
-        while let Some(ni) = topo.next(&self.graph) {
-            order.push(self.graph[ni].clone());
-        }
-        order
+        algo::toposort(&self.graph, None)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|ni| self.graph[ni].clone())
+            .collect()
     }
 
     /// Tasks not in `completed` whose every incoming neighbour is in `completed`.
