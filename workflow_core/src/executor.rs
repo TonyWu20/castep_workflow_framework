@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use crate::schema::ConcreteTask;
 
 /// An opaque handle to a submitted job — a SLURM job ID, local PID, etc.
 #[derive(Debug, Clone)]
@@ -27,4 +28,13 @@ pub trait Executor: Send + Sync {
     async fn submit(&self) -> Result<JobHandle>;
     async fn poll(&self, handle: &JobHandle) -> Result<JobStatus>;
     async fn cancel(&self, handle: &JobHandle) -> Result<()>;
+}
+
+/// Factory trait for creating executors from task definitions.
+pub trait ExecutorFactory: Send + Sync {
+    /// Returns the code name for this factory (e.g., "castep", "lammps").
+    fn code_name(&self) -> &'static str;
+
+    /// Builds an executor for the given task.
+    fn build(&self, task: &ConcreteTask) -> Result<Box<dyn Executor>>;
 }

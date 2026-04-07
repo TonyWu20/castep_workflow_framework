@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use anyhow::{bail, Result};
+use bon::bon;
 use crate::dag::Dag;
 use crate::state::{TaskStatus, WorkflowState};
 use crate::task::Task;
@@ -13,15 +14,49 @@ pub struct Workflow {
     max_parallel: usize,
 }
 
+#[bon]
 impl Workflow {
-    pub fn new(name: impl Into<String>) -> Result<Self> {
-        Self::with_state_dir(name, ".")
-    }
+    /// Creates a new Workflow instance using the builder pattern.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use workflow_core::Workflow;
+    ///
+    /// // Simple construction
+    /// let wf = Workflow::builder().name("my_workflow".to_string()).build().unwrap();
+    ///
+    /// // With configuration
+    /// let wf = Workflow::builder()
+    ///     .name("my_workflow".to_string())
+    ///     .state_dir(std::path::PathBuf::from("./runs"))
+    ///     .max_parallel(8)
+    ///     .build().unwrap();
+    /// ```
+    #[builder]
+    pub fn new(
+        name: String,
+        #[builder(default = PathBuf::from("."))]
+        state_dir: PathBuf,
+        max_parallel: Option<usize>,
+    ) -> Result<Self> {
+        let max_parallel = max_parallel.unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+        });
 
-    pub fn with_state_dir(name: impl Into<String>, dir: impl Into<PathBuf>) -> Result<Self> {
-        let name = name.into();
-        let state_path = dir.into().join(format!(".{}.workflow.json", name));
-        Ok(Self { name, tasks: HashMap::new(), state_path, max_parallel: num_cpus() })
+        if max_parallel == 0 {
+            bail!("max_parallel must be at least 1");
+        }
+
+        let state_path = state_dir.join(format!(".{}.workflow.json", name));
+        Ok(Self {
+            name,
+            tasks: HashMap::new(),
+            state_path,
+            max_parallel,
+        })
     }
 
     pub fn add_task(&mut self, task: Task) -> Result<()> {
@@ -37,7 +72,9 @@ impl Workflow {
     }
 
     pub fn resume(name: impl Into<String>) -> Result<Self> {
-        Self::new(name)
+        Self::builder()
+            .name(name.into())
+            .build()
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -149,8 +186,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let flag = Arc::new(Mutex::new(false));
         let flag2 = flag.clone();
-        let mut wf = Workflow::with_state_dir("wf_single", dir.path()).unwrap();
-        wf.add_task(Task::new("a", move || { *flag2.lock().unwrap() = true; Ok(()) })).unwrap();
+        let mut wf = Workflow::builder()
+            .name("wf_single".to_string())
+            .state_dir(dir.path().to_path_buf())
+            .build()
+            .unwrap();
+        wf.add_task(Task::new("a", move || { *flag2.lock().unwrap() = true; Ok(()) }))
+            .unwrap();
         wf.run().unwrap();
         assert!(*flag.lock().unwrap());
     }
@@ -161,9 +203,16 @@ mod tests {
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
         let l1 = log.clone();
         let l2 = log.clone();
-        let mut wf = Workflow::with_state_dir("wf_chain", dir.path()).unwrap();
-        wf.add_task(Task::new("a", move || { l1.lock().unwrap().push("a".into()); Ok(()) })).unwrap();
-        wf.add_task(Task::new("b", move || { l2.lock().unwrap().push("b".into()); Ok(()) }).depends_on("a")).unwrap();
+        let mut wf = Workflow::builder()
+            .name("wf_chain".to_string())
+            .state_dir(dir.path().to_path_buf())
+            .build()
+            .unwrap();
+        wf.add_task(Task::new("a", move || { l1.lock().unwrap().push("a".into()); Ok(()) }))
+            .unwrap();
+        wf.add_task(Task::new("b", move || { l2.lock().unwrap().push("b".into()); Ok(()) })
+            .depends_on("a"))
+            .unwrap();
         wf.run().unwrap();
         assert_eq!(*log.lock().unwrap(), vec!["a", "b"]);
     }
@@ -171,7 +220,11 @@ mod tests {
     #[test]
     fn failed_task_skips_dependent() {
         let dir = tempdir().unwrap();
-        let mut wf = Workflow::with_state_dir("wf_skip", dir.path()).unwrap();
+        let mut wf = Workflow::builder()
+            .name("wf_skip".to_string())
+            .state_dir(dir.path().to_path_buf())
+            .build()
+            .unwrap();
         wf.add_task(Task::new("a", || Err(anyhow::anyhow!("boom")))).unwrap();
         wf.add_task(Task::new("b", || Ok(())).depends_on("a")).unwrap();
         wf.run().unwrap();
@@ -182,7 +235,11 @@ mod tests {
     #[test]
     fn dry_run_returns_topo_order() {
         let dir = tempdir().unwrap();
-        let mut wf = Workflow::with_state_dir("wf_dry", dir.path()).unwrap();
+        let mut wf = Workflow::builder()
+            .name("wf_dry".to_string())
+            .state_dir(dir.path().to_path_buf())
+            .build()
+            .unwrap();
         wf.add_task(Task::new("a", || Ok(()))).unwrap();
         wf.add_task(Task::new("b", || Ok(())).depends_on("a")).unwrap();
         let order = wf.dry_run().unwrap();
@@ -194,8 +251,34 @@ mod tests {
     #[test]
     fn duplicate_task_id_errors() {
         let dir = tempdir().unwrap();
-        let mut wf = Workflow::with_state_dir("wf_dup", dir.path()).unwrap();
+        let mut wf = Workflow::builder()
+            .name("wf_dup".to_string())
+            .state_dir(dir.path().to_path_buf())
+            .build()
+            .unwrap();
         wf.add_task(Task::new("a", || Ok(()))).unwrap();
         assert!(wf.add_task(Task::new("a", || Ok(()))).is_err());
+    }
+
+    #[test]
+    fn builder_with_custom_max_parallel() {
+        let wf = Workflow::builder()
+            .name("test".to_string())
+            .max_parallel(4)
+            .build()
+            .unwrap();
+        assert_eq!(wf.max_parallel, 4);
+    }
+
+    #[test]
+    fn builder_validation_zero_parallelism() {
+        let result = Workflow::builder().name("test".to_string()).max_parallel(0).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resume_uses_builder() {
+        let wf = Workflow::resume("test").unwrap();
+        assert_eq!(wf.name, "test");
     }
 }
