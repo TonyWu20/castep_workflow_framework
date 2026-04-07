@@ -226,7 +226,6 @@ impl Workflow {
             }
 
             let all_done = {
-                // task threads don't hold the lock when they panic — poisoning is not expected
                 let s = state.lock().unwrap();
                 dag.task_ids().all(|id| {
                     matches!(
