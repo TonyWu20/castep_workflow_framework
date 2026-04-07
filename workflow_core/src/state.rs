@@ -7,9 +7,12 @@ use serde::{Deserialize, Serialize};
 pub enum TaskStatus {
     Pending,
     Running,
-    Completed { exit_code: i32 },
+    Completed,
     Failed { error: String },
+    /// Explicitly skipped by the user or workflow logic.
     Skipped,
+    /// Skipped because an upstream dependency failed; eligible for retry after fixing upstream.
+    SkippedDueToDependencyFailure,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,7 +39,7 @@ impl WorkflowState {
     }
 
     pub fn is_completed(&self, id: &str) -> bool {
-        matches!(self.tasks.get(id), Some(TaskStatus::Completed { .. }))
+        matches!(self.tasks.get(id), Some(TaskStatus::Completed))
     }
 
     pub fn mark_running(&mut self, id: &str) {
@@ -44,8 +47,8 @@ impl WorkflowState {
         self.last_updated = now_iso8601();
     }
 
-    pub fn mark_completed(&mut self, id: &str, exit_code: i32) {
-        self.tasks.insert(id.to_owned(), TaskStatus::Completed { exit_code });
+    pub fn mark_completed(&mut self, id: &str) {
+        self.tasks.insert(id.to_owned(), TaskStatus::Completed);
         self.last_updated = now_iso8601();
     }
 
@@ -56,6 +59,11 @@ impl WorkflowState {
 
     pub fn mark_skipped(&mut self, id: &str) {
         self.tasks.insert(id.to_owned(), TaskStatus::Skipped);
+        self.last_updated = now_iso8601();
+    }
+
+    pub fn mark_skipped_due_to_dep_failure(&mut self, id: &str) {
+        self.tasks.insert(id.to_owned(), TaskStatus::SkippedDueToDependencyFailure);
         self.last_updated = now_iso8601();
     }
 }
@@ -90,7 +98,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("state.json");
         let mut s = WorkflowState::new("test");
-        s.mark_completed("a", 0);
+        s.mark_completed("a");
         s.save(&path).unwrap();
         let loaded = WorkflowState::load(&path).unwrap();
         assert!(loaded.is_completed("a"));
@@ -107,7 +115,7 @@ mod tests {
         let mut s = WorkflowState::new("w");
         s.mark_running("a");
         assert!(!s.is_completed("a"));
-        s.mark_completed("a", 0);
+        s.mark_completed("a");
         assert!(s.is_completed("a"));
     }
 }

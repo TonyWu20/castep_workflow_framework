@@ -9,14 +9,18 @@ use crate::task::Task;
 pub struct Workflow {
     pub name: String,
     tasks: HashMap<String, Task>,
-    pub state_path: PathBuf,
+    state_path: PathBuf,
     max_parallel: usize,
 }
 
 impl Workflow {
     pub fn new(name: impl Into<String>) -> Result<Self> {
+        Self::with_state_dir(name, ".")
+    }
+
+    pub fn with_state_dir(name: impl Into<String>, dir: impl Into<PathBuf>) -> Result<Self> {
         let name = name.into();
-        let state_path = PathBuf::from(format!(".{}.workflow.json", name));
+        let state_path = dir.into().join(format!(".{}.workflow.json", name));
         Ok(Self { name, tasks: HashMap::new(), state_path, max_parallel: num_cpus() })
     }
 
@@ -64,7 +68,7 @@ impl Workflow {
                     .join().unwrap_or_else(|_| Err(anyhow::anyhow!("thread panicked")));
                 let mut s = state.lock().unwrap();
                 match result {
-                    Ok(()) => s.mark_completed(&id, 0),
+                    Ok(()) => s.mark_completed(&id),
                     Err(e) => s.mark_failed(&id, e.to_string()),
                 }
                 s.save(&self.state_path)?;
@@ -79,21 +83,21 @@ impl Workflow {
                         .filter(|id| matches!(s.tasks.get(*id), Some(TaskStatus::Pending)))
                         .filter(|id| self.tasks.get(*id).map(|t|
                             t.dependencies.iter().any(|dep|
-                                matches!(s.tasks.get(dep.as_str()), Some(TaskStatus::Failed { .. }) | Some(TaskStatus::Skipped))
+                                matches!(s.tasks.get(dep.as_str()), Some(TaskStatus::Failed { .. }) | Some(TaskStatus::Skipped) | Some(TaskStatus::SkippedDueToDependencyFailure))
                             )
                         ).unwrap_or(false))
                         .cloned().collect();
                     if !to_skip.is_empty() {
                         changed = true;
-                        for id in to_skip { s.mark_skipped(&id); }
-                        s.save(&self.state_path)?;
+                        for id in to_skip { s.mark_skipped_due_to_dep_failure(&id); }
                     }
                 }
+                s.save(&self.state_path)?;
             }
 
             let statuses: HashMap<String, TaskStatus> = state.lock().unwrap().tasks.clone();
             let done_set: HashSet<String> = statuses.iter()
-                .filter(|(_, v)| matches!(v, TaskStatus::Completed { .. } | TaskStatus::Skipped))
+                .filter(|(_, v)| matches!(v, TaskStatus::Completed | TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure))
                 .map(|(k, _)| k.clone()).collect();
 
             for id in dag.ready_tasks(&done_set) {
@@ -111,7 +115,7 @@ impl Workflow {
                 let s = state.lock().unwrap();
                 dag.task_ids().all(|id| matches!(
                     s.tasks.get(id),
-                    Some(TaskStatus::Completed { .. }) | Some(TaskStatus::Failed { .. }) | Some(TaskStatus::Skipped)
+                    Some(TaskStatus::Completed) | Some(TaskStatus::Failed { .. }) | Some(TaskStatus::Skipped) | Some(TaskStatus::SkippedDueToDependencyFailure)
                 ))
             };
             if all_done && handles.is_empty() { return Ok(()); }
@@ -138,45 +142,47 @@ fn num_cpus() -> usize {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+    use tempfile::tempdir;
 
     #[test]
     fn single_task_completes() {
+        let dir = tempdir().unwrap();
         let flag = Arc::new(Mutex::new(false));
         let flag2 = flag.clone();
-        let mut wf = Workflow::new("wf_single").unwrap();
+        let mut wf = Workflow::with_state_dir("wf_single", dir.path()).unwrap();
         wf.add_task(Task::new("a", move || { *flag2.lock().unwrap() = true; Ok(()) })).unwrap();
         wf.run().unwrap();
         assert!(*flag.lock().unwrap());
-        let _ = std::fs::remove_file(&wf.state_path);
     }
 
     #[test]
     fn chain_respects_order() {
+        let dir = tempdir().unwrap();
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
         let l1 = log.clone();
         let l2 = log.clone();
-        let mut wf = Workflow::new("wf_chain").unwrap();
+        let mut wf = Workflow::with_state_dir("wf_chain", dir.path()).unwrap();
         wf.add_task(Task::new("a", move || { l1.lock().unwrap().push("a".into()); Ok(()) })).unwrap();
         wf.add_task(Task::new("b", move || { l2.lock().unwrap().push("b".into()); Ok(()) }).depends_on("a")).unwrap();
         wf.run().unwrap();
         assert_eq!(*log.lock().unwrap(), vec!["a", "b"]);
-        let _ = std::fs::remove_file(&wf.state_path);
     }
 
     #[test]
     fn failed_task_skips_dependent() {
-        let mut wf = Workflow::new("wf_skip").unwrap();
+        let dir = tempdir().unwrap();
+        let mut wf = Workflow::with_state_dir("wf_skip", dir.path()).unwrap();
         wf.add_task(Task::new("a", || Err(anyhow::anyhow!("boom")))).unwrap();
         wf.add_task(Task::new("b", || Ok(())).depends_on("a")).unwrap();
         wf.run().unwrap();
-        let state = WorkflowState::load(&wf.state_path).unwrap();
-        assert!(matches!(state.tasks["b"], TaskStatus::Skipped));
-        let _ = std::fs::remove_file(&wf.state_path);
+        let state = WorkflowState::load(dir.path().join(".wf_skip.workflow.json")).unwrap();
+        assert!(matches!(state.tasks["b"], TaskStatus::SkippedDueToDependencyFailure));
     }
 
     #[test]
     fn dry_run_returns_topo_order() {
-        let mut wf = Workflow::new("wf_dry").unwrap();
+        let dir = tempdir().unwrap();
+        let mut wf = Workflow::with_state_dir("wf_dry", dir.path()).unwrap();
         wf.add_task(Task::new("a", || Ok(()))).unwrap();
         wf.add_task(Task::new("b", || Ok(())).depends_on("a")).unwrap();
         let order = wf.dry_run().unwrap();
@@ -187,7 +193,8 @@ mod tests {
 
     #[test]
     fn duplicate_task_id_errors() {
-        let mut wf = Workflow::new("wf_dup").unwrap();
+        let dir = tempdir().unwrap();
+        let mut wf = Workflow::with_state_dir("wf_dup", dir.path()).unwrap();
         wf.add_task(Task::new("a", || Ok(()))).unwrap();
         assert!(wf.add_task(Task::new("a", || Ok(()))).is_err());
     }
