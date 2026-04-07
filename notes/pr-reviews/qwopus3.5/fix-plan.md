@@ -1,3 +1,15 @@
+## v3 (2026-04-08)
+
+# Review: latest commit `3d42398` — Approve
+
+All three stated fixes verified correct. No issues found.
+
+- Issue 1 (workspace deps): `bon` and `serde_json` now use `{ workspace = true }` ✓
+- Issue 2 (duplicate comments): single canonical instance at line 106; `all_done` block comment removed ✓
+- Issue 3 (tempdir in test): `valid_dependency_add` no longer allocates tempdir ✓
+
+---
+
 ## v2 (2026-04-08)
 
 # Fix Plan: qwopus3.5 → main
