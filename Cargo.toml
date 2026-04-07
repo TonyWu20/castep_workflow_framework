@@ -1,9 +1,6 @@
 [workspace]
 members = [
     "workflow_core",
-    "castep_adapter",
-    "lammps_adapter",
-    "workflow_cli",
     "workflow_utils",
 ]
 resolver = "2"
