@@ -4,7 +4,7 @@
 
 ## Issue 1: `bon` and `serde_json` bypass workspace dependency management
 
-**File:** `workflow_core/Cargo.toml`
+**File:** `workflow_core/Cargo.toml:10-11`
 **Severity:** Minor
 
 **Before:**
@@ -25,10 +25,10 @@ serde_json = { workspace = true }
 
 ## Issue 2: Repeated lock comment in `run()`
 
-**File:** `workflow_core/src/workflow.rs` — `run()` method
+**File:** `workflow_core/src/workflow.rs:103,144,179,200,220` — `run()` method
 **Severity:** Minor
 
-The comment `// task threads don't hold the lock when they panic — poisoning is not expected` appears 5 times, once before every `lock().unwrap()` call. Keep one instance at the top of the loop body; remove the other 4.
+The comment `// task threads don't hold the lock when they panic — poisoning is not expected` appears 5 times (lines 103, 144, 179, 200, 220), once before every `lock().unwrap()` call. Keep one instance at the top of the loop body; remove the other 4.
 
 **Verification:** `cargo clippy -p workflow_core` clean; `cargo test -p workflow_core` passes.
 
@@ -36,7 +36,7 @@ The comment `// task threads don't hold the lock when they panic — poisoning i
 
 ## Issue 3: `valid_dependency_add` test allocates unnecessary tempdir
 
-**File:** `workflow_core/src/workflow.rs` — `tests::valid_dependency_add`
+**File:** `workflow_core/src/workflow.rs:361-375` — `tests::valid_dependency_add`
 **Severity:** Minor
 
 The test only calls `add_task` and never touches the filesystem. The `tempdir` is dead setup.
