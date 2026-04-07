@@ -7,7 +7,7 @@ pub mod workflow;
 
 pub mod schema;
 
-pub use executor::{Executor, ExecutorFactory, JobHandle, JobStatus};
-pub use task::Task;
-pub use workflow::Workflow;
-pub use state::{TaskStatus, WorkflowState};
+// Re-export from impl crates (for backward compat with workflow_cli)
+pub use dag::{ExecutorRegistry, ExecutorRegistryBuilder, Pipeline, Scheduler};
+pub use state::StateDb;
+pub use schema::{WorkflowDef, expand_sweeps};
