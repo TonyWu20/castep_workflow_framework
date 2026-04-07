@@ -1,9 +1,0 @@
-[package]
-name = "lammps_adapter"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-workflow_core = { workspace = true }
-anyhow = { workspace = true }
-async-trait = { workspace = true }
