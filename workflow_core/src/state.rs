@@ -1,161 +1,113 @@
-//! Task state machine and SQLite-backed persistence.
-
+use std::collections::HashMap;
+use std::path::Path;
 use anyhow::Result;
-use tokio_rusqlite::Connection;
-use rusqlite::params;
-use crate::executor::JobHandle;
+use serde::{Deserialize, Serialize};
 
-/// Lifecycle state of a single task in the pipeline.
-#[derive(Debug, Clone, PartialEq)]
-pub enum TaskState {
-    /// Waiting for dependencies to complete.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TaskStatus {
     Pending,
-    /// All dependencies completed; ready to submit.
-    Ready,
-    /// Submitted to the executor backend; awaiting confirmation it is running.
-    Submitted,
-    /// Confirmed running on the backend.
     Running,
-    /// Finished with exit code 0.
-    Completed,
-    /// Finished with a non-zero exit code.
-    Failed(i32),
-    /// Skipped because all upstream paths failed or were skipped.
+    Completed { exit_code: i32 },
+    Failed { error: String },
     Skipped,
-    /// Execution exceeded time limit.
-    TimedOut,
 }
 
-impl TaskState {
-    fn to_db(&self) -> (String, Option<i32>) {
-        match self {
-            TaskState::Pending    => ("Pending".into(), None),
-            TaskState::Ready      => ("Ready".into(), None),
-            TaskState::Submitted  => ("Submitted".into(), None),
-            TaskState::Running    => ("Running".into(), None),
-            TaskState::Completed  => ("Completed".into(), None),
-            TaskState::Failed(c)  => ("Failed".into(), Some(*c)),
-            TaskState::Skipped    => ("Skipped".into(), None),
-            TaskState::TimedOut   => ("TimedOut".into(), None),
-        }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkflowState {
+    pub workflow_name: String,
+    pub created_at: String,
+    pub last_updated: String,
+    pub tasks: HashMap<String, TaskStatus>,
+}
+
+impl WorkflowState {
+    pub fn new(name: &str) -> Self {
+        let now = now_iso8601();
+        Self { workflow_name: name.to_owned(), created_at: now.clone(), last_updated: now, tasks: HashMap::new() }
     }
 
-    fn from_db(s: &str, code: Option<i32>) -> Self {
-        match s {
-            "Ready"     => TaskState::Ready,
-            "Submitted" => TaskState::Submitted,
-            "Running"   => TaskState::Running,
-            "Completed" => TaskState::Completed,
-            "Failed"    => TaskState::Failed(code.unwrap_or(-1)),
-            "Skipped"   => TaskState::Skipped,
-            "TimedOut"  => TaskState::TimedOut,
-            _           => TaskState::Pending,
-        }
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+    }
+
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
+        std::fs::write(path, serde_json::to_vec_pretty(self)?)?;
+        Ok(())
+    }
+
+    pub fn is_completed(&self, id: &str) -> bool {
+        matches!(self.tasks.get(id), Some(TaskStatus::Completed { .. }))
+    }
+
+    pub fn mark_running(&mut self, id: &str) {
+        self.tasks.insert(id.to_owned(), TaskStatus::Running);
+        self.last_updated = now_iso8601();
+    }
+
+    pub fn mark_completed(&mut self, id: &str, exit_code: i32) {
+        self.tasks.insert(id.to_owned(), TaskStatus::Completed { exit_code });
+        self.last_updated = now_iso8601();
+    }
+
+    pub fn mark_failed(&mut self, id: &str, error: String) {
+        self.tasks.insert(id.to_owned(), TaskStatus::Failed { error });
+        self.last_updated = now_iso8601();
+    }
+
+    pub fn mark_skipped(&mut self, id: &str) {
+        self.tasks.insert(id.to_owned(), TaskStatus::Skipped);
+        self.last_updated = now_iso8601();
     }
 }
 
-/// A snapshot of a task's runtime state, including its executor handle.
-#[derive(Debug, Clone)]
-pub struct TaskRecord {
-    /// Unique task ID matching the expanded TOML definition.
-    pub id: String,
-    /// Current lifecycle state.
-    pub state: TaskState,
-    /// Executor handle, present once the task has been submitted.
-    pub handle: Option<JobHandle>,
-    /// Unix timestamp when the task was submitted.
-    pub submitted_at: Option<u64>,
-}
-
-/// SQLite-backed store for [`TaskRecord`]s.
-///
-/// Written to `.workflow_state.db` alongside the workflow TOML. On resume,
-/// tasks already in [`TaskState::Completed`] are skipped automatically.
-pub struct StateDb {
-    conn: Connection,
-}
-
-impl StateDb {
-    /// Open (or create) the state database at `path`, initialising the schema.
-    pub async fn open(path: &std::path::Path) -> Result<Self> {
-        let conn = Connection::open(path.to_path_buf()).await?;
-        conn.call(|c| {
-            c.execute_batch(
-                "CREATE TABLE IF NOT EXISTS tasks (
-                    id TEXT PRIMARY KEY,
-                    state TEXT NOT NULL,
-                    exit_code INTEGER,
-                    handle TEXT
-                );"
-            )?;
-            match c.execute("ALTER TABLE tasks ADD COLUMN submitted_at INTEGER", []) {
-                Ok(_) => Ok(()),
-                Err(rusqlite::Error::SqliteFailure(e, _)) if e.extended_code == 1 => Ok(()),
-                Err(e) => Err(e),
-            }?;
-            Ok(())
-        }).await?;
-        Ok(Self { conn })
-    }
-
-    /// Load all persisted task records.
-    pub async fn load(&self) -> Result<Vec<TaskRecord>> {
-        self.conn.call(|c| {
-            let mut stmt = c.prepare(
-                "SELECT id, state, exit_code, handle, submitted_at FROM tasks"
-            )?;
-            let rows = stmt.query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<i32>>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, Option<i64>>(4)?,
-                ))
-            })?;
-            rows.map(|r| {
-                let (id, state_str, code, handle_raw, submitted_at) = r?;
-                Ok(TaskRecord {
-                    id,
-                    state: TaskState::from_db(&state_str, code),
-                    handle: handle_raw.map(|raw| JobHandle { raw }),
-                    submitted_at: submitted_at.map(|t| t as u64),
-                })
-            }).collect()
-        }).await.map_err(|e| anyhow::anyhow!(e))
-    }
-
-    /// Insert or update a task record.
-    pub async fn upsert(&self, record: &TaskRecord) -> Result<()> {
-        let (state_str, code) = record.state.to_db();
-        let id = record.id.clone();
-        let handle_raw = record.handle.as_ref().map(|h| h.raw.clone());
-        let submitted_at = record.submitted_at.map(|t| t as i64);
-        self.conn.call(move |c| {
-            c.execute(
-                "INSERT INTO tasks (id, state, exit_code, handle, submitted_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT(id) DO UPDATE SET state=?2, exit_code=?3, handle=?4, submitted_at=?5",
-                params![
-                    id,
-                    state_str,
-                    code,
-                    handle_raw,
-                    submitted_at,
-                ],
-            )?;
-            Ok(())
-        }).await.map_err(|e| anyhow::anyhow!(e))
-    }
+fn now_iso8601() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let s = secs % 60;
+    let m = (secs / 60) % 60;
+    let h = (secs / 3600) % 24;
+    let days = secs / 86400;
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
-    fn state_db_is_send() {
-        fn assert_send<T: Send>() {}
-        assert_send::<StateDb>();
+    fn round_trip_json() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let mut s = WorkflowState::new("test");
+        s.mark_completed("a", 0);
+        s.save(&path).unwrap();
+        let loaded = WorkflowState::load(&path).unwrap();
+        assert!(loaded.is_completed("a"));
+        assert_eq!(loaded.workflow_name, "test");
+    }
+
+    #[test]
+    fn load_missing_errors() {
+        assert!(WorkflowState::load("/nonexistent/path.json").is_err());
+    }
+
+    #[test]
+    fn status_transitions() {
+        let mut s = WorkflowState::new("w");
+        s.mark_running("a");
+        assert!(!s.is_completed("a"));
+        s.mark_completed("a", 0);
+        assert!(s.is_completed("a"));
     }
 }

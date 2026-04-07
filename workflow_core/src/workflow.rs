@@ -1,0 +1,194 @@
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use anyhow::{bail, Result};
+use crate::dag::Dag;
+use crate::state::{TaskStatus, WorkflowState};
+use crate::task::Task;
+
+pub struct Workflow {
+    pub name: String,
+    tasks: HashMap<String, Task>,
+    pub state_path: PathBuf,
+    max_parallel: usize,
+}
+
+impl Workflow {
+    pub fn new(name: impl Into<String>) -> Result<Self> {
+        let name = name.into();
+        let state_path = PathBuf::from(format!(".{}.workflow.json", name));
+        Ok(Self { name, tasks: HashMap::new(), state_path, max_parallel: num_cpus() })
+    }
+
+    pub fn add_task(&mut self, task: Task) -> Result<()> {
+        if self.tasks.contains_key(&task.id) {
+            bail!("duplicate task id: {}", task.id);
+        }
+        self.tasks.insert(task.id.clone(), task);
+        Ok(())
+    }
+
+    pub fn dry_run(&self) -> Result<Vec<String>> {
+        Ok(self.build_dag()?.topological_order())
+    }
+
+    pub fn resume(name: impl Into<String>) -> Result<Self> {
+        Self::new(name)
+    }
+
+    pub fn run(&mut self) -> Result<()> {
+        let dag = self.build_dag()?;
+        let mut state = if self.state_path.exists() {
+            WorkflowState::load(&self.state_path)?
+        } else {
+            WorkflowState::new(&self.name)
+        };
+        for id in dag.task_ids() {
+            state.tasks.entry(id.clone()).or_insert(TaskStatus::Pending);
+        }
+        let state = Arc::new(Mutex::new(state));
+
+        let fns: HashMap<String, Arc<dyn Fn() -> anyhow::Result<()> + Send + Sync>> = self
+            .tasks.iter()
+            .map(|(id, t)| (id.clone(), Arc::clone(&t.execute_fn)))
+            .collect();
+
+        let mut handles: HashMap<String, std::thread::JoinHandle<anyhow::Result<()>>> = HashMap::new();
+
+        loop {
+            let finished: Vec<String> = handles.keys()
+                .filter(|id| handles[*id].is_finished())
+                .cloned().collect();
+            for id in finished {
+                let result = handles.remove(&id).unwrap()
+                    .join().unwrap_or_else(|_| Err(anyhow::anyhow!("thread panicked")));
+                let mut s = state.lock().unwrap();
+                match result {
+                    Ok(()) => s.mark_completed(&id, 0),
+                    Err(e) => s.mark_failed(&id, e.to_string()),
+                }
+                s.save(&self.state_path)?;
+            }
+
+            {
+                let mut s = state.lock().unwrap();
+                let mut changed = true;
+                while changed {
+                    changed = false;
+                    let to_skip: Vec<String> = dag.task_ids()
+                        .filter(|id| matches!(s.tasks.get(*id), Some(TaskStatus::Pending)))
+                        .filter(|id| self.tasks.get(*id).map(|t|
+                            t.dependencies.iter().any(|dep|
+                                matches!(s.tasks.get(dep.as_str()), Some(TaskStatus::Failed { .. }) | Some(TaskStatus::Skipped))
+                            )
+                        ).unwrap_or(false))
+                        .cloned().collect();
+                    if !to_skip.is_empty() {
+                        changed = true;
+                        for id in to_skip { s.mark_skipped(&id); }
+                        s.save(&self.state_path)?;
+                    }
+                }
+            }
+
+            let statuses: HashMap<String, TaskStatus> = state.lock().unwrap().tasks.clone();
+            let done_set: HashSet<String> = statuses.iter()
+                .filter(|(_, v)| matches!(v, TaskStatus::Completed { .. } | TaskStatus::Skipped))
+                .map(|(k, _)| k.clone()).collect();
+
+            for id in dag.ready_tasks(&done_set) {
+                if handles.len() >= self.max_parallel { break; }
+                if matches!(statuses.get(&id), Some(TaskStatus::Pending)) {
+                    if let Some(f) = fns.get(&id).cloned() {
+                        state.lock().unwrap().mark_running(&id);
+                        let handle = std::thread::spawn(move || f());
+                        handles.insert(id, handle);
+                    }
+                }
+            }
+
+            let all_done = {
+                let s = state.lock().unwrap();
+                dag.task_ids().all(|id| matches!(
+                    s.tasks.get(id),
+                    Some(TaskStatus::Completed { .. }) | Some(TaskStatus::Failed { .. }) | Some(TaskStatus::Skipped)
+                ))
+            };
+            if all_done && handles.is_empty() { return Ok(()); }
+
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+
+    fn build_dag(&self) -> Result<Dag> {
+        let mut dag = Dag::new();
+        for id in self.tasks.keys() { dag.add_node(id.clone())?; }
+        for task in self.tasks.values() {
+            for dep in &task.dependencies { dag.add_edge(dep, &task.id)?; }
+        }
+        Ok(dag)
+    }
+}
+
+fn num_cpus() -> usize {
+    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn single_task_completes() {
+        let flag = Arc::new(Mutex::new(false));
+        let flag2 = flag.clone();
+        let mut wf = Workflow::new("wf_single").unwrap();
+        wf.add_task(Task::new("a", move || { *flag2.lock().unwrap() = true; Ok(()) })).unwrap();
+        wf.run().unwrap();
+        assert!(*flag.lock().unwrap());
+        let _ = std::fs::remove_file(&wf.state_path);
+    }
+
+    #[test]
+    fn chain_respects_order() {
+        let log = Arc::new(Mutex::new(Vec::<String>::new()));
+        let l1 = log.clone();
+        let l2 = log.clone();
+        let mut wf = Workflow::new("wf_chain").unwrap();
+        wf.add_task(Task::new("a", move || { l1.lock().unwrap().push("a".into()); Ok(()) })).unwrap();
+        wf.add_task(Task::new("b", move || { l2.lock().unwrap().push("b".into()); Ok(()) }).depends_on("a")).unwrap();
+        wf.run().unwrap();
+        assert_eq!(*log.lock().unwrap(), vec!["a", "b"]);
+        let _ = std::fs::remove_file(&wf.state_path);
+    }
+
+    #[test]
+    fn failed_task_skips_dependent() {
+        let mut wf = Workflow::new("wf_skip").unwrap();
+        wf.add_task(Task::new("a", || Err(anyhow::anyhow!("boom")))).unwrap();
+        wf.add_task(Task::new("b", || Ok(())).depends_on("a")).unwrap();
+        wf.run().unwrap();
+        let state = WorkflowState::load(&wf.state_path).unwrap();
+        assert!(matches!(state.tasks["b"], TaskStatus::Skipped));
+        let _ = std::fs::remove_file(&wf.state_path);
+    }
+
+    #[test]
+    fn dry_run_returns_topo_order() {
+        let mut wf = Workflow::new("wf_dry").unwrap();
+        wf.add_task(Task::new("a", || Ok(()))).unwrap();
+        wf.add_task(Task::new("b", || Ok(())).depends_on("a")).unwrap();
+        let order = wf.dry_run().unwrap();
+        let pa = order.iter().position(|x| x == "a").unwrap();
+        let pb = order.iter().position(|x| x == "b").unwrap();
+        assert!(pa < pb);
+    }
+
+    #[test]
+    fn duplicate_task_id_errors() {
+        let mut wf = Workflow::new("wf_dup").unwrap();
+        wf.add_task(Task::new("a", || Ok(()))).unwrap();
+        assert!(wf.add_task(Task::new("a", || Ok(()))).is_err());
+    }
+}
