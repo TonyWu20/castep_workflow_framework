@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use anyhow::{Context, Result};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
@@ -44,20 +44,12 @@ impl TaskExecutor {
     }
 
     pub fn execute(&self) -> Result<ExecutionResult> {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-        rt.block_on(self.execute_async())
-    }
-
-    async fn execute_async(&self) -> Result<ExecutionResult> {
-        let start = Instant::now();
-        let output = tokio::process::Command::new(&self.command)
+        let start = std::time::Instant::now();
+        let output = std::process::Command::new(&self.command)
             .args(&self.args)
             .envs(&self.env)
             .current_dir(&self.workdir)
             .output()
-            .await
             .with_context(|| format!("failed to execute: {}", self.command))?;
         Ok(ExecutionResult {
             exit_code: output.status.code(),
@@ -75,7 +67,7 @@ impl TaskExecutor {
             .spawn()
             .with_context(|| format!("failed to spawn: {}", self.command))?;
         let pid = child.id() as i32;
-        Ok(ExecutionHandle { pid, _child: child })
+        Ok(ExecutionHandle { pid, child })
     }
 }
 
@@ -94,7 +86,9 @@ impl ExecutionResult {
 
 pub struct ExecutionHandle {
     pid: i32,
-    _child: std::process::Child,
+    // Held to prevent the child process from being orphaned on drop
+    #[allow(dead_code)]
+    child: std::process::Child,
 }
 
 impl ExecutionHandle {
