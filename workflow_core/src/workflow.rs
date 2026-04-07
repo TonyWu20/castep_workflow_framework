@@ -56,10 +56,10 @@ impl Workflow {
     }
 
     /// Resume a workflow by name.
-    pub fn resume(name: impl Into<String>) -> Result<Self> {
+    pub fn resume(name: impl Into<String>, state_dir: impl Into<PathBuf>) -> Result<Self> {
         // Just create a new workflow with the given name
         // State will be loaded from file in run() if available
-        Self::builder().name(name.into()).build()
+        Self::builder().name(name.into()).state_dir(state_dir.into()).build()
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -355,8 +355,20 @@ mod tests {
             .build()
             .unwrap();
         wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))?;
+        assert!(wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(()))).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn valid_dependency_add() -> anyhow::Result<()> {
+        let dir = tempdir().unwrap();
+        let mut wf = Workflow::builder()
+            .name("wf_dep".to_string())
+            .state_dir(dir.path().to_path_buf())
+            .build()
+            .unwrap();
+        wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))?;
         assert!(wf.add_task(Task::new("b", || Ok::<(), anyhow::Error>(())).depends_on("a")).is_ok());
-        assert!(wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())).depends_on("b")).is_err());
         Ok(())
     }
 
@@ -383,7 +395,26 @@ mod tests {
 
     #[test]
     fn resume_uses_builder() {
-        let wf = Workflow::resume("test").unwrap();
+        let dir = tempdir().unwrap();
+        let wf = Workflow::resume("test", dir.path()).unwrap();
         assert_eq!(wf.name, "test");
+    }
+
+    #[test]
+    fn resume_loads_existing_state() {
+        let dir = tempdir().unwrap();
+        let mut wf = Workflow::builder()
+            .name("wf_resume".to_string())
+            .state_dir(dir.path().to_path_buf())
+            .build()
+            .unwrap();
+        wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(()))).unwrap();
+        wf.run().unwrap();
+
+        let mut wf2 = Workflow::resume("wf_resume", dir.path()).unwrap();
+        wf2.add_task(Task::new("a", || Err(anyhow::anyhow!("should not re-run")))).unwrap();
+        wf2.run().unwrap();
+        let state = WorkflowState::load(dir.path().join(".wf_resume.workflow.json")).unwrap();
+        assert!(matches!(state.tasks["a"], TaskStatus::Completed));
     }
 }
