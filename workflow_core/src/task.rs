@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use workflow_utils::MonitoringHook;
 
@@ -6,6 +7,7 @@ pub struct Task {
     pub dependencies: Vec<String>,
     pub execute_fn: Arc<dyn Fn() -> anyhow::Result<()> + Send + Sync>,
     pub monitors: Vec<MonitoringHook>,
+    pub workdir: PathBuf,
 }
 
 impl Task {
@@ -18,6 +20,7 @@ impl Task {
             dependencies: Vec::new(),
             execute_fn: Arc::new(f),
             monitors: Vec::new(),
+            workdir: PathBuf::from("."),
         }
     }
 
@@ -28,6 +31,11 @@ impl Task {
 
     pub fn add_monitor(mut self, hook: MonitoringHook) -> Self {
         self.monitors.push(hook);
+        self
+    }
+
+    pub fn workdir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.workdir = path.into();
         self
     }
 }

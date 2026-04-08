@@ -1,16 +1,25 @@
-use std::collections::{HashMap, HashSet};
 use anyhow::{bail, Result};
 use petgraph::algo;
 use petgraph::graph::{DiGraph, NodeIndex};
+use std::collections::{HashMap, HashSet};
 
 pub struct Dag {
     graph: DiGraph<String, ()>,
     node_map: HashMap<String, NodeIndex>,
 }
 
+impl Default for Dag {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Dag {
     pub fn new() -> Self {
-        Self { graph: DiGraph::new(), node_map: HashMap::new() }
+        Self {
+            graph: DiGraph::new(),
+            node_map: HashMap::new(),
+        }
     }
 
     pub fn add_node(&mut self, id: String) -> Result<()> {
@@ -24,9 +33,13 @@ impl Dag {
 
     /// Edge: from (dep) → to (dependent). Errors if node missing or cycle created.
     pub fn add_edge(&mut self, from: &str, to: &str) -> Result<()> {
-        let &f = self.node_map.get(from)
+        let &f = self
+            .node_map
+            .get(from)
             .ok_or_else(|| anyhow::anyhow!("unknown task: {from}"))?;
-        let &t = self.node_map.get(to)
+        let &t = self
+            .node_map
+            .get(to)
             .ok_or_else(|| anyhow::anyhow!("unknown task: {to}"))?;
         let eid = self.graph.add_edge(f, t, ());
         if algo::toposort(&self.graph, None).is_err() {
@@ -46,21 +59,29 @@ impl Dag {
 
     /// Tasks not in `completed` whose every incoming neighbour is in `completed`.
     pub fn ready_tasks(&self, completed: &HashSet<String>) -> Vec<String> {
-        self.node_map.keys()
+        self.node_map
+            .keys()
             .filter(|id| {
-                !completed.contains(*id) &&
-                self.graph
-                    .neighbors_directed(self.node_map[*id], petgraph::Direction::Incoming)
-                    .all(|ni| completed.contains(&self.graph[ni]))
+                !completed.contains(*id)
+                    && self
+                        .graph
+                        .neighbors_directed(self.node_map[*id], petgraph::Direction::Incoming)
+                        .all(|ni| completed.contains(&self.graph[ni]))
             })
             .cloned()
             .collect()
     }
 
     pub fn successors(&self, id: &str) -> Vec<String> {
-        self.node_map.get(id).map(|&ni| {
-            self.graph.neighbors(ni).map(|s| self.graph[s].clone()).collect()
-        }).unwrap_or_default()
+        self.node_map
+            .get(id)
+            .map(|&ni| {
+                self.graph
+                    .neighbors(ni)
+                    .map(|s| self.graph[s].clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn task_ids(&self) -> impl Iterator<Item = &String> {
@@ -74,8 +95,12 @@ mod tests {
 
     fn make_dag(nodes: &[&str], edges: &[(&str, &str)]) -> Dag {
         let mut dag = Dag::new();
-        for &id in nodes { dag.add_node(id.to_owned()).unwrap(); }
-        for &(f, t) in edges { dag.add_edge(f, t).unwrap(); }
+        for &id in nodes {
+            dag.add_node(id.to_owned()).unwrap();
+        }
+        for &(f, t) in edges {
+            dag.add_edge(f, t).unwrap();
+        }
         dag
     }
 
