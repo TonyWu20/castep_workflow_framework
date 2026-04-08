@@ -2,6 +2,7 @@
 members = [
     "workflow_core",
     "workflow_utils",
+    "examples/hubbard_u_sweep",
 ]
 resolver = "2"
 

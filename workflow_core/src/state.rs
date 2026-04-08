@@ -30,7 +30,13 @@ impl WorkflowState {
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+        let mut state: Self = serde_json::from_slice(&std::fs::read(path)?)?;
+        for status in state.tasks.values_mut() {
+            if matches!(status, TaskStatus::Running) {
+                *status = TaskStatus::Pending;
+            }
+        }
+        Ok(state)
     }
 
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
@@ -117,5 +123,19 @@ mod tests {
         assert!(!s.is_completed("a"));
         s.mark_completed("a");
         assert!(s.is_completed("a"));
+    }
+
+    #[test]
+    fn load_resets_running_to_pending() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let mut s = WorkflowState::new("test");
+        s.mark_running("task1");
+        s.mark_completed("task2");
+        s.save(&path).unwrap();
+
+        let loaded = WorkflowState::load(&path).unwrap();
+        assert_eq!(loaded.tasks.get("task1"), Some(&TaskStatus::Pending));
+        assert_eq!(loaded.tasks.get("task2"), Some(&TaskStatus::Completed));
     }
 }

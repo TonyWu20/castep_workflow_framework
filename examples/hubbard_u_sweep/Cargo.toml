@@ -1,0 +1,14 @@
+[package]
+name = "hubbard_u_sweep"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "hubbard_u_sweep"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+castep-cell-io = "0.4.0"
+workflow_core = { path = "../../workflow_core" }
+workflow_utils = { path = "../../workflow_utils" }
