@@ -27,14 +27,12 @@ fn test_hubbard_u_sweep_with_mock_castep() {
 
         let task = Task::new(&task_id, move || {
             // Create workflow files
-            let cell_content = format!(
-                "%BLOCK LATTICE_CART\n  3.25 0.0 0.0\n  0.0 3.25 0.0\n  0.0 0.0 5.21\n%ENDBLOCK LATTICE_CART\n"
-            );
+            let cell_content = "%BLOCK LATTICE_CART\n  3.25 0.0 0.0\n  0.0 3.25 0.0\n  0.0 0.0 5.21\n%ENDBLOCK LATTICE_CART\n".to_string();
             let param_content = "task : SinglePoint\n";
 
             workflow_utils::create_dir(&abs_workdir)?;
-            workflow_utils::write_file(&abs_workdir.join("ZnO.cell"), &cell_content)?;
-            workflow_utils::write_file(&abs_workdir.join("ZnO.param"), param_content)?;
+            workflow_utils::write_file(abs_workdir.join("ZnO.cell"), &cell_content)?;
+            workflow_utils::write_file(abs_workdir.join("ZnO.param"), param_content)?;
 
             let result = TaskExecutor::new(&abs_workdir)
                 .env("PATH", &path_clone)
