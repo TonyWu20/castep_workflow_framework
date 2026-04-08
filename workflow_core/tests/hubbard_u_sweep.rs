@@ -26,30 +26,24 @@ fn test_hubbard_u_sweep_with_mock_castep() {
         let path_clone = path.clone();
 
         let task = Task::new(&task_id, move || {
-            // Set PATH to include mock_castep
-            std::env::set_var("PATH", &path_clone);
-
             // Create workflow files
             let cell_content = format!(
                 "%BLOCK LATTICE_CART\n  3.25 0.0 0.0\n  0.0 3.25 0.0\n  0.0 0.0 5.21\n%ENDBLOCK LATTICE_CART\n"
             );
             let param_content = "task : SinglePoint\n";
 
-            let _ = std::fs::create_dir_all(&abs_workdir);
-            let _ = std::fs::write(format!("{}/ZnO.cell", abs_workdir.display()), &cell_content);
-            let _ = std::fs::write(
-                format!("{}/ZnO.param", abs_workdir.display()),
-                param_content,
-            );
+            workflow_utils::create_dir(&abs_workdir)?;
+            workflow_utils::write_file(&abs_workdir.join("ZnO.cell"), &cell_content)?;
+            workflow_utils::write_file(&abs_workdir.join("ZnO.param"), param_content)?;
 
             let result = TaskExecutor::new(&abs_workdir)
+                .env("PATH", &path_clone)
                 .command("mock_castep")
                 .arg("ZnO")
-                .execute()
-                .unwrap();
+                .execute()?;
 
             if !result.success() {
-                panic!("castep failed: {:?}\n{}", result.exit_code, result.stderr);
+                anyhow::bail!("castep failed: {:?}\n{}", result.exit_code, result.stderr);
             }
 
             Ok(())
