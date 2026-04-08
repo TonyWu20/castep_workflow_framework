@@ -359,6 +359,7 @@ name = "hubbard_u_sweep"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "castep-cell-fmt",
  "castep-cell-io",
  "workflow_core",
  "workflow_utils",
