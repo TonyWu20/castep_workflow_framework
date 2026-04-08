@@ -1,8 +1,8 @@
 # Workflow Framework Architecture
 
-**Version:** 2.0 (Utilities-Based)  
-**Last Updated:** 2026-04-07  
-**Status:** Phase 1 Complete
+**Version:** 2.1 (Utilities-Based)  
+**Last Updated:** 2026-04-08  
+**Status:** Phase 1 Complete (1.1 + 1.2 + 1.3)
 
 ## Executive Summary
 
@@ -91,12 +91,14 @@ Provide generic workflow orchestration: DAG management, dependency resolution, p
 pub struct Workflow {
     name: String,
     tasks: HashMap<String, Task>,
-    state: WorkflowState,
+    state_path: PathBuf,
+    max_parallel: usize,
 }
 
 impl Workflow {
-    /// Create new workflow
-    pub fn new(name: impl Into<String>) -> Result<Self>;
+    /// Create new workflow via builder (bon)
+    /// Required: name. Optional: state_dir (default "."), max_parallel (default num_cpus)
+    pub fn builder() -> WorkflowBuilder;
     
     /// Add task to workflow
     pub fn add_task(&mut self, task: Task) -> Result<()>;
@@ -104,12 +106,16 @@ impl Workflow {
     /// Execute workflow (resolves dependencies, runs in parallel where possible)
     pub fn run(&mut self) -> Result<()>;
     
-    /// Resume interrupted workflow
-    pub fn resume(name: impl Into<String>) -> Result<Self>;
+    /// Resume interrupted workflow; re-register tasks via add_task after calling this
+    pub fn resume(name: impl Into<String>, state_dir: impl Into<PathBuf>) -> Result<Self>;
     
-    /// Dry-run: show task graph without executing
-    pub fn dry_run(&self) -> Result<WorkflowSummary>;
+    /// Dry-run: returns task execution order without executing
+    pub fn dry_run(&self) -> Result<Vec<String>>;
 }
+
+// Builder usage:
+// Workflow::builder().name("name".to_string()).build()?
+// Workflow::builder().name("name".to_string()).state_dir("./runs".into()).max_parallel(8).build()?
 
 /// Task: execution unit with closure
 pub struct Task {
@@ -237,29 +243,17 @@ impl ExecutionHandle {
 
 ### files: Generic File I/O
 
+Functions are re-exported flat at the crate root (the `files` module is private):
+
 ```rust
-pub mod files {
-    use std::path::Path;
-    use anyhow::Result;
-    
-    /// Read file to string
-    pub fn read_file(path: impl AsRef<Path>) -> Result<String>;
-    
-    /// Write string to file
-    pub fn write_file(path: impl AsRef<Path>, content: &str) -> Result<()>;
-    
-    /// Copy file
-    pub fn copy_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<()>;
-    
-    /// Create directory (including parents)
-    pub fn create_dir(path: impl AsRef<Path>) -> Result<()>;
-    
-    /// Remove directory recursively
-    pub fn remove_dir(path: impl AsRef<Path>) -> Result<()>;
-    
-    /// Check if file exists
-    pub fn exists(path: impl AsRef<Path>) -> bool;
-}
+use workflow_utils::{read_file, write_file, copy_file, create_dir, remove_dir, exists};
+
+pub fn read_file(path: impl AsRef<Path>) -> Result<String>;
+pub fn write_file(path: impl AsRef<Path>, content: &str) -> Result<()>;
+pub fn copy_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<()>;
+pub fn create_dir(path: impl AsRef<Path>) -> Result<()>;
+pub fn remove_dir(path: impl AsRef<Path>) -> Result<()>;
+pub fn exists(path: impl AsRef<Path>) -> bool;
 ```
 
 ### MonitoringHook: External Monitoring
@@ -327,12 +321,14 @@ User's research-specific workflow logic. Uses parser libraries directly, uses La
 
 ```rust
 use workflow_core::{Workflow, Task};
-use workflow_utils::{TaskExecutor, files, MonitoringHook, HookTrigger};
+use workflow_utils::{TaskExecutor, create_dir, write_file, MonitoringHook, HookTrigger};
 use castep_cell_io::prelude::*;
 use anyhow::Result;
 
 fn main() -> Result<()> {
-    let mut workflow = Workflow::new("hubbard_u_sweep")?;
+    let mut workflow = Workflow::builder()
+        .name("hubbard_u_sweep".to_string())
+        .build()?;
     
     let u_values = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
     
@@ -343,7 +339,7 @@ fn main() -> Result<()> {
         // Create task with closure containing all logic
         let task = Task::new(&task_id, move || {
             // 1. Create workdir
-            files::create_dir(&workdir)?;
+            create_dir(&workdir)?;
             
             // 2. Read seed files
             let mut cell_doc = CellDocument::from_file("seeds/ZnO.cell")?;
@@ -361,11 +357,11 @@ fn main() -> Result<()> {
                 .build());
             
             // 4. Write modified files
-            files::write_file(
+            write_file(
                 format!("{}/ZnO.cell", workdir),
                 &cell_doc.to_string()?
             )?;
-            files::write_file(
+            write_file(
                 format!("{}/ZnO.param", workdir),
                 &param_doc.to_string()?
             )?;
@@ -410,7 +406,7 @@ fn main() -> Result<()> {
 
 ```rust
 use workflow_core::{Workflow, Task};
-use workflow_utils::{TaskExecutor, files};
+use workflow_utils::{TaskExecutor, create_dir, write_file};
 use castep_cell_io::prelude::*;
 use anyhow::Result;
 
@@ -445,7 +441,7 @@ impl CastepTaskBuilder {
         
         Ok(Task::new(&task_id, move || {
             // Setup
-            files::create_dir(&workdir)?;
+            create_dir(&workdir)?;
             
             // Read seeds
             let mut cell_doc = CellDocument::from_file(
@@ -459,11 +455,11 @@ impl CastepTaskBuilder {
             modify_cell(&mut cell_doc)?;
             
             // Write files
-            files::write_file(
+            write_file(
                 format!("{}/{}.cell", workdir, task_id),
                 &cell_doc.to_string()?
             )?;
-            files::write_file(
+            write_file(
                 format!("{}/{}.param", workdir, task_id),
                 &param_doc.to_string()?
             )?;
@@ -480,7 +476,7 @@ impl CastepTaskBuilder {
 }
 
 fn main() -> Result<()> {
-    let mut workflow = Workflow::new("hubbard_u_sweep")?;
+    let mut workflow = Workflow::builder().name("hubbard_u_sweep".to_string()).build()?;
     let castep = CastepTaskBuilder::new("./seeds", "ZnO");
     
     for u in vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0] {
@@ -517,7 +513,7 @@ Users can create reusable domain-specific builders as separate libraries:
 // In a separate crate: castep_workflow_helpers
 
 use workflow_core::{Workflow, Task};
-use workflow_utils::{TaskExecutor, files};
+use workflow_utils::{TaskExecutor, create_dir, write_file};
 use castep_cell_io::prelude::*;
 use anyhow::Result;
 
@@ -562,7 +558,7 @@ impl HubbardUSweep {
     }
     
     pub fn build_workflow(self) -> Result<Workflow> {
-        let mut workflow = Workflow::new(&self.system_name)?;
+        let mut workflow = Workflow::builder().name(self.system_name.clone()).build()?;
         
         for u in self.u_values {
             let task_id = format!("scf_U{}", u);
@@ -573,7 +569,7 @@ impl HubbardUSweep {
             let orbital = self.orbital;
             
             let task = Task::new(&task_id, move || {
-                files::create_dir(&workdir)?;
+                create_dir(&workdir)?;
                 
                 let mut cell_doc = CellDocument::from_file(
                     format!("{}/{}.cell", seed_dir.display(), system_name)
@@ -596,11 +592,11 @@ impl HubbardUSweep {
                     .atom_u_values(vec![atom_u])
                     .build());
                 
-                files::write_file(
+                write_file(
                     format!("{}/{}.cell", workdir, task_id),
                     &cell_doc.to_string()?
                 )?;
-                files::write_file(
+                write_file(
                     format!("{}/{}.param", workdir, task_id),
                     &param_doc.to_string()?
                 )?;
@@ -745,33 +741,31 @@ castep_workflow_framework/
 
 ## Implementation Status
 
-### Phase 1: Complete ✅ (2026-04-07)
+### Phase 1: Complete ✅ (2026-04-08)
 
 **Phase 1.1: workflow_utils** ✅
 - TaskExecutor with blocking and background execution
-- files module with read/write/copy/create_dir/remove_dir
+- files module with read/write/copy/create_dir/remove_dir (flat re-exports at crate root)
 - MonitoringHook with trigger system
 
 **Phase 1.2: workflow_core** ✅
-- Workflow with DAG execution
+- Workflow with DAG execution and `bon` builder (`Workflow::builder().name(...).build()`)
+- `max_parallel` configurable via builder (defaults to `available_parallelism`)
 - Task with closure-based execution
 - DAG with petgraph topological sort
 - WorkflowState with JSON persistence
 - Dependency failure propagation
 
-### Phase 1.2.1: In Progress 🚧
-
-**Builder Pattern Integration**
-- Add `bon` crate for Workflow builder
-- Expose `max_parallel` configuration
-- See: `plans/PHASE1.2_BUILDER_PATTERN.md`
+**Phase 1.3: Integration & Examples** ✅
+- Resume bug fixed: `Running` tasks reset to `Pending` on state load
+- `examples/hubbard_u_sweep`: Layer 3 reference implementation
+- Integration tests: sweep pattern, resume semantics, DAG ordering/failure propagation
 
 ### Phase 2: Planned 📋
 
 **Examples and Documentation**
-- HubbardU sweep example
+- Full HubbardU sweep with castep-cell-io builders (castep-cell-io integration pending)
 - Convergence test example
-- Integration tests
 - Comprehensive documentation
 
 ## Dependencies
@@ -857,7 +851,7 @@ let task = Task::new("task_id", || {
     // Direct control over everything
     let cell_doc = CellDocument::from_file("seeds/ZnO.cell")?;
     // ... modify ...
-    files::write_file("runs/task/ZnO.cell", &cell_doc.to_string()?)?;
+    write_file("runs/task/ZnO.cell", &cell_doc.to_string()?)?;
     TaskExecutor::new("runs/task").command("castep").arg("ZnO").execute()?;
     Ok(())
 });
