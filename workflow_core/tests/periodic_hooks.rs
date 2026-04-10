@@ -178,6 +178,8 @@ fn test_periodic_hook_error_handling() -> Result<(), Box<dyn std::error::Error>>
         .monitors(vec![MonitoringHook::new(
             "error_hook",
             script.display().to_string(),
+            // interval_secs: 0 means "as-fast-as-possible" - fires the hook as many
+            // times as possible within the task execution window (valid for tests)
             HookTrigger::Periodic { interval_secs: 0 }
         )])
     ).expect("Failed to add task");
