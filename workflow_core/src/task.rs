@@ -38,6 +38,11 @@ impl Task {
         self.workdir = path.into();
         self
     }
+
+    pub fn monitors(mut self, hooks: Vec<MonitoringHook>) -> Self {
+        self.monitors = hooks;
+        self
+    }
 }
 
 #[cfg(test)]
