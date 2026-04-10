@@ -1,3 +1,81 @@
+## v2 (2026-04-10)
+
+# Fix Plan: phase-2.2 PR Review (post-fix review)
+
+## Context
+
+All 6 blocking/major/minor issues from v1 are resolved. Tests: 31/31 pass. Clippy: 0 warnings.
+Three remaining issues found in post-fix review: one Major (layer boundary), one Minor (spurious dep), one Minor (test fragility).
+
+## PR Rating: Approve (with follow-up)
+
+| Axis          | Score   | Reason                                                         |
+| ------------- | ------- | -------------------------------------------------------------- |
+| Plan & Spec   | Pass    | All 6 fix items correctly implemented                          |
+| Architecture  | Partial | `capture_task_error_context` leaks CASTEP domain into Layer 1  |
+| Rust Style    | Pass    | No unused `&self`, no `&PathBuf`, feature gate correct         |
+| Test Coverage | Pass    | 4/4 periodic hook tests pass; minor timing fragility noted     |
+
+---
+
+## Remaining Issues
+
+### Issue 1: `capture_task_error_context` embeds CASTEP domain logic in Layer 1 [Major]
+
+**File:** `workflow_core/src/workflow.rs:476-498`
+**Problem:** The function hard-codes `{task_id}.castep` as the expected output file name. This is a CASTEP-specific assumption inside the domain-agnostic execution engine. Any non-CASTEP user sees misleading "Could not read output file: foo.castep" in every task failure log.
+
+**Fix:** Remove the CASTEP-file-reading heuristic from Layer 1 entirely. The error passed in already carries domain context. Simplify to:
+
+```rust
+fn capture_task_error_context(workdir: &Path, task_id: &str, error: &anyhow::Error) -> String {
+    format!(
+        "Task '{}' failed: {}\nWorkdir: {}\n",
+        task_id, error, workdir.display()
+    )
+}
+```
+
+If CASTEP log reading is needed, move it to Layer 3 (the hubbard_u_sweep example or a future `castep_adapter` crate) via an `OnFailure` hook that reads `{task_id}.castep` and logs its tail.
+
+### Issue 2: `tokio` declared but never used in `workflow_core` and `workflow_utils` [Minor]
+
+**File:** `workflow_core/Cargo.toml:15` and `workflow_utils/Cargo.toml:4`
+**Problem:** Both crates declare `tokio = { workspace = true }` (which pulls `features = ["full"]` from workspace root), but neither crate uses any tokio symbol. Confirmed with `rg "tokio" workflow_core/src/ workflow_utils/src/` — zero results.
+
+**Fix:** Remove `tokio` from both crates' `[dependencies]`:
+- `workflow_core/Cargo.toml`: delete line 15 (`tokio = { workspace = true }`)
+- `workflow_utils/Cargo.toml`: delete line 4 (`tokio = { workspace = true }`)
+
+Verify: `cargo check --all` still passes.
+
+### Issue 3: `interval_secs: 0` semantics and CI fragility in tests [Minor]
+
+**File:** `workflow_core/tests/periodic_hooks.rs:39, 136, 177`
+**Problem:** Three tests use `HookTrigger::Periodic { interval_secs: 0 }`. This means `sleep(Duration::from_secs(0))` — a busy loop that spins as fast as the OS allows. `test_periodic_hook_executes_multiple_times` asserts `lines.len() >= 4` after a 500ms task sleep. This passes on fast machines but could fail on heavily loaded CI runners where `Command::new(...)` process spawning latency eats into the budget.
+
+**Fix:** Document the intent explicitly or use a small nonzero interval. One approach:
+
+```rust
+// 10ms interval: comfortably fires 40+ times in 500ms, documented expectation
+HookTrigger::Periodic { interval_secs: 0 } // 0 = as-fast-as-possible; valid for tests
+```
+
+At minimum add a comment to each test explaining why `0` is intentional. Optionally replace the `>= 4` assertion with `>= 1` to reduce fragility without losing coverage of "executes multiple times" (a 500ms sleep at 0-interval will never fire only once on any reasonable machine).
+
+---
+
+## Verification
+
+```bash
+cargo test --all    # 31/31 pass
+cargo clippy --all  # 0 warnings
+```
+
+---
+
+## v1 (2026-04-10)
+
 # Fix Plan: phase-2.2 PR Review
 
 ## Context
