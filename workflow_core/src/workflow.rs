@@ -5,8 +5,109 @@ use anyhow::{bail, Result};
 use bon::bon;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
+use std::time::{Duration, Instant};
 use workflow_utils::{HookContext, HookTrigger};
+
+struct PeriodicHookHandle {
+    thread: std::thread::JoinHandle<()>,
+    stop_signal: Arc<AtomicBool>,
+}
+
+struct PeriodicHookManager {
+    handles: HashMap<String, Vec<PeriodicHookHandle>>,
+}
+
+impl PeriodicHookManager {
+    fn new() -> Self {
+        Self { handles: HashMap::new() }
+    }
+
+    fn spawn_for_task(
+        &mut self,
+        task_id: String,
+        hooks: Vec<workflow_utils::MonitoringHook>,
+        ctx: HookContext,
+    ) {
+        let mut task_handles = Vec::new();
+
+        for hook in hooks {
+            if let HookTrigger::Periodic { interval_secs } = hook.trigger {
+                let stop = Arc::new(AtomicBool::new(false));
+                let stop_clone = stop.clone();
+                let hook_clone = hook.clone();
+                let ctx_clone = ctx.clone();
+
+                let thread = std::thread::spawn(move || {
+                    while !stop_clone.load(Ordering::Relaxed) {
+                        std::thread::sleep(Duration::from_secs(interval_secs));
+                        if stop_clone.load(Ordering::Relaxed) {
+                            break;
+                        }
+
+                        match hook_clone.execute(&ctx_clone) {
+                            Ok(result) => {
+                                tracing::info!(
+                                    hook_name = %hook_clone.name,
+                                    task_id = %ctx_clone.task_id,
+                                    "Hook output:\n{}",
+                                    Self::indent_output(&result.output)
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    hook_name = %hook_clone.name,
+                                    error = %e,
+                                    "Hook failed (task continues)"
+                                );
+                            }
+                        }
+                    }
+                });
+
+                task_handles.push(PeriodicHookHandle {
+                    thread,
+                    stop_signal: stop,
+                });
+            }
+        }
+
+        if !task_handles.is_empty() {
+            self.handles.insert(task_id, task_handles);
+        }
+    }
+
+    fn stop_for_task(&mut self, task_id: &str) {
+        if let Some(handles) = self.handles.remove(task_id) {
+            for handle in handles {
+                handle.stop_signal.store(true, Ordering::Relaxed);
+                let _ = handle.thread.join();
+            }
+        }
+    }
+
+    fn indent_output(output: &str) -> String {
+        if output.is_empty() {
+            return "<no output>".to_string();
+        }
+        output.lines()
+            .map(|line| format!("  {}", line))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+impl Drop for PeriodicHookManager {
+    fn drop(&mut self) {
+        for (task_id, handles) in self.handles.drain() {
+            tracing::debug!("Stopping periodic hooks for task: {}", task_id);
+            for handle in handles {
+                handle.stop_signal.store(true, Ordering::Relaxed);
+                let _ = handle.thread.join();
+            }
+        }
+    }
+}
 
 pub struct Workflow {
     pub name: String,
@@ -65,6 +166,8 @@ impl Workflow {
 
     pub fn run(&mut self) -> Result<()> {
         let dag = self.build_dag()?;
+        tracing::debug!("DAG execution order: {:?}", dag.topological_order());
+
         let mut state = if self.state_path.exists() {
             WorkflowState::load(&self.state_path)?
         } else {
@@ -75,10 +178,15 @@ impl Workflow {
         }
         let state = Arc::new(Mutex::new(state));
 
+        tracing::debug!("Registered {} tasks", self.tasks.len());
+
         let fns: HashMap<String, Arc<dyn Fn() -> anyhow::Result<()> + Send + Sync>> = self
             .tasks
             .iter()
-            .map(|(id, t)| (id.clone(), Arc::clone(&t.execute_fn)))
+            .map(|(id, t)| {
+                tracing::debug!("Registered task '{}' with {} dependencies", id, t.dependencies.len());
+                (id.clone(), Arc::clone(&t.execute_fn))
+            })
             .collect();
 
         let monitors: HashMap<String, Vec<workflow_utils::MonitoringHook>> = self
@@ -96,6 +204,17 @@ impl Workflow {
         let mut handles: HashMap<String, std::thread::JoinHandle<anyhow::Result<()>>> =
             HashMap::new();
 
+        let workflow_start = Instant::now();
+        let mut task_start_times: HashMap<String, Instant> = HashMap::new();
+        let mut periodic_manager = PeriodicHookManager::new();
+
+        tracing::info!(
+            workflow_name = %self.name,
+            total_tasks = self.tasks.len(),
+            max_parallel = self.max_parallel,
+            "Starting workflow"
+        );
+
         loop {
             let finished: Vec<String> = handles
                 .keys()
@@ -112,7 +231,22 @@ impl Workflow {
                     .unwrap_or_else(|_| Err(anyhow::anyhow!("thread panicked")));
                 match result {
                     Ok(()) => {
+                        // Stop periodic hooks first
+                        periodic_manager.stop_for_task(&id);
+
+                        let duration = task_start_times.remove(&id)
+                            .map(|start| start.elapsed())
+                            .unwrap_or(Duration::from_secs(0));
+
                         s.mark_completed(&id);
+
+                        tracing::info!(
+                            task_id = %id,
+                            duration_secs = duration.as_secs(),
+                            "Task completed in {}",
+                            Self::format_duration(duration)
+                        );
+
                         if let Some(hooks) = monitors.get(&id) {
                             let ctx = HookContext {
                                 task_id: id.clone(),
@@ -129,7 +263,30 @@ impl Workflow {
                         }
                     }
                     Err(e) => {
+                        // Stop periodic hooks first
+                        periodic_manager.stop_for_task(&id);
+
+                        let duration = task_start_times.remove(&id)
+                            .map(|start| start.elapsed())
+                            .unwrap_or(Duration::from_secs(0));
+
+                        let error_context = Self::capture_task_error_context(
+                            self,
+                            &task_workdirs[&id],
+                            &id,
+                            &e,
+                        );
+                        tracing::error!("{}", error_context);
+
+                        tracing::error!(
+                            task_id = %id,
+                            duration_secs = duration.as_secs(),
+                            "Task failed after {}",
+                            Self::format_duration(duration)
+                        );
+
                         s.mark_failed(&id, e.to_string());
+
                         if let Some(hooks) = monitors.get(&id) {
                             let ctx = HookContext {
                                 task_id: id.clone(),
@@ -205,6 +362,34 @@ impl Workflow {
                 if matches!(statuses.get(&id), Some(TaskStatus::Pending)) {
                     if let Some(f) = fns.get(&id).cloned() {
                         state.lock().unwrap().mark_running(&id);
+
+                        task_start_times.insert(id.clone(), Instant::now());
+
+                        tracing::info!(
+                            task_id = %id,
+                            workdir = %task_workdirs[&id].display(),
+                            "Task started"
+                        );
+
+                        // Spawn periodic hooks
+                        if let Some(hooks) = monitors.get(&id) {
+                            let periodic_hooks: Vec<_> = hooks
+                                .iter()
+                                .filter(|h| matches!(h.trigger, HookTrigger::Periodic { .. }))
+                                .cloned()
+                                .collect();
+
+                            if !periodic_hooks.is_empty() {
+                                let ctx = HookContext {
+                                    task_id: id.clone(),
+                                    workdir: task_workdirs[&id].clone(),
+                                    state: "running".to_string(),
+                                    exit_code: None,
+                                };
+                                periodic_manager.spawn_for_task(id.clone(), periodic_hooks, ctx);
+                            }
+                        }
+
                         if let Some(hooks) = monitors.get(&id) {
                             let ctx = HookContext {
                                 task_id: id.clone(),
@@ -219,6 +404,7 @@ impl Workflow {
                                 let _ = hook.execute(&ctx);
                             }
                         }
+
                         let handle = std::thread::spawn(move || f());
                         handles.insert(id, handle);
                     }
@@ -237,12 +423,33 @@ impl Workflow {
                     )
                 })
             };
+
             if all_done && handles.is_empty() {
-                return Ok(());
+                break;
             }
 
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
+
+        let total_duration = workflow_start.elapsed();
+        let final_state = state.lock().unwrap();
+        let succeeded = final_state.tasks.values()
+            .filter(|status| matches!(status, TaskStatus::Completed))
+            .count();
+        let failed = final_state.tasks.values()
+            .filter(|status| matches!(status, TaskStatus::Failed { .. }))
+            .count();
+
+        tracing::info!(
+            workflow_name = %self.name,
+            duration_secs = total_duration.as_secs(),
+            succeeded = succeeded,
+            failed = failed,
+            "Workflow completed in {}",
+            Self::format_duration(total_duration)
+        );
+
+        Ok(())
     }
 
     fn build_dag(&self) -> Result<Dag> {
@@ -256,6 +463,45 @@ impl Workflow {
             }
         }
         Ok(dag)
+    }
+
+    fn format_duration(d: Duration) -> String {
+        let secs = d.as_secs();
+        let hours = secs / 3600;
+        let mins = (secs % 3600) / 60;
+        let secs = secs % 60;
+
+        if hours > 0 {
+            format!("{}h {}m {}s", hours, mins, secs)
+        } else if mins > 0 {
+            format!("{}m {}s", mins, secs)
+        } else {
+            format!("{}s", secs)
+        }
+    }
+
+    fn capture_task_error_context(&self, workdir: &PathBuf, task_id: &str, error: &anyhow::Error) -> String {
+        let mut context = format!("Task '{}' failed: {}\n", task_id, error);
+
+        // Try reading last 20 lines from CASTEP output
+        let castep_file = workdir.join(format!("{}.castep", task_id));
+        if let Ok(content) = std::fs::read_to_string(&castep_file) {
+            let lines: Vec<&str> = content.lines().collect();
+            let start = lines.len().saturating_sub(20);
+            let last_lines = &lines[start..];
+
+            if !last_lines.is_empty() {
+                context.push_str("\nLast 20 lines of output:\n");
+                for line in last_lines {
+                    context.push_str(&format!("  {}\n", line));
+                }
+            }
+        } else {
+            context.push_str(&format!("\nCould not read output file: {}\n", castep_file.display()));
+        }
+
+        context.push_str(&format!("\nWorkdir: {}\n", workdir.display()));
+        context
     }
 }
 

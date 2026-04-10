@@ -18,6 +18,7 @@ pub enum HookTrigger {
     Periodic { interval_secs: u64 },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookContext {
     pub task_id: String,
     pub workdir: PathBuf,
