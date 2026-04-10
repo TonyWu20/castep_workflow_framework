@@ -36,6 +36,8 @@ fn test_periodic_hook_executes_multiple_times() -> Result<(), Box<dyn std::error
         .monitors(vec![MonitoringHook::new(
             "counter",
             script.display().to_string(),
+            // interval_secs: 0 means "as-fast-as-possible" - fires the hook as many
+            // times as possible within the task execution window (valid for tests)
             HookTrigger::Periodic { interval_secs: 0 }
         )])
     ).expect("Failed to add task");
@@ -133,6 +135,8 @@ fn test_periodic_manager_drop_stops_threads() {
         .monitors(vec![MonitoringHook::new(
             "counter",
             script.display().to_string(),
+            // interval_secs: 0 means "as-fast-as-possible" - fires the hook as many
+            // times as possible within the task execution window (valid for tests)
             HookTrigger::Periodic { interval_secs: 0 }
         )])
     ).unwrap();

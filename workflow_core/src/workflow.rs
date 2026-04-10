@@ -474,27 +474,10 @@ impl Workflow {
     }
 
     fn capture_task_error_context(workdir: &Path, task_id: &str, error: &anyhow::Error) -> String {
-        let mut context = format!("Task '{}' failed: {}\n", task_id, error);
-
-        // Try reading last 20 lines from CASTEP output
-        let castep_file = workdir.join(format!("{}.castep", task_id));
-        if let Ok(content) = std::fs::read_to_string(&castep_file) {
-            let lines: Vec<&str> = content.lines().collect();
-            let start = lines.len().saturating_sub(20);
-            let last_lines = &lines[start..];
-
-            if !last_lines.is_empty() {
-                context.push_str("\nLast 20 lines of output:\n");
-                for line in last_lines {
-                    context.push_str(&format!("  {}\n", line));
-                }
-            }
-        } else {
-            context.push_str(&format!("\nCould not read output file: {}\n", castep_file.display()));
-        }
-
-        context.push_str(&format!("\nWorkdir: {}\n", workdir.display()));
-        context
+        format!(
+            "Task '{}' failed: {}\nWorkdir: {}\n",
+            task_id, error, workdir.display()
+        )
     }
 }
 
