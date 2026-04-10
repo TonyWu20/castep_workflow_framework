@@ -6,9 +6,9 @@
 
 ## Executive Summary
 
-Utilities-based arch: Layer 2 = generic exec utils, NOT software adapters. Software logic → parser libs (castep-cell-io) or project crates (Layer 3).
+This framework uses a **utilities-based architecture** where Layer 2 provides generic execution utilities, not software-specific adapters. All software-specific logic belongs in parser libraries (castep-cell-io) or project crates (Layer 3).
 
-**Key Decision:** After first-principles analysis, killed adapter pattern. Layer 2 = pure generic utils. No traits, no adapters, no software code.
+**Key Decision:** After first-principles analysis, we eliminated the adapter pattern. Layer 2 is purely generic utilities with no traits, no adapters, no software-specific code.
 
 ## Architecture Overview
 
@@ -52,9 +52,9 @@ Utilities-based arch: Layer 2 = generic exec utils, NOT software adapters. Softw
 
 ### What Does a Workflow Actually Need?
 
-1. **Input Preparation**: Read seed, modify, write to workdir
-2. **Execution**: Run binary in workdir w/ args
-3. **Monitoring**: Check output, run external scripts, detect done
+1. **Input Preparation**: Read seed files, apply modifications, write to workdir
+2. **Execution**: Run binary in workdir with arguments
+3. **Monitoring**: Check output, run external scripts, detect completion
 
 ### What's Truly Software-Specific?
 
@@ -67,23 +67,23 @@ Utilities-based arch: Layer 2 = generic exec utils, NOT software adapters. Softw
 | Command arguments             | Layer 3 (project-specific)                |
 | Output parsing                | External scripts (via monitoring hooks)   |
 
-**Answer: Nothing!** All software logic already in parser libs or Layer 3.
+**Answer: Nothing!** All software-specific logic is already in parser libraries or Layer 3.
 
 ### What's Truly Generic?
 
 - File I/O (read/write any file)
-- Process exec (run any cmd)
-- Workdir mgmt (create, clean)
-- Monitoring hooks (run external cmds)
-- Status tracking (running, done, failed)
+- Process execution (run any command)
+- Workdir management (create, clean up)
+- Monitoring hooks (run external commands)
+- Status tracking (running, completed, failed)
 
-**Conclusion:** Layer 2 = generic utils, not software adapters.
+**Conclusion:** Layer 2 should provide generic utilities, not software-specific adapters.
 
 ## Layer 1: workflow_core (Foundation)
 
 ### Purpose
 
-Generic workflow orchestration: DAG mgmt, dependency resolution, parallel exec, state persistence.
+Provide generic workflow orchestration: DAG management, dependency resolution, parallel execution, state persistence.
 
 ### Core Types
 
@@ -164,24 +164,24 @@ pub struct WorkflowState {
 
 ### Key Features
 
-1. **DAG Execution**: Topo sort, parallel where possible
-2. **Dependency Resolution**: Auto ordering via `depends_on`
+1. **DAG Execution**: Topological sort, parallel execution where possible
+2. **Dependency Resolution**: Automatic ordering based on `depends_on`
 3. **State Persistence**: Save/resume workflow state (task status, not closures)
-4. **Error Handling**: Fail-fast or continue-on-error
+4. **Error Handling**: Fail-fast or continue-on-error modes
 5. **Progress Tracking**: Real-time status updates
 
 ### What Layer 1 Does NOT Do
 
-- File I/O (Layer 2)
-- Process exec (Layer 2)
-- Software logic (parser libs or Layer 3)
-- Input prep (Layer 3)
+- File I/O (that's Layer 2)
+- Process execution (that's Layer 2)
+- Software-specific logic (that's parser libraries or Layer 3)
+- Input file preparation (that's Layer 3)
 
 ## Layer 2: workflow_utils (Generic Utilities)
 
 ### Purpose
 
-Generic utils for file I/O, process exec, monitoring. No software code.
+Provide generic utilities for file I/O, process execution, and monitoring. No software-specific code.
 
 ### TaskExecutor: Generic Process Execution
 
@@ -245,7 +245,7 @@ impl ExecutionHandle {
 
 ### files: Generic File I/O
 
-Re-exported flat at crate root (`files` module private):
+Functions are re-exported flat at the crate root (the `files` module is private):
 
 ```rust
 use workflow_utils::{read_file, write_file, copy_file, create_dir, remove_dir, exists};
@@ -309,16 +309,16 @@ pub struct HookResult {
 
 ### What Layer 2 Does NOT Do
 
-- Parse CASTEP files (castep-cell-io)
-- Know HubbardU or CASTEP concepts (Layer 3)
-- Implement traits/adapters (just utils)
-- Decide workflow structure (Layer 1 or Layer 3)
+- Parse CASTEP files (that's castep-cell-io)
+- Know about HubbardU or any CASTEP concepts (that's Layer 3)
+- Implement traits or adapters (just simple utilities)
+- Make decisions about workflow structure (that's Layer 1 or Layer 3)
 
 ## Layer 3: Project Crates (Domain-Specific)
 
 ### Purpose
 
-User's research workflow logic. Uses parser libs directly, uses Layer 2 utils for I/O/exec.
+User's research-specific workflow logic. Uses parser libraries directly, uses Layer 2 utilities for I/O and execution.
 
 ### Example 1: Direct Low-Level Usage
 
@@ -510,7 +510,7 @@ fn main() -> Result<()> {
 
 ### Example 3: Domain-Specific Builder (Optional Library)
 
-Users can create reusable domain builders as separate libs:
+Users can create reusable domain-specific builders as separate libraries:
 
 ```rust
 // In a separate crate: castep_workflow_helpers
@@ -651,10 +651,10 @@ Layer 1: workflow_core
 
 **Problems:**
 
-1. CastepAdapter dupes logic Layer 3 already has
-2. TaskAdapter trait forces specific abstraction
-3. New software needs new adapter impl
-4. Layer 3 loses control over file prep details
+1. CastepAdapter duplicates logic that Layer 3 already has
+2. TaskAdapter trait forces a specific abstraction
+3. Adding new software requires new adapter implementation
+4. Layer 3 loses control over file preparation details
 
 ### New Design (Utilities-Based) ✅
 
@@ -676,33 +676,33 @@ Layer 1: workflow_core
 
 **Benefits:**
 
-1. Simpler: No trait, no adapters, just utils
-2. More flexible: Layer 3 full control
+1. Simpler: No trait, no adapters, just utilities
+2. More flexible: Layer 3 has full control
 3. Less code: No adapter boilerplate
-4. Easier extend: Just use different parser lib
-5. Clearer separation: Layer 2 truly generic
+4. Easier to extend: Just use different parser library
+5. Clearer separation: Layer 2 is truly generic
 
 ## Design Principles
 
 1. **Separation of Concerns**
    - Layer 1: Orchestration only
-   - Layer 2: Generic utils only
+   - Layer 2: Generic utilities only
    - Layer 3: Domain logic only
-   - Parser libs: Format-specific only
+   - Parser libraries: Format-specific only
 
 2. **No Premature Abstraction**
-   - No traits unless multiple impls exist
-   - No adapters unless they add value
-   - Keep simple until complexity justified
+   - Don't create traits unless multiple implementations exist
+   - Don't create adapters unless they add value
+   - Keep it simple until complexity is justified
 
 3. **User Control**
-   - Layer 3 full control over workflow
+   - Layer 3 has full control over workflow
    - No hidden magic, no implicit behavior
-   - Explicit > implicit
+   - Explicit is better than implicit
 
 4. **Composability Over Inheritance**
    - Use functions, not class hierarchies
-   - Compose utils, don't extend adapters
+   - Compose utilities, don't extend adapters
    - Build helpers as needed, don't force patterns
 
 ## Project Structure
@@ -750,32 +750,32 @@ castep_workflow_framework/
 
 **Phase 1.1: workflow_utils** ✅
 
-- TaskExecutor w/ blocking + background exec
-- files module w/ read/write/copy/create_dir/remove_dir (flat re-exports at crate root)
-- MonitoringHook w/ trigger system
+- TaskExecutor with blocking and background execution
+- files module with read/write/copy/create_dir/remove_dir (flat re-exports at crate root)
+- MonitoringHook with trigger system
 
 **Phase 1.2: workflow_core** ✅
 
-- Workflow w/ DAG exec + `bon` builder (`Workflow::builder().name(...).build()`)
+- Workflow with DAG execution and `bon` builder (`Workflow::builder().name(...).build()`)
 - `max_parallel` configurable via builder (defaults to `available_parallelism`)
-- Task w/ closure-based exec
-- DAG w/ petgraph topo sort
-- WorkflowState w/ JSON persistence
+- Task with closure-based execution
+- DAG with petgraph topological sort
+- WorkflowState with JSON persistence
 - Dependency failure propagation
 
 **Phase 1.3: Integration & Examples** ✅
 
 - Resume bug fixed: `Running` tasks reset to `Pending` on state load
-- `examples/hubbard_u_sweep`: Layer 3 reference impl
+- `examples/hubbard_u_sweep`: Layer 3 reference implementation
 - Integration tests: sweep pattern, resume semantics, DAG ordering/failure propagation
 
 ### Phase 2: Planned 📋
 
 **Examples and Documentation**
 
-- Full HubbardU sweep w/ castep-cell-io builders (castep-cell-io integration pending)
+- Full HubbardU sweep with castep-cell-io builders (castep-cell-io integration pending)
 - Convergence test example
-- Comprehensive docs
+- Comprehensive documentation
 
 ## Dependencies
 
@@ -812,35 +812,49 @@ anyhow = "1.0"
 
 ### 1. Simplicity
 
-No traits, no adapters, no boilerplate. Just 3 concepts: Workflow, Task, utils. Easy understand/maintain.
+- No traits, no adapters, no boilerplate
+- Just three simple concepts: Workflow, Task, utilities
+- Easy to understand and maintain
 
 ### 2. Flexibility
 
-Layer 3 full control. Use any parser lib (castep-cell-io, vasp-io, etc). Mix different software in same workflow.
+- Layer 3 has full control over workflow logic
+- Can use any parser library (castep-cell-io, vasp-io, etc.)
+- Can mix different software in same workflow
 
 ### 3. Composability
 
-Utils independent, use what you need. Easy create helpers. Can build domain libs on top.
+- Utilities are independent, use what you need
+- Easy to create helper functions
+- Can build domain-specific libraries on top
 
 ### 4. Testability
 
-Each layer independently testable. No mocking needed (utils = simple functions). Easy integration tests.
+- Each layer independently testable
+- No mocking needed (utilities are simple functions)
+- Easy to write integration tests
 
 ### 5. Extensibility
 
-New software: just use parser lib. New utils: add functions to Layer 2. Domain helpers: create new lib.
+- Adding new software: just use its parser library
+- Adding new utilities: just add functions to Layer 2
+- Adding domain-specific helpers: create new library
 
 ### 6. Performance
 
-No trait dispatch overhead. Closures can inline. Parallel exec where possible.
+- No trait dispatch overhead
+- Closures can be inlined
+- Parallel execution where possible
 
 ### 7. Type Safety
 
-Full compile-time checking via parser lib builders. No runtime type dispatch. Clear error msgs.
+- Full compile-time checking via parser library builders
+- No runtime type dispatch
+- Clear error messages
 
 ## Migration from Old Design
 
-Existing code using adapter pattern:
+If you have existing code using the adapter pattern:
 
 **Before (adapter-based):**
 
@@ -866,6 +880,6 @@ let task = Task::new("task_id", || {
 
 ## Conclusion
 
-Utilities-based arch simpler, more flexible, easier maintain than adapter design. By killing unnecessary abstractions + giving Layer 3 full control, we create framework that's both powerful + easy use.
+The utilities-based architecture is simpler, more flexible, and easier to maintain than the adapter-based design. By eliminating unnecessary abstractions and giving Layer 3 full control, we create a framework that's both powerful and easy to use.
 
-**Key Insight:** W/ Rust's type system + parser libs w/ builders, no need adapters. Simple utils sufficient.
+**Key Insight:** With Rust's type system and parser libraries with builders, we don't need adapters. Simple utilities are sufficient.

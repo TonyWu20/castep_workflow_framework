@@ -49,6 +49,17 @@
                   claude --model Qwopus3.5-9B-6bit
                 '';
               }
+              {
+                name = "claude-local-qwen3";
+                command = ''
+                  ANTHROPIC_BASE_URL=http://localhost:8000 \
+                  CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
+                  ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.5-9B-oQ4 \
+                  ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.5-9B-oQ4 \
+                  ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.5-9B-oQ4 \
+                  claude --model qwen3.5-9B-oQ4
+                '';
+              }
             ];
           };
         }
