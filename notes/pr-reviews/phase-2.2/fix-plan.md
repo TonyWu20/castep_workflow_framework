@@ -1,3 +1,48 @@
+## v3 (2026-04-10)
+
+# Fix Plan: phase-2.2 PR Review (post-fix-fixes review of `35ddb29`)
+
+## Context
+
+Reviews `35ddb29` against the three issues from v2. Issues 1 and 2 are fully resolved. Issue 3 is 2/3 resolved — the comment was added at two of three `interval_secs: 0` sites and omitted at the third.
+
+## PR Rating: Approve
+
+| Axis          | Score   | Reason                                                              |
+| ------------- | ------- | ------------------------------------------------------------------- |
+| Plan & Spec   | Pass    | All 3 v2 issues addressed (1 fully, 1 fully, 1 with a trivial gap) |
+| Architecture  | Pass    | CASTEP domain logic removed from Layer 1                           |
+| Rust Style    | Pass    | `tokio` removed from both crates; 120-line lockfile reduction clean |
+| Test Coverage | Pass    | 36/36 tests pass; Clippy: 0 warnings                               |
+
+---
+
+## Remaining Issues
+
+### Issue 1 (Nit): Missing comment at `interval_secs: 0` in `test_periodic_hook_error_handling`
+
+**File:** `workflow_core/tests/periodic_hooks.rs:181`
+**Severity:** Nit (not blocking)
+**Problem:** The v2 fix plan required comments at three `interval_secs: 0` sites. Comments were added at lines 39-41 and 138-140, but line 181 in `test_periodic_hook_error_handling` received no comment. All three sites have identical semantics.
+
+**Fix:** Add the same two-line comment before line 181:
+```rust
+            // interval_secs: 0 means "as-fast-as-possible" - fires the hook as many
+            // times as possible within the task execution window (valid for tests)
+            HookTrigger::Periodic { interval_secs: 0 }
+```
+
+---
+
+## Verification
+
+```bash
+cargo test --all    # 36/36 pass
+cargo clippy --all  # 0 warnings
+```
+
+---
+
 ## v2 (2026-04-10)
 
 # Fix Plan: phase-2.2 PR Review (post-fix review)
