@@ -4,6 +4,7 @@ use crate::task::Task;
 use anyhow::{bail, Result};
 use bon::bon;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -271,7 +272,6 @@ impl Workflow {
                             .unwrap_or(Duration::from_secs(0));
 
                         let error_context = Self::capture_task_error_context(
-                            self,
                             &task_workdirs[&id],
                             &id,
                             &e,
@@ -371,7 +371,7 @@ impl Workflow {
                             "Task started"
                         );
 
-                        // Spawn periodic hooks
+                        // Spawn periodic hooks and OnStart hooks
                         if let Some(hooks) = monitors.get(&id) {
                             let periodic_hooks: Vec<_> = hooks
                                 .iter()
@@ -379,24 +379,17 @@ impl Workflow {
                                 .cloned()
                                 .collect();
 
-                            if !periodic_hooks.is_empty() {
-                                let ctx = HookContext {
-                                    task_id: id.clone(),
-                                    workdir: task_workdirs[&id].clone(),
-                                    state: "running".to_string(),
-                                    exit_code: None,
-                                };
-                                periodic_manager.spawn_for_task(id.clone(), periodic_hooks, ctx);
-                            }
-                        }
-
-                        if let Some(hooks) = monitors.get(&id) {
                             let ctx = HookContext {
                                 task_id: id.clone(),
                                 workdir: task_workdirs[&id].clone(),
                                 state: "running".to_string(),
                                 exit_code: None,
                             };
+
+                            if !periodic_hooks.is_empty() {
+                                periodic_manager.spawn_for_task(id.clone(), periodic_hooks, ctx.clone());
+                            }
+
                             for hook in hooks
                                 .iter()
                                 .filter(|h| matches!(h.trigger, HookTrigger::OnStart))
@@ -480,7 +473,7 @@ impl Workflow {
         }
     }
 
-    fn capture_task_error_context(&self, workdir: &PathBuf, task_id: &str, error: &anyhow::Error) -> String {
+    fn capture_task_error_context(workdir: &Path, task_id: &str, error: &anyhow::Error) -> String {
         let mut context = format!("Task '{}' failed: {}\n", task_id, error);
 
         // Try reading last 20 lines from CASTEP output

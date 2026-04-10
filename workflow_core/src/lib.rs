@@ -10,6 +10,7 @@ pub use state::{TaskStatus, WorkflowState};
 /// Initialize default tracing subscriber with env-based filtering.
 /// Call once at start of main(). Controlled via RUST_LOG env var.
 /// Returns error if already initialized (safe, won't panic).
+#[cfg(feature = "default-logging")]
 pub fn init_default_logging() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(

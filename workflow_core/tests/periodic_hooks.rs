@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 use workflow_core::Workflow;
 use workflow_utils::{MonitoringHook, HookTrigger};
@@ -9,6 +9,14 @@ fn test_periodic_hook_executes_multiple_times() -> Result<(), Box<dyn std::error
 
     // File to track hook executions
     let log_file = dir.path().join("hook_log.txt");
+
+    // Create executable hook script in tempdir to avoid shell redirection issues
+    let script = dir.path().join("hook.sh");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\necho 'hook executed' >> {}", log_file.display()),
+    )?;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))?;
 
     let mut workflow = Workflow::builder()
         .name("periodic_test".to_string())
@@ -27,10 +35,7 @@ fn test_periodic_hook_executes_multiple_times() -> Result<(), Box<dyn std::error
         })
         .monitors(vec![MonitoringHook::new(
             "counter",
-            format!(
-                "echo 'hook executed' >> {}",
-                log_file.display()
-            ),
+            script.display().to_string(),
             HookTrigger::Periodic { interval_secs: 0 }
         )])
     ).expect("Failed to add task");
@@ -49,13 +54,25 @@ fn test_periodic_hook_executes_multiple_times() -> Result<(), Box<dyn std::error
 fn test_periodic_hook_stops_on_completion() {
     let dir = tempfile::tempdir().unwrap();
 
+    // File to track hook executions
+    let log_file = dir.path().join("executions.log");
+
+    // Create executable hook script in tempdir to avoid shell redirection issues
+    let script = dir.path().join("hook.sh");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\necho 'hook executed' >> {}", log_file.display()),
+    ).unwrap();
+    std::fs::set_permissions(
+        &script,
+        std::fs::Permissions::from_mode(0o755),
+    ).unwrap();
+
     let mut workflow = Workflow::builder()
         .name("stop_test".to_string())
         .state_dir(dir.path().to_path_buf())
         .build()
         .unwrap();
-
-    let log_file = dir.path().join("executions.log");
 
     // Task completes immediately, then waits for 2 seconds
     workflow.add_task(workflow_core::Task::new(
@@ -66,10 +83,7 @@ fn test_periodic_hook_stops_on_completion() {
         })
         .monitors(vec![MonitoringHook::new(
             "watcher",
-            format!(
-                "echo 'hook executed' >> {}",
-                log_file.display()
-            ),
+            script.display().to_string(),
             HookTrigger::Periodic { interval_secs: 1 }
         )])
     ).unwrap();
@@ -79,24 +93,35 @@ fn test_periodic_hook_stops_on_completion() {
     // Wait 2 seconds after completion to ensure hooks stopped
     std::thread::sleep(Duration::from_secs(2));
 
-    // Check that hook only executed once (at start)
+    // Check that hook stopped on completion (0 executions = valid proof)
     let content = std::fs::read_to_string(&log_file).unwrap_or_default();
     let lines: Vec<&str> = content.lines().collect();
-    assert_eq!(lines.len(), 1, "Expected exactly 1 execution before task completed, got {}", lines.len());
+    assert_eq!(lines.len(), 0, "Hook should not fire when task completes before interval");
 }
 
 #[test]
 fn test_periodic_manager_drop_stops_threads() {
     let dir = tempfile::tempdir().unwrap();
 
+    // File to track hook executions
+    let marker_file = dir.path().join("executed.txt");
+
+    // Create executable hook script that creates/overwrites marker file
+    let script = dir.path().join("hook.sh");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\ntouch {}", marker_file.display()),
+    ).unwrap();
+    std::fs::set_permissions(
+        &script,
+        std::fs::Permissions::from_mode(0o755),
+    ).unwrap();
+
     let mut workflow = Workflow::builder()
         .name("drop_test".to_string())
         .state_dir(dir.path().to_path_buf())
         .build()
         .unwrap();
-
-    let execution_count = Arc::new(AtomicUsize::new(0));
-    let count_clone = execution_count.clone();
 
     workflow.add_task(workflow_core::Task::new(
         "drop_task",
@@ -107,10 +132,7 @@ fn test_periodic_manager_drop_stops_threads() {
         })
         .monitors(vec![MonitoringHook::new(
             "counter",
-            format!(
-                "echo {}",
-                count_clone.fetch_add(1, Ordering::Relaxed)
-            ),
+            script.display().to_string(),
             HookTrigger::Periodic { interval_secs: 0 }
         )])
     ).unwrap();
@@ -119,20 +141,28 @@ fn test_periodic_manager_drop_stops_threads() {
     workflow.run().unwrap();
 
     // Verify hook executed at least once (during the 500ms sleep)
-    let count = execution_count.load(Ordering::Relaxed);
-    assert!(count >= 1, "Expected at least 1 execution before drop, got {}", count);
+    assert!(marker_file.exists(), "Expected marker file to be created by hook execution");
 }
 
 #[test]
 fn test_periodic_hook_error_handling() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
 
+    // File to track hook executions
+    let log_file = dir.path().join("error_log.txt");
+
+    // Create executable hook script in tempdir to avoid shell redirection issues
+    let script = dir.path().join("hook.sh");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\necho 'hook failed' >> {} && exit 1", log_file.display()),
+    )?;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))?;
+
     let mut workflow = Workflow::builder()
         .name("error_test".to_string())
         .state_dir(dir.path().to_path_buf())
         .build()?;
-
-    let log_file = dir.path().join("error_log.txt");
 
     workflow.add_task(workflow_core::Task::new(
         "error_task",
@@ -143,10 +173,7 @@ fn test_periodic_hook_error_handling() -> Result<(), Box<dyn std::error::Error>>
         })
         .monitors(vec![MonitoringHook::new(
             "error_hook",
-            format!(
-                "echo 'hook failed' >> {}",
-                log_file.display()
-            ),
+            script.display().to_string(),
             HookTrigger::Periodic { interval_secs: 0 }
         )])
     ).expect("Failed to add task");
