@@ -4,7 +4,7 @@
 
 **Architecture:** Utilities-based (no traits, no adapters)
 
-**Status:** Phase 1 Complete (as of 2026-04-08)
+**Status:** Phase 2.2 Complete (as of 2026-04-10)
 
 ### Implemented Components
 
@@ -14,6 +14,7 @@
 - `files` module: Generic file I/O utilities (re-exported flat at crate root — use `workflow_utils::{create_dir, write_file, ...}`)
 - `MonitoringHook`: External monitoring integration
 - **No traits, no adapters** - pure utilities
+- `tokio` removed — pure std-thread
 
 #### Phase 1.2: workflow_core (Layer 1) ✅
 
@@ -29,11 +30,26 @@
 - `examples/hubbard_u_sweep`: Layer 3 reference implementation (workspace member)
 - Integration tests: sweep pattern, resume semantics, DAG ordering/failure propagation
 
+#### Phase 2.1: castep-cell-io Integration ✅
+
+- castep-cell-io wired into `hubbard_u_sweep` example
+- Execution reports tracked in `execution_reports/`
+
+#### Phase 2.2: Production Readiness — Logging & Periodic Monitoring ✅ (2026-04-10)
+
+- `tracing` integrated into `workflow_core`: structured `debug`/`info`/`error` events for workflow start/finish, task start/complete/fail
+- `init_default_logging()` convenience fn (behind `default-logging` feature, uses `tracing-subscriber` + `RUST_LOG`)
+- `PeriodicHookManager`: background-thread manager for `HookTrigger::Periodic` hooks; spawns on task start, stops cleanly on task completion or failure
+- `Task::monitors()` builder method for attaching `MonitoringHook` lists to a task
+- Per-task duration logging; summary (succeeded/failed counts + total duration) at workflow end
+- `capture_task_error_context` is domain-agnostic (no CASTEP filenames in Layer 1)
+- 36/36 tests pass; Clippy: 0 warnings
+
 ### Architecture Documents
 
 **Current (Authoritative):**
 
-- `ARCHITECTURE.md` - Utilities-based three-layer architecture (v2.1)
+- `ARCHITECTURE.md` - Utilities-based three-layer architecture (v2.2)
 - `PHASE1_IMPLEMENTATION_PLAN.md` - Implementation plan for Phase 1
 - `plans/PHASE1.3_IMPLEMENTATION_PLAN.md` - Phase 1.3 integration & examples plan
 
@@ -58,9 +74,8 @@ Parser Libraries: castep-cell-io, etc.
 
 ## Next Steps
 
-**Phase 2: Examples and Documentation**
+**Phase 3: Examples and Documentation**
 
-- Full HubbardU sweep with castep-cell-io builders (pending castep-cell-io integration)
 - Convergence test example
 - Comprehensive documentation
 

@@ -1,8 +1,8 @@
 # Workflow Framework Architecture
 
-**Version:** 2.1 (Utilities-Based)  
-**Last Updated:** 2026-04-08  
-**Status:** Phase 1 Complete (1.1 + 1.2 + 1.3)
+**Version:** 2.2 (Utilities-Based)  
+**Last Updated:** 2026-04-10  
+**Status:** Phase 2.2 Complete (1.1 + 1.2 + 1.3 + 2.1 + 2.2)
 
 ## Executive Summary
 
@@ -769,11 +769,26 @@ castep_workflow_framework/
 - `examples/hubbard_u_sweep`: Layer 3 reference impl
 - Integration tests: sweep pattern, resume semantics, DAG ordering/failure propagation
 
-### Phase 2: Planned 📋
+### Phase 2.1: Complete ✅
 
-**Examples and Documentation**
+- castep-cell-io wired into `hubbard_u_sweep` example
+- Execution reports tracked in `execution_reports/`
 
-- Full HubbardU sweep w/ castep-cell-io builders (castep-cell-io integration pending)
+### Phase 2.2: Complete ✅ (2026-04-10)
+
+**Production Readiness — Logging & Periodic Monitoring**
+
+- `tracing` integrated into `workflow_core` (structured log events at `debug`/`info`/`error` levels)
+- `init_default_logging()` helper (behind `default-logging` feature flag, uses `tracing-subscriber`)
+- `PeriodicHookManager`: spawns background threads for `HookTrigger::Periodic` hooks, stops them cleanly on task completion/failure
+- Task-level `monitors()` builder method added to `Task`
+- Workflow-level timing: per-task duration logged on complete/fail; total workflow summary on finish
+- `capture_task_error_context` kept generic (no CASTEP-specific filenames in Layer 1)
+- `tokio` dep removed from `workflow_utils` (now pure std-thread)
+- 36/36 tests pass; Clippy: 0 warnings
+
+### Phase 3: Planned 📋
+
 - Convergence test example
 - Comprehensive docs
 
@@ -787,7 +802,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
 petgraph = "0.8"
+tracing = "0.1"
 workflow_utils = { path = "../workflow_utils" }
+
+[features]
+default-logging = ["dep:tracing-subscriber"]
 ```
 
 ### workflow_utils
