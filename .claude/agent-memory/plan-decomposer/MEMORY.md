@@ -1,0 +1,1 @@
+- [Phase 3 Task Patterns](project_phase3_patterns.md) -- Archetype sequences for trait introduction, dependency flip, test migration
