@@ -15,7 +15,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Crate/Module**: `workflow_core/src/error.rs`, `workflow_core/src/lib.rs`, `workflow_core/Cargo.toml`
 - **Responsible For**: Defining the single error type used across all of `workflow_core`'s public API.
 - **Depends On**: None
-- **Enables**: TASK-2, TASK-3, TASK-4, TASK-6, TASK-7, TASK-8, TASK-10, TASK-11, TASK-12, TASK-13, TASK-14, TASK-15
+- **Enables**: TASK-3, TASK-4, TASK-7, TASK-8, TASK-11, TASK-13, TASK-14, TASK-15
 - **Can Run In Parallel With**: None (foundational)
 - **Acceptance Criteria**:
   - `workflow_core/src/error.rs` exists with the `WorkflowError` enum as specified below.
@@ -43,30 +43,24 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
       Interrupted,
   }
   ```
-  Do NOT change existing function signatures yet -- just define the type and re-export it. Existing code keeps using `anyhow::Result` until later tasks migrate it.
-
----
-
-#### ~~TASK-2~~: MERGED into TASK-3
-
-> **Architect correction**: `#[ignore]` skips *execution* not *compilation*. Tests referencing not-yet-existing return types won't compile. Write the error-contract tests alongside the signature migration in TASK-3 (write tests first within the same task — still TDD, just within one task boundary).
+  Do NOT change existing function signatures yet -- just define the type and re-export it. Existing code keeps using `anyhow::Result` until TASK-3 migrates it.
 
 ---
 
 #### TASK-3: Migrate `workflow_core` public API from `anyhow::Result` to `Result<T, WorkflowError>`
-- **Scope**: Change all public function signatures in `workflow_core` (dag.rs, workflow.rs, state.rs) from `anyhow::Result<T>` to `Result<T, WorkflowError>`, and update internal error construction to use the enum variants.
+- **Scope**: Change all public function signatures in `workflow_core` (dag.rs, workflow.rs, state.rs) from `anyhow::Result<T>` to `Result<T, WorkflowError>`, update internal error construction to use the enum variants, and write error-contract tests.
 - **Crate/Module**: `workflow_core/src/dag.rs`, `workflow_core/src/workflow.rs`, `workflow_core/src/state.rs`, `workflow_core/src/lib.rs`
-- **Responsible For**: The actual signature migration from anyhow to typed errors.
+- **Responsible For**: The actual signature migration from anyhow to typed errors, and TDD tests for error contracts.
 - **Depends On**: TASK-1
-- **Enables**: TASK-5, TASK-10, TASK-12, TASK-13, TASK-15
-- **Can Run In Parallel With**: None (touches many files)
+- **Enables**: TASK-5, TASK-11, TASK-13, TASK-15
+- **Can Run In Parallel With**: TASK-4, TASK-8
 - **Acceptance Criteria**:
   - `Dag::add_node` returns `Result<(), WorkflowError>` with `WorkflowError::DuplicateTaskId`.
   - `Dag::add_edge` returns `Result<(), WorkflowError>` with `WorkflowError::CycleDetected` or `WorkflowError::UnknownDependency`.
   - `WorkflowState::load` returns `Result<Self, WorkflowError>` with `WorkflowError::StateCorrupted` for parse errors and `WorkflowError::Io` for file errors.
   - `WorkflowState::save` returns `Result<(), WorkflowError>`.
   - `Workflow::add_task`, `Workflow::run`, `Workflow::dry_run` all return `Result<T, WorkflowError>`.
-  - **New error-contract tests** (merged from TASK-2) written alongside migration:
+  - Error-contract tests:
     1. `add_task` with duplicate ID returns `WorkflowError::DuplicateTaskId`.
     2. `add_edge` creating a cycle returns `WorkflowError::CycleDetected`.
     3. Unknown dependency returns `WorkflowError::UnknownDependency`.
@@ -82,14 +76,12 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Crate/Module**: `workflow_core/src/monitoring.rs` (NEW), `workflow_core/src/lib.rs`, `workflow_utils/src/monitoring.rs`, `workflow_utils/src/lib.rs`
 - **Responsible For**: Flipping the dependency direction -- monitoring data types live in core.
 - **Depends On**: TASK-1
-- **Enables**: TASK-5, TASK-6, TASK-7
-- **Can Run In Parallel With**: TASK-2
+- **Enables**: TASK-7, TASK-13
+- **Can Run In Parallel With**: TASK-3, TASK-8
 - **Acceptance Criteria**:
   - `workflow_core/src/monitoring.rs` contains `MonitoringHook`, `HookTrigger`, `HookContext`, `HookResult` (data types only, NO `execute` method).
   - `workflow_core/src/lib.rs` has `pub mod monitoring;` and re-exports the types.
-  - `workflow_utils/src/monitoring.rs` retains `MonitoringHook::execute()` as either:
-    - A free function `pub fn execute_hook(hook: &MonitoringHook, ctx: &HookContext) -> Result<HookResult>`, OR
-    - Keep the `impl MonitoringHook` block that imports the type from `workflow_core`.
+  - `workflow_utils/src/monitoring.rs` retains `MonitoringHook::execute()` as a free function: `pub fn execute_hook(hook: &MonitoringHook, ctx: &HookContext) -> Result<HookResult>`.
   - `workflow_utils/Cargo.toml` now depends on `workflow_core = { path = "../workflow_core" }`.
   - `workflow_core/Cargo.toml` NO LONGER depends on `workflow_utils`.
   - `workflow_core/src/task.rs` imports `MonitoringHook` from `crate::monitoring` instead of `workflow_utils`.
@@ -104,9 +96,9 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Scope**: Refactor `ExecutionHandle` in `workflow_utils/src/executor.rs` to use the owned `Child` handle for process management instead of raw PID + nix signals.
 - **Crate/Module**: `workflow_utils/src/executor.rs`, `workflow_utils/Cargo.toml`
 - **Responsible For**: Making process management safe and portable by using `std::process::Child` directly.
-- **Depends On**: TASK-3, TASK-4 (needs `WorkflowError` and the new crate dependency direction)
-- **Enables**: TASK-8, TASK-9
-- **Can Run In Parallel With**: TASK-6, TASK-7
+- **Depends On**: TASK-3, TASK-4
+- **Enables**: TASK-9
+- **Can Run In Parallel With**: TASK-7, TASK-8
 - **Acceptance Criteria**:
   - `ExecutionHandle` fields become:
     ```rust
@@ -114,7 +106,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
         child: Child,  // std::process::Child -- NOT Option<Child>
     }
     ```
-  - `pid()` method extracts PID from the owned child: `self.child.id() as i32`. This works because `Child::id()` is callable even while the process is running.
+  - `pid()` method extracts PID from the owned child: `self.child.id() as i32`.
   - `is_running()` uses `self.child.try_wait()` instead of `nix::sys::wait::waitpid`:
     ```rust
     pub fn is_running(&mut self) -> bool {
@@ -122,7 +114,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
     }
     ```
     Note: `is_running` now takes `&mut self` because `try_wait` requires `&mut self`.
-  - `terminate()` uses `self.child.kill()` (sends SIGKILL on Unix) instead of `nix::sys::signal::kill`:
+  - `terminate()` uses `self.child.kill()`:
     ```rust
     pub fn terminate(&mut self) -> Result<(), WorkflowError> {
         self.child.kill().map_err(WorkflowError::Io)
@@ -144,36 +136,17 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
   - `nix` is removed from `workflow_utils/Cargo.toml` dependencies.
   - `nix` is removed from workspace `Cargo.toml` `[workspace.dependencies]`.
   - All existing tests pass.
-- **Notes for Subagent**: The current code extracts `pid` at spawn time and stores it alongside `child`. After this change, only `child` is stored. The `pid()` accessor calls `self.child.id()` which is always available. The `is_running()` signature changes from `&self` to `&mut self` -- update all callers. `Child::kill()` sends SIGKILL, which is fine for our use case (the more graceful SIGTERM will be done via signal handling in TASK-19). If you want SIGTERM, you can use `unsafe { libc::kill(pid, libc::SIGTERM) }` but `kill()` is simpler for now.
-
----
-
-#### ~~TASK-6~~: MERGED into TASK-7
-
-> **Architect correction**: `#[ignore]` doesn't prevent compilation. Write `HookExecutor` trait tests alongside the implementation in TASK-7.
-
----
-                  Ok(HookResult { success: true, output: "ok".into() })
-              }
-          }
-          let exec = MockExecutor;
-          let hook = MonitoringHook::new("test", "echo hi", HookTrigger::OnStart);
-          let ctx = HookContext { task_id: "t1".into(), workdir: ".".into(), state: "running".into(), exit_code: None };
-          let result = exec.execute_hook(&hook, &ctx).unwrap();
-          assert!(result.success);
-      }
-  }
-  ```
+- **Notes for Subagent**: The current code extracts `pid` at spawn time and stores it alongside `child`. After this change, only `child` is stored. The `pid()` accessor calls `self.child.id()` which is always available. The `is_running()` signature changes from `&self` to `&mut self` -- update all callers. `Child::kill()` sends SIGKILL, which is acceptable for now (graceful SIGTERM is handled at the workflow level in TASK-19).
 
 ---
 
 #### TASK-7: Implement `HookExecutor` trait in `workflow_core`
-- **Scope**: Define the `HookExecutor` trait in `workflow_core/src/monitoring.rs` and re-export it. Implement it as `ShellHookExecutor` in `workflow_utils`.
+- **Scope**: Define the `HookExecutor` trait in `workflow_core/src/monitoring.rs` and re-export it. Implement it as `ShellHookExecutor` in `workflow_utils`. Write mock-based tests for the trait contract.
 - **Crate/Module**: `workflow_core/src/monitoring.rs`, `workflow_core/src/lib.rs`, `workflow_utils/src/monitoring.rs`
-- **Responsible For**: Defining the trait abstraction for hook execution so `workflow_core` can execute hooks without depending on `workflow_utils`.
+- **Responsible For**: Defining the trait abstraction for hook execution and providing the shell-based concrete implementation.
 - **Depends On**: TASK-4
 - **Enables**: TASK-15
-- **Can Run In Parallel With**: TASK-8, TASK-10
+- **Can Run In Parallel With**: TASK-8, TASK-9
 - **Acceptance Criteria**:
   - The trait is defined exactly as:
     ```rust
@@ -188,7 +161,6 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 
     impl workflow_core::HookExecutor for ShellHookExecutor {
         fn execute_hook(&self, hook: &MonitoringHook, ctx: &HookContext) -> Result<HookResult, WorkflowError> {
-            // Uses TaskExecutor internally, same logic as current MonitoringHook::execute()
             let mut parts = hook.command.split_whitespace();
             let cmd = parts.next().unwrap_or_default();
             let args: Vec<String> = parts.map(String::from).collect();
@@ -205,9 +177,9 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
         }
     }
     ```
-  - The TASK-6 tests (merged) pass: mock `HookExecutor` succeeds and fails correctly.
+  - Tests for the `HookExecutor` trait contract written alongside implementation: a mock executor that succeeds, and one that returns an error.
   - `cargo test -p workflow_core` and `cargo test -p workflow_utils` both pass.
-- **Notes for Subagent**: The `ShellHookExecutor` replaces the old `MonitoringHook::execute()` method. Write tests for HookExecutor alongside the implementation (merged from TASK-6): a mock executor that succeeds, and one that returns an error.
+- **Notes for Subagent**: The `ShellHookExecutor` replaces the old `MonitoringHook::execute()` method. Write mock tests in `workflow_core/src/monitoring.rs` using a local `MockExecutor` struct that implements `HookExecutor` -- no external process needed for the trait tests.
 
 ---
 
@@ -216,8 +188,8 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Crate/Module**: `workflow_core/src/process.rs` (NEW), `workflow_core/src/lib.rs`
 - **Responsible For**: Defining the abstraction boundary for process execution so the workflow engine does not depend on a specific process runner.
 - **Depends On**: TASK-1
-- **Enables**: TASK-9, TASK-12, TASK-15
-- **Can Run In Parallel With**: TASK-7, TASK-10
+- **Enables**: TASK-9, TASK-15
+- **Can Run In Parallel With**: TASK-3, TASK-4, TASK-7
 - **Acceptance Criteria**:
   - `workflow_core/src/process.rs` contains exactly:
     ```rust
@@ -256,12 +228,12 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 ---
 
 #### TASK-9: Implement `SystemProcessRunner` in `workflow_utils`
-- **Scope**: Implement the `ProcessRunner` trait as `SystemProcessRunner` and `ProcessHandle` as `SystemProcessHandle` in `workflow_utils/src/executor.rs`.
-- **Crate/Module**: `workflow_utils/src/executor.rs`, `workflow_utils/src/lib.rs`
-- **Responsible For**: Providing the concrete process execution implementation that wraps `std::process::Child`.
+- **Scope**: Implement the `ProcessRunner` trait as `SystemProcessRunner` and `ProcessHandle` as `SystemProcessHandle` in `workflow_utils/src/executor.rs`. Write integration tests for the process runner.
+- **Crate/Module**: `workflow_utils/src/executor.rs`, `workflow_utils/src/lib.rs`, `workflow_utils/tests/process_tests.rs` (NEW)
+- **Responsible For**: Providing the concrete process execution implementation that wraps `std::process::Child`, and verifying its behavior with integration tests.
 - **Depends On**: TASK-5, TASK-8
 - **Enables**: TASK-15
-- **Can Run In Parallel With**: TASK-10, TASK-11
+- **Can Run In Parallel With**: TASK-7, TASK-11, TASK-13
 - **Acceptance Criteria**:
   - `SystemProcessRunner` is defined:
     ```rust
@@ -316,7 +288,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
     }
     ```
   - `workflow_utils/src/lib.rs` re-exports `SystemProcessRunner`.
-  - **Tests (merged from TASK-12)** in `workflow_utils/tests/process_tests.rs`:
+  - Integration tests in `workflow_utils/tests/process_tests.rs`:
     1. `SystemProcessRunner::spawn("echo", &["hello"])` succeeds, `wait()` returns exit code 0 and stdout containing "hello".
     2. `ProcessHandle::is_running()` returns true immediately after spawn, false after `wait()`.
     3. `ProcessHandle::terminate()` on `sleep 60` succeeds.
@@ -326,55 +298,13 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 
 ---
 
-#### ~~TASK-10~~: MERGED into TASK-11
-
-> **Architect correction**: `#[ignore]` doesn't prevent compilation. Write `StateStore` trait tests alongside the implementation in TASK-11.
-
----
-- **Scope**: Write tests in `workflow_core/src/state.rs` for the `StateStore` and `StateStoreExt` trait contract, marked `#[ignore]`.
-- **Crate/Module**: `workflow_core/src/state.rs`
-- **Responsible For**: TDD red phase for the `StateStore` trait.
-- **Depends On**: TASK-1, TASK-3
-- **Enables**: TASK-11
-- **Can Run In Parallel With**: TASK-7, TASK-8
-- **Acceptance Criteria**:
-  - At least 5 `#[ignore]` tests with comment `// will pass after TASK-11 StateStore implementation`:
-    1. `JsonStateStore` implements `StateStore` -- can `set_status` and `get_status`.
-    2. `StateStoreExt::mark_running` / `mark_completed` / `mark_failed` work via the trait.
-    3. `StateStoreExt::is_completed` returns correct bool.
-    4. `StateStoreExt::summary` returns correct `StateSummary` counts.
-    5. `StateStore::save` persists to disk, loading back gives same data.
-  - Tests use the exact trait method signatures from the agreed spec:
-    ```rust
-    fn get_status(&self, id: &str) -> Option<&TaskStatus>;
-    fn set_status(&mut self, id: &str, status: TaskStatus);
-    fn all_tasks(&self) -> &HashMap<String, TaskStatus>;
-    fn save(&self) -> Result<(), WorkflowError>;
-    ```
-  - `cargo test -p workflow_core` compiles (tests are ignored).
-- **Notes for Subagent**: Write tests against the `StateStore` trait using `JsonStateStore` as the concrete type. The tests won't compile until TASK-11 introduces the trait and refactors `WorkflowState` into `JsonStateStore`. Example:
-  ```rust
-  #[test]
-  #[ignore] // will pass after TASK-11 StateStore implementation
-  fn state_store_round_trip() {
-      let dir = tempdir().unwrap();
-      let path = dir.path().join("state.json");
-      let mut store = JsonStateStore::new("test", path.clone());
-      store.set_status("a", TaskStatus::Completed);
-      store.save().unwrap();
-      // ... load and verify
-  }
-  ```
-
----
-
 #### TASK-11: Implement `StateStore` trait and `JsonStateStore`
-- **Scope**: Define the `StateStore` trait, `StateStoreExt` extension trait, `StateSummary` struct, and refactor `WorkflowState` into `JsonStateStore` implementing `StateStore`.
+- **Scope**: Define the `StateStore` trait, `StateStoreExt` extension trait, `StateSummary` struct, and refactor `WorkflowState` into `JsonStateStore` implementing `StateStore`. Write tests for the trait contract alongside the implementation.
 - **Crate/Module**: `workflow_core/src/state.rs`, `workflow_core/src/lib.rs`
-- **Responsible For**: Abstracting state persistence behind a trait boundary and providing the JSON implementation.
+- **Responsible For**: Abstracting state persistence behind a trait boundary, providing the JSON implementation, and verifying the contract with tests.
 - **Depends On**: TASK-3
-- **Enables**: TASK-15, TASK-16, TASK-20, TASK-22
-- **Can Run In Parallel With**: TASK-9
+- **Enables**: TASK-15, TASK-16, TASK-22
+- **Can Run In Parallel With**: TASK-9, TASK-13
 - **Acceptance Criteria**:
   - The trait, extension trait, and types are defined exactly as:
     ```rust
@@ -427,10 +357,10 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
     }
     ```
   - `JsonStateStore::new(name: &str, path: PathBuf) -> Self` constructor.
-  - `JsonStateStore::load(path: impl AsRef<Path>) -> Result<Self, WorkflowError>` associated function (not a trait method -- loading is constructor-like).
+  - `JsonStateStore::load(path: impl AsRef<Path>) -> Result<Self, WorkflowError>` associated function.
   - `impl StateStore for JsonStateStore` with `save()` using atomic writes (write to temp file in same dir, then `std::fs::rename`).
-  - **Backward compatibility**: `pub type WorkflowState = JsonStateStore;` type alias so existing code continues to compile. The old method signatures (`save(&self, path)`, `mark_running`, etc.) are removed -- callers use the trait methods instead.
-  - The TASK-10 tests (merged) pass:
+  - **Backward compatibility**: `pub type WorkflowState = JsonStateStore;` type alias so existing code continues to compile.
+  - Tests written alongside implementation:
     1. `JsonStateStore` implements `StateStore` — set and get round-trip.
     2. `StateStoreExt::mark_running/completed/failed` work via blanket impl.
     3. `StateStoreExt::is_completed` returns correct bool.
@@ -451,52 +381,11 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 
 ---
 
-#### ~~TASK-12~~: MERGED into TASK-9
-
-> **Architect correction**: (1) `#[ignore]` doesn't prevent compilation. (2) Tests for `SystemProcessRunner` (a concrete impl) belong in `workflow_utils`, not `workflow_core` — testing a concrete implementation in the trait-defining crate is backwards. Write the process runner tests in TASK-9 inside `workflow_utils/tests/`.
-
----
-- **Scope**: Write tests in `workflow_core/src/process.rs` for the `ProcessRunner` + `ProcessHandle` trait contract, marked `#[ignore]`.
-- **Crate/Module**: `workflow_core/src/process.rs`
-- **Responsible For**: TDD red phase for process abstraction.
-- **Depends On**: TASK-8
-- **Enables**: TASK-9
-- **Can Run In Parallel With**: TASK-10
-- **Acceptance Criteria**:
-  - At least 3 `#[ignore]` tests with comment `// will pass after TASK-9 SystemProcessRunner implementation`:
-    1. `SystemProcessRunner::spawn("echo", &["hello"])` succeeds, `wait()` returns exit code 0 and stdout containing "hello".
-    2. `ProcessHandle::is_running()` returns true immediately after spawn, false after `wait()`.
-    3. `ProcessHandle::terminate()` on a long-running process (e.g., `sleep 60`) succeeds.
-  - Tests reference `workflow_utils::SystemProcessRunner` (which won't exist until TASK-9).
-  - `cargo check -p workflow_core` succeeds (tests are `#[ignore]` so they don't need to compile -- but the trait definitions from TASK-8 must exist).
-- **Notes for Subagent**: These tests live in `workflow_core/src/process.rs` but reference `SystemProcessRunner` from `workflow_utils`. Since `workflow_core` does not depend on `workflow_utils`, these tests need `workflow_utils` as a dev-dependency: add `workflow_utils = { path = "../workflow_utils" }` to `[dev-dependencies]` in `workflow_core/Cargo.toml`. The `#[ignore]` attribute means compilation is only attempted with `--ignored`. Example:
-  ```rust
-  #[cfg(test)]
-  mod tests {
-      use super::*;
-      use std::collections::HashMap;
-
-      #[test]
-      #[ignore] // will pass after TASK-9 SystemProcessRunner implementation
-      fn spawn_echo_returns_output() {
-          let runner = workflow_utils::SystemProcessRunner;
-          let env = HashMap::new();
-          let args = vec!["hello".to_string()];
-          let mut handle = runner.spawn(Path::new("."), "echo", &args, &env).unwrap();
-          let result = handle.wait().unwrap();
-          assert_eq!(result.exit_code, Some(0));
-          assert!(result.stdout.contains("hello"));
-      }
-  }
-  ```
-
----
-
 #### TASK-13: Redesign `Task` struct with three-phase lifecycle
 - **Scope**: Replace the current `Task` struct (opaque `Arc<dyn Fn()>` closure) with the new three-phase lifecycle model using `ExecutionMode`.
 - **Crate/Module**: `workflow_core/src/task.rs`
 - **Responsible For**: The new Task data model.
-- **Depends On**: TASK-3, TASK-4 (needs `WorkflowError` and `MonitoringHook` in core)
+- **Depends On**: TASK-3, TASK-4
 - **Enables**: TASK-14, TASK-15, TASK-17
 - **Can Run In Parallel With**: TASK-9, TASK-11
 - **Acceptance Criteria**:
@@ -533,9 +422,9 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
         },
     }
     ```
-  - Closure types are `Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>` (NOT `Arc`). Each task is consumed from the HashMap during dispatch, so `Box` is sufficient. The closures need `'static` implicitly because `Task` is stored in a `HashMap`.
+  - Closure types are `Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>` (NOT `Arc`). Each task is consumed from the HashMap during dispatch, so `Box` is sufficient.
   - `timeout` lives in `ExecutionMode::Direct`, NOT as a field on `Task`.
-  - Builder methods updated:
+  - Builder methods:
     ```rust
     impl Task {
         pub fn new(id: impl Into<String>, execution: ExecutionMode) -> Self { ... }
@@ -560,7 +449,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Responsible For**: The structured return value from workflow execution.
 - **Depends On**: TASK-13
 - **Enables**: TASK-15
-- **Can Run In Parallel With**: None (small task)
+- **Can Run In Parallel With**: None (small task, unblock TASK-15 quickly)
 - **Acceptance Criteria**:
   - `WorkflowSummary` is defined exactly as:
     ```rust
@@ -580,11 +469,11 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 ---
 
 #### TASK-15: Rewrite `Workflow::run()` execution engine
-- **Scope**: Rewrite the `Workflow` struct to accept trait objects (`Box<dyn StateStore>`, `Box<dyn ProcessRunner>`, `Box<dyn HookExecutor>`) and rewrite the `run()` method to use the new Task lifecycle and return `WorkflowSummary`.
+- **Scope**: Rewrite the `Workflow` struct to accept trait objects (`Box<dyn StateStore>`, `Arc<dyn ProcessRunner>`, `Arc<dyn HookExecutor>`) and rewrite the `run()` method to use the new Task lifecycle and return `WorkflowSummary`.
 - **Crate/Module**: `workflow_core/src/workflow.rs`
 - **Responsible For**: The core execution engine rewrite.
 - **Depends On**: TASK-3, TASK-7, TASK-9, TASK-11, TASK-13, TASK-14
-- **Enables**: TASK-16, TASK-17, TASK-19
+- **Enables**: TASK-16, TASK-17, TASK-19, TASK-20
 - **Can Run In Parallel With**: None (convergence point)
 - **Acceptance Criteria**:
   - `Workflow` struct:
@@ -593,8 +482,8 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
         pub name: String,
         tasks: HashMap<String, Task>,
         state: Box<dyn StateStore>,
-        process_runner: Arc<dyn ProcessRunner>,  // Arc because shared across worker threads
-        hook_executor: Arc<dyn HookExecutor>,    // Arc because shared across worker threads
+        process_runner: Arc<dyn ProcessRunner>,
+        hook_executor: Arc<dyn HookExecutor>,
         max_parallel: usize,
     }
     ```
@@ -629,28 +518,24 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
         pub fn run(&mut self) -> Result<WorkflowSummary, WorkflowError> { /* ... */ }
     }
     ```
-  - **Threading strategy**: Use `std::thread::spawn` (NOT `std::thread::scope`). Task closures (`setup`, `collect`) are `Box<dyn Fn(...)>`. When dispatching a task, take it from the `HashMap` (it is consumed). The `setup` and `collect` closures can be wrapped in `Arc` at dispatch time for the spawned thread to use. The `ProcessRunner` is `Arc`-cloned for sharing across threads.
+  - **Threading strategy**: Use `std::thread::spawn` (NOT `std::thread::scope`). When dispatching a task, take it from the `HashMap` (it is consumed). The `setup` and `collect` closures can be wrapped in `Arc` at dispatch time for the spawned thread. The `ProcessRunner` is `Arc`-cloned for sharing across threads.
   - **Error contract**:
-    - `Ok(WorkflowSummary)` is returned even when individual tasks fail. The summary records which tasks succeeded, failed (with error messages), and were skipped.
+    - `Ok(WorkflowSummary)` is returned even when individual tasks fail.
     - `Err(WorkflowError::CycleDetected)` if the DAG has a cycle.
-    - `Err(WorkflowError::Interrupted)` if a signal is caught (added in TASK-19).
+    - `Err(WorkflowError::Interrupted)` if a signal is caught (TASK-19).
     - `Err(WorkflowError::Io(...))` if state save fails.
   - The `run()` loop dispatches tasks using `ExecutionMode::Direct`:
     1. Run `task.setup` closure if present (in the spawned thread).
     2. Spawn the process via `self.process_runner.spawn(...)`.
     3. Wait for it via `handle.wait()`.
     4. Run `task.collect` closure if present (in the spawned thread).
-  - `ExecutionMode::Queued` should return `Err(WorkflowError::Io(std::io::Error::other("queued execution not yet implemented")))` for now.
-  - **Critical**: `done_set` for `dag.ready_tasks()` must include `Completed | Skipped | SkippedDueToDependencyFailure` but NOT `Failed` or `Running`. This is the mechanism that triggers skip-propagation and must be preserved from the current implementation.
+  - `ExecutionMode::Queued` returns `Err(WorkflowError::Io(std::io::Error::other("queued execution not yet implemented")))` for now.
+  - **Critical**: `done_set` for `dag.ready_tasks()` must include `Completed | Skipped | SkippedDueToDependencyFailure` but NOT `Failed` or `Running`. This is the mechanism that triggers skip-propagation.
   - The `bon` builder is removed -- use the plain `Workflow::new()` constructor + `with_max_parallel()` chain.
   - The old `resume()` method is removed (resume logic is handled by loading a `JsonStateStore` and passing it in).
   - `PeriodicHookManager` is updated to use `self.hook_executor` instead of calling `hook.execute()` directly.
   - `cargo check -p workflow_core` succeeds.
-- **Notes for Subagent**: This is the largest task. The current `run()` is ~150 lines. The new one will be similar in structure but uses trait objects instead of direct calls. Key changes:
-  - Instead of `Arc::clone(&t.execute_fn)`, extract the task from `self.tasks` and use `process_runner.spawn(workdir, command, args, env)`.
-  - Instead of calling `hook.execute(&ctx)` directly, call `self.hook_executor.execute_hook(&hook, &ctx)`.
-  - Instead of `state.lock().unwrap().mark_completed(...)`, use `self.state.mark_completed(...)` (state is `Box<dyn StateStore>`, used from the main thread only -- no Mutex needed if the run loop is single-threaded with spawned worker threads that communicate back via `JoinHandle`).
-  - Actually: the state is mutated from the main loop thread only (not from worker threads), so `Box<dyn StateStore>` is fine without `Mutex`. Worker threads report back via `JoinHandle<Result<ProcessResult, WorkflowError>>`.
+- **Notes for Subagent**: The state is mutated from the main loop thread only (not from worker threads), so `Box<dyn StateStore>` is fine without `Mutex`. Worker threads report back via `JoinHandle<Result<ProcessResult, WorkflowError>>`. Instead of `Arc::clone(&t.execute_fn)`, extract the task from `self.tasks` and use `process_runner.spawn(workdir, command, args, env)`. Instead of calling `hook.execute(&ctx)` directly, call `self.hook_executor.execute_hook(&hook, &ctx)`.
 
 ---
 
@@ -681,32 +566,30 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
   - All tests compile and pass.
   - `cargo test --workspace` passes.
   - `cargo check -p hubbard_u_sweep` succeeds.
-- **Notes for Subagent**: Here is the per-file migration guide:
+- **Notes for Subagent**: Per-file migration guide:
 
   **File: `workflow_core/src/task.rs` (2 tests)**
-  - Pattern: Replace `Task::new("id", || Ok(()))` with `Task::new("id", ExecutionMode::Direct { command: "true".into(), args: vec![], timeout: None })`.
+  - Replace `Task::new("id", || Ok(()))` with `Task::new("id", ExecutionMode::Direct { command: "true".into(), args: vec![], timeout: None })`.
   - `task_builder`: update constructor, assert `execution` field instead of `execute_fn`.
   - `depends_on_chaining`: update constructor only.
 
   **File: `workflow_core/src/workflow.rs` (10 tests)**
-  - Pattern: Every test that creates a `Workflow` must change from `Workflow::builder().name(...).state_dir(...).build()` to:
+  - Every test that creates a `Workflow` must change from `Workflow::builder().name(...).state_dir(...).build()` to:
     ```rust
     let state = Box::new(JsonStateStore::new("wf_name", dir.path().join(".wf_name.workflow.json")));
-    let runner = Box::new(workflow_utils::SystemProcessRunner);
-    let executor = Box::new(workflow_utils::ShellHookExecutor);
+    let runner = Arc::new(workflow_utils::SystemProcessRunner);
+    let executor = Arc::new(workflow_utils::ShellHookExecutor);
     let mut wf = Workflow::new("wf_name", state, runner, executor).with_max_parallel(4);
     ```
   - Add `workflow_utils` as a dev-dependency if not already present.
-  - Tests that used closure-based tasks (`Task::new("a", || { ... })`) must be rewritten to use `ExecutionMode::Direct` with actual commands (e.g., `"true"` for success, `"false"` for failure) OR use `setup`/`collect` closures for the side-effect logic.
+  - Tests that used closure-based tasks must be rewritten to use `ExecutionMode::Direct` with actual commands (e.g., `"true"` for success, `"false"` for failure) or use `setup`/`collect` closures for side-effect logic.
   - `single_task_completes`: Use `ExecutionMode::Direct { command: "true", ... }` and a `setup` closure to set the flag.
   - `chain_respects_order`: Use `setup` closures to push to the shared log vec.
   - `failed_task_skips_dependent`: Use `ExecutionMode::Direct { command: "false", ... }` for the failing task.
-  - `dry_run_returns_topo_order`: Same pattern, no closure logic needed.
-  - `duplicate_task_id_errors`: Same pattern.
   - `resume_loads_existing_state`: Use `JsonStateStore::load()` for the second workflow.
 
   **File: `examples/hubbard_u_sweep/src/main.rs`**
-  - Pattern: Replace `Task::new(task_id, move || { ... })` with:
+  - Replace `Task::new(task_id, move || { ... })` with:
     ```rust
     Task::new(&task_id, ExecutionMode::Direct {
         command: "castep".into(),
@@ -715,29 +598,28 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
     })
     .workdir(&workdir)
     .setup(move |workdir| {
-        // ... file preparation logic ...
+        // file preparation logic
         Ok(())
     })
     ```
-  - The `Workflow` construction uses `Workflow::new(...)` instead of `Workflow::builder()`.
-  - Add `workflow_utils::SystemProcessRunner` and `workflow_utils::ShellHookExecutor`.
+  - The `Workflow` construction uses `Workflow::new(...)` with `Arc::new(SystemProcessRunner)` and `Arc::new(ShellHookExecutor)`.
 
 ---
 
 #### TASK-18: Remove stale workspace dependencies
-- **Scope**: Remove unused workspace dependencies (`tokio`, `async-trait`, `tokio-rusqlite`, `tokio-util`, `toml`) from `Cargo.toml`.
+- **Scope**: Remove unused workspace dependencies (`tokio`, `async-trait`, `tokio-rusqlite`, `tokio-util`, `toml`, `nix`, and conditionally `bon`) from `Cargo.toml`.
 - **Crate/Module**: `Cargo.toml` (workspace root)
 - **Responsible For**: Cleaning up dead dependencies.
-- **Depends On**: TASK-17 (all code must be migrated first so we know nothing still uses them)
+- **Depends On**: TASK-17
 - **Enables**: None
 - **Can Run In Parallel With**: TASK-19, TASK-20
 - **Acceptance Criteria**:
   - `tokio`, `async-trait`, `tokio-rusqlite`, `tokio-util`, `toml` removed from `[workspace.dependencies]`.
-  - `nix` removed from `[workspace.dependencies]` (already removed from `workflow_utils` in TASK-5).
+  - `nix` removed from `[workspace.dependencies]` (removed from `workflow_utils` in TASK-5).
   - `bon` removed from `[workspace.dependencies]` if no longer used (bon builder removed in TASK-15).
   - `cargo check --workspace` succeeds.
   - `cargo test --workspace` passes.
-- **Notes for Subagent**: Check each dependency is truly unused before removing. `serde`, `petgraph`, `serde_json`, `anyhow`, `tracing`, `tracing-subscriber` are still used. `bon` may still be used in `workflow_core` for other builders -- grep for `#[bon]` or `bon::` before removing.
+- **Notes for Subagent**: Check each dependency is truly unused before removing. `serde`, `petgraph`, `serde_json`, `anyhow`, `tracing`, `tracing-subscriber` are still used. Grep for `#[bon]` or `bon::` before removing `bon`.
 
 ---
 
@@ -746,10 +628,10 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Crate/Module**: `workflow_core/src/workflow.rs`, `workflow_core/Cargo.toml`
 - **Responsible For**: Graceful shutdown on signals.
 - **Depends On**: TASK-15
-- **Enables**: TASK-21
-- **Can Run In Parallel With**: TASK-17, TASK-18
+- **Enables**: TASK-25
+- **Can Run In Parallel With**: TASK-17, TASK-18, TASK-20
 - **Acceptance Criteria**:
-  - `signal-hook` is added to `workflow_core/Cargo.toml` dependencies.
+  - `signal-hook` is added to `workflow_core/Cargo.toml` dependencies (also add to workspace `Cargo.toml`: `signal-hook = "0.3"`).
   - The shutdown flag and installer:
     ```rust
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -764,16 +646,13 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
     ```
   - `Workflow::run()` calls `install_signal_handler()` at the start and checks `shutdown.load(Ordering::Relaxed)` each iteration of the run loop.
   - On signal detection:
-    1. Set the flag (already done by `signal_hook`).
-    2. The run loop detects it on the next iteration.
-    3. Terminate all in-flight processes by calling `handle.terminate()` on each active `ProcessHandle`.
-    4. Termination order: iterate through active handles in arbitrary order (no specific ordering required -- all receive SIGKILL nearly simultaneously).
-    5. Mark all currently `Running` tasks as `Pending` in the state store (so they retry on resume).
-    6. Save state.
-    7. Return `Err(WorkflowError::Interrupted)`.
+    1. Terminate all in-flight processes by calling `handle.terminate()` on each active `ProcessHandle`.
+    2. Mark all currently `Running` tasks as `Pending` in the state store (so they retry on resume).
+    3. Save state.
+    4. Return `Err(WorkflowError::Interrupted)`.
   - A test verifies the shutdown flag mechanism (unit test with `AtomicBool`, no actual signal sending).
   - `cargo test -p workflow_core` passes.
-- **Notes for Subagent**: `signal_hook::flag::register` is the simplest API -- it sets the `AtomicBool` when the signal arrives, no callback needed. The `.ok()` swallows registration errors (e.g., in test environments where signal registration may fail). The run loop already polls with `sleep(50ms)`, so signal detection latency is at most 50ms. Do NOT use `signal_hook::iterator` -- the flag API is simpler and sufficient. Add to workspace `Cargo.toml`: `signal-hook = "0.3"`.
+- **Notes for Subagent**: `signal_hook::flag::register` sets the `AtomicBool` when the signal arrives. The `.ok()` swallows registration errors (e.g., in test environments). The run loop already polls with `sleep(50ms)`, so signal detection latency is at most 50ms. Do NOT use `signal_hook::iterator` -- the flag API is simpler and sufficient.
 
 ---
 
@@ -782,21 +661,21 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Crate/Module**: `workflow_core/src/workflow.rs`
 - **Responsible For**: Killing tasks that exceed their timeout.
 - **Depends On**: TASK-15
-- **Enables**: None
-- **Can Run In Parallel With**: TASK-19
+- **Enables**: TASK-21
+- **Can Run In Parallel With**: TASK-17, TASK-18, TASK-19
 - **Acceptance Criteria**:
   - When dispatching a `Direct` task with `timeout: Some(duration)`, the run loop tracks the spawn time.
   - Each poll iteration checks `elapsed > timeout` for running tasks.
   - On timeout: call `handle.terminate()`, mark task as `Failed { error: "timed out" }`, record in `WorkflowSummary::failed`.
   - A test spawns `sleep 60` with `timeout: Some(Duration::from_millis(100))` and verifies the task is terminated and marked failed.
   - `cargo test -p workflow_core` passes.
-- **Notes for Subagent**: The timeout is in `ExecutionMode::Direct { timeout: Some(d) }`. When starting a task, store the `Instant::now()` alongside the handle. In the poll loop, check `start.elapsed() > timeout`. On timeout, call `handle.terminate()` then `handle.wait()` to reap the process. The error message should be descriptive: `format!("task '{}' timed out after {:?}", task_id, timeout)`.
+- **Notes for Subagent**: When starting a task, store the `Instant::now()` alongside the handle. In the poll loop, check `start.elapsed() > timeout`. On timeout, call `handle.terminate()` then `handle.wait()` to reap the process. The error message should be: `format!("task '{}' timed out after {:?}", task_id, timeout)`.
 
 ---
 
 #### TASK-21: Write timeout integration test
 - **Scope**: Write an integration test that exercises the full timeout flow end-to-end.
-- **Crate/Module**: `workflow_core/tests/timeout_integration.rs` (NEW) or in `workflow_core/src/workflow.rs` tests
+- **Crate/Module**: `workflow_core/tests/timeout_integration.rs` (NEW)
 - **Responsible For**: Verifying timeout behavior in a realistic scenario.
 - **Depends On**: TASK-20
 - **Enables**: None
@@ -805,27 +684,28 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
   - Test creates a workflow with two tasks: one that sleeps (with timeout), one that depends on it.
   - The sleeping task times out, the dependent task is skipped.
   - The `WorkflowSummary` shows the timeout task in `failed` and the dependent in `skipped`.
-  - `timeout` is specified as part of `ExecutionMode::Direct { timeout: Some(Duration::from_millis(200)) }`, NOT as a field on `Task`.
+  - `timeout` is specified as `ExecutionMode::Direct { timeout: Some(Duration::from_millis(200)) }`, NOT as a field on `Task`.
+  - Test completes in under 1 second.
   - `cargo test -p workflow_core` passes.
-- **Notes for Subagent**: This is a focused integration test. Use `ExecutionMode::Direct { command: "sleep".into(), args: vec!["60".into()], timeout: Some(Duration::from_millis(200)) }`. The test should complete in under 1 second.
+- **Notes for Subagent**: Use `ExecutionMode::Direct { command: "sleep".into(), args: vec!["60".into()], timeout: Some(Duration::from_millis(200)) }`. Use `tempdir` for state file isolation.
 
 ---
 
 #### TASK-22: Delete stale `workflow_cli/` and create `workflow-cli/` crate
-- **Scope**: Delete the existing `workflow_cli/` directory (dead code referencing non-existent crates like `castep_adapter`, `lammps_adapter`) and create a new `workflow-cli/` crate (hyphenated) with clap-based subcommands.
+- **Scope**: Delete the existing `workflow_cli/` directory (dead code referencing non-existent crates) and create a new `workflow-cli/` crate with clap-based subcommands.
 - **Crate/Module**: `workflow_cli/` (DELETE), `workflow-cli/` (NEW), `Cargo.toml` (workspace)
 - **Responsible For**: The CLI binary for post-run inspection.
-- **Depends On**: TASK-11 (needs `StateStore`, `JsonStateStore`, `StateSummary`)
+- **Depends On**: TASK-11
 - **Enables**: TASK-23, TASK-24
 - **Can Run In Parallel With**: TASK-21
 - **Acceptance Criteria**:
-  - `workflow_cli/` directory is completely deleted (it is stale dead code with references to non-existent crates `castep_adapter`, `lammps_adapter` and removed deps `tokio`, `toml`, `tokio-util`).
+  - `workflow_cli/` directory is completely deleted (it references non-existent crates `castep_adapter`, `lammps_adapter` and removed deps `tokio`, `toml`, `tokio-util`).
   - `workflow-cli/` is created fresh with:
     - `workflow-cli/Cargo.toml` with `name = "workflow-cli"`, bin target, deps on `workflow_core`, `clap`, `anyhow`.
     - `workflow-cli/src/main.rs` with clap derive-based CLI skeleton.
   - Workspace `Cargo.toml` `members` array: remove `"workflow_cli"` (if present), add `"workflow-cli"`.
   - `cargo check -p workflow-cli` succeeds.
-- **Notes for Subagent**: The existing `workflow_cli/` is from a previous architecture iteration and references crates that no longer exist (`castep_adapter`, `lammps_adapter`) and removed dependencies (`tokio`, `toml`, `tokio-util`). It must be fully deleted, not modified. The new crate is `workflow-cli` (hyphenated) per Rust convention for binary crates. Clap skeleton:
+- **Notes for Subagent**: The existing `workflow_cli/` is from a previous architecture iteration and must be fully deleted, not modified. The new crate is `workflow-cli` (hyphenated) per Rust convention for binary crates. Clap skeleton:
   ```rust
   use clap::{Parser, Subcommand};
 
@@ -880,11 +760,11 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Enables**: TASK-25
 - **Can Run In Parallel With**: TASK-23
 - **Acceptance Criteria**:
-  - `workflow-cli retry <state-file> <task-id>...` loads state, marks the named tasks as `Pending`, marks all their downstream dependents (tasks that transitively depend on them) as `Pending`, saves state.
+  - `workflow-cli retry <state-file> <task-id>...` loads state, marks the named tasks as `Pending`, marks all `SkippedDueToDependencyFailure` tasks as `Pending`, saves state.
   - If a task ID does not exist in the state file, print a warning but continue.
-  - At least one test: retry a failed task, verify it and its dependents are reset to Pending.
+  - At least one test: retry a failed task, verify it and `SkippedDueToDependencyFailure` tasks are reset to `Pending`.
   - `cargo test -p workflow-cli` passes.
-- **Notes for Subagent**: The retry logic ideally lives in `workflow_core` as a library function (not just in the CLI). Consider adding a `retry_tasks(state: &mut dyn StateStore, dag: &Dag, task_ids: &[String])` function in `workflow_core`. However, this requires a `Dag` which the CLI doesn't have (it only has the state file, not the task definitions). Simpler approach: mark the specified tasks as `Pending` and also mark any `SkippedDueToDependencyFailure` tasks as `Pending` (they will be re-evaluated on next run). This does not require DAG knowledge.
+- **Notes for Subagent**: The retry logic does not require DAG knowledge -- mark the specified tasks as `Pending` and also mark any `SkippedDueToDependencyFailure` tasks as `Pending` (they will be re-evaluated on next run). If a more precise DAG-aware retry is desired in future, it can be added as a library function in `workflow_core`.
 
 ---
 
@@ -898,7 +778,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Acceptance Criteria**:
   - Test creates a 3-task workflow (A -> B -> C), runs it with B failing, verifies `WorkflowSummary`.
   - Loads state file, verifies B is `Failed` and C is `SkippedDueToDependencyFailure`.
-  - Resumes the workflow (B now succeeds), verifies all complete.
+  - Resumes the workflow (B now succeeds via `JsonStateStore::load()`), verifies all complete.
   - `cargo test -p workflow_core -- --test integration` passes.
 - **Notes for Subagent**: Use `tempdir` for isolation. Use `ExecutionMode::Direct { command: "true"/"false" }`. The resume test creates a new `JsonStateStore::load(path)` and a new `Workflow` with corrected tasks.
 
@@ -918,11 +798,10 @@ graph TD
   TASK-3 --> TASK-13
 
   TASK-4 --> TASK-7
+  TASK-4 --> TASK-13
 
   TASK-5 --> TASK-9
   TASK-8 --> TASK-9
-
-  TASK-4 --> TASK-13
 
   TASK-13 --> TASK-14
 
@@ -968,43 +847,7 @@ graph TD
 | Phase 3 (parallel) | TASK-3, TASK-5 | Signature migration, ExecutionHandle refactor |
 | Phase 4 (parallel) | TASK-7, TASK-9, TASK-11, TASK-13 | HookExecutor impl+tests, SystemProcessRunner+tests, StateStore+tests, Task redesign |
 | Phase 5 | TASK-14 | WorkflowSummary struct |
-| Phase 6 | TASK-15, TASK-16, TASK-22 | Workflow engine rewrite (critical path), resume reset, CLI crate setup |
+| Phase 6 (parallel) | TASK-15, TASK-16, TASK-22 | Workflow engine rewrite (critical path), resume reset, CLI crate setup |
 | Phase 7 (parallel) | TASK-17, TASK-19, TASK-20, TASK-23, TASK-24 | Test migration, signal handling, timeout, CLI subcommands |
 | Phase 8 (parallel) | TASK-18, TASK-21 | Workspace cleanup, timeout integration test |
 | Phase 9 | TASK-25 | End-to-end integration test (final gate) |
-
-### Architect Corrections Applied
-
-1. **TDD-red tasks merged**: TASK-2→TASK-3, TASK-6→TASK-7, TASK-10→TASK-11, TASK-12→TASK-9. `#[ignore]` does not prevent compilation; writing tests alongside implementation is correct TDD within a single task boundary.
-2. **TASK-12 test location fixed**: `SystemProcessRunner` tests moved to `workflow_utils/tests/`, not `workflow_core`. No circular dev-dependency needed.
-3. **`process_runner` storage**: `Arc<dyn ProcessRunner>` on Workflow struct (not `Box`), matching threading strategy where `Arc`-clone is shared across worker threads. Same for `hook_executor`.
-4. **`done_set` semantics**: Explicit AC added to TASK-15 — `done_set` must NOT include `Failed` tasks.
-
----
-
-## 5. Risk & Ambiguity Flags
-
-### Resolved (from this revision)
-- **TASK-2**: Resolved -- tests use `#[ignore]` with clear upgrade path.
-- **TASK-5**: Resolved -- `child: Child` (not `Option`), PID extracted on demand via `child.id()`.
-- **TASK-6**: Resolved -- file created by TASK-4, test module appended by TASK-6.
-- **TASK-7**: Resolved -- full `HookExecutor` trait signature provided.
-- **TASK-8**: Resolved -- full `ProcessRunner`, `ProcessHandle`, `ProcessResult` signatures provided.
-- **TASK-9**: Resolved -- full `SystemProcessRunner` and `SystemProcessHandle` implementations provided.
-- **TASK-10**: Resolved -- full `StateStore` trait signatures provided.
-- **TASK-11**: Resolved -- `StateSummary` fields, `JsonStateStore` fields, backward compat via type alias.
-- **TASK-12**: Resolved -- tests are `#[ignore]`, reference `workflow_utils::SystemProcessRunner` via dev-dependency.
-- **TASK-13**: Resolved -- closure types are `Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>`, timeout is in `ExecutionMode::Direct`.
-- **TASK-14**: Resolved -- `WorkflowSummary` struct fully specified.
-- **TASK-15**: Resolved -- constructor, threading strategy (`std::thread::spawn` + `Arc`), error contract all specified.
-- **TASK-17**: Resolved -- per-file migration guide with patterns provided.
-- **TASK-19**: Resolved -- `Arc<AtomicBool>` flag, `install_signal_handler()` signature, terminate all in-flight in arbitrary order.
-- **TASK-21**: Resolved -- timeout is part of `ExecutionMode::Direct` variant, not a `Task` field.
-- **TASK-22/23**: Resolved -- delete stale `workflow_cli/`, create fresh `workflow-cli/`.
-
-### Remaining Risks
-- **TASK-15 (High)**: The workflow engine rewrite is the largest single task (~200 lines). The run loop is complex with process spawning, hook execution, state management, and the polling loop. Consider splitting further if it proves unwieldy during implementation.
-- **TASK-17 (Medium)**: Test migration touches many files and the `hubbard_u_sweep` example. The example's closure-based setup logic must be split into `setup` and `ExecutionMode::Direct`. If the closure captured variables don't work cleanly with `Box<dyn Fn(&Path)>`, some refactoring of the example will be needed.
-- **TASK-5 (Low)**: Switching from `nix`-based signal sending to `Child::kill()` changes behavior from SIGTERM to SIGKILL. This is acceptable for now (TASK-19 handles graceful shutdown at the workflow level), but worth noting.
-- **Missing**: No task explicitly covers updating `workflow_core/src/lib.rs` re-exports as traits are added. Each task that adds a public type should update re-exports as part of its scope (noted in individual tasks).
-- **Missing**: `bon` removal -- the `Workflow` builder is replaced by a plain constructor in TASK-15, but `bon` may still be a dependency in `Cargo.toml`. TASK-18 handles this.
