@@ -1,8 +1,11 @@
 use crate::error::WorkflowError;
 use std::collections::HashMap;
-use std::path::Path;
-use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
 
+use serde::{Serialize, Deserialize};
+
+/// Task status enum.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TaskStatus {
     Pending,
@@ -15,22 +18,102 @@ pub enum TaskStatus {
     SkippedDueToDependencyFailure,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct WorkflowState {
-    pub workflow_name: String,
-    pub created_at: String,
-    pub last_updated: String,
-    pub tasks: HashMap<String, TaskStatus>,
+/// Trait defining the state management interface for workflows.
+pub trait StateStore {
+    /// Returns the current status of a task.
+    fn get_status(&self, id: &str) -> Option<TaskStatus>;
+
+    /// Sets the status of a task and updates timestamp.
+    fn set_status(&mut self, id: &str, status: TaskStatus);
+
+    /// Returns all task IDs and their statuses.
+    fn all_tasks(&self) -> HashMap<String, TaskStatus>;
+
+    /// Persists the current state to disk.
+    /// The path is owned by JsonStateStore and not passed explicitly.
+    fn save(&self) -> Result<(), WorkflowError>;
+
+    /// Loads state from disk. Running tasks are reset to Pending for crash recovery.
+    fn load(path: impl AsRef<Path>) -> Result<JsonStateStore, WorkflowError>;
 }
 
-impl WorkflowState {
-    pub fn new(name: &str) -> Self {
+/// Extension trait providing convenience methods for state management.
+pub trait StateStoreExt {
+    /// Marks a task as running and updates the last_updated timestamp.
+    fn mark_running(&mut self, id: &str);
+
+    /// Marks a task as completed and updates the last_updated timestamp.
+    fn mark_completed(&mut self, id: &str);
+
+    /// Marks a task as failed with the provided error message.
+    fn mark_failed(&mut self, id: &str, error: String);
+
+    /// Marks a task as pending and updates the last_updated timestamp.
+    fn mark_pending(&mut self, id: &str);
+
+    /// Marks a task as skipped and updates the last_updated timestamp.
+    fn mark_skipped(&mut self, id: &str);
+
+    /// Marks a task as skipped due to upstream dependency failure.
+    fn mark_skipped_due_to_dep_failure(&mut self, id: &str);
+
+    /// Returns a summary of all task statuses.
+    fn summary(&self) -> StateSummary;
+
+    /// Checks if a task is completed.
+    fn is_completed(&self, id: &str) -> bool;
+}
+
+/// Summary of workflow state.
+#[derive(Debug, Clone)]
+pub struct StateSummary {
+    /// Number of pending tasks.
+    pub pending: usize,
+    /// Number of running tasks.
+    pub running: usize,
+    /// Number of completed tasks.
+    pub completed: usize,
+    /// Number of failed tasks.
+    pub failed: usize,
+    /// Number of skipped tasks.
+    pub skipped: usize,
+}
+
+/// JSON-based state store implementation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JsonStateStore {
+    workflow_name: String,
+    created_at: String,
+    last_updated: String,
+    tasks: HashMap<String, TaskStatus>,
+    path: PathBuf,
+}
+
+impl JsonStateStore {
+    /// Creates a new empty state store.
+    pub fn new(name: &str, path: PathBuf) -> Self {
         let now = now_iso8601();
-        Self { workflow_name: name.to_owned(), created_at: now.clone(), last_updated: now, tasks: HashMap::new() }
+        Self {
+            workflow_name: name.to_owned(),
+            created_at: now.clone(),
+            last_updated: now,
+            tasks: HashMap::new(),
+            path,
+        }
     }
 
+    /// Saves state atomically using temp file + rename pattern.
+    fn save(&self) -> Result<(), WorkflowError> {
+        let temp_path = self.path.with_extension(".tmp");
+        let json = serde_json::to_vec_pretty(self).map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
+        fs::write(&temp_path, json).map_err(|e| WorkflowError::Io(e))?;
+        fs::rename(&temp_path, &self.path).map_err(|e| WorkflowError::Io(e))?;
+        Ok(())
+    }
+
+    /// Loads state from disk, resetting Running tasks to Pending for crash recovery.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, WorkflowError> {
-        let mut state: Self = serde_json::from_slice(&std::fs::read(path).map_err(WorkflowError::Io)?)?;
+        let mut state: Self = serde_json::from_slice(&fs::read(path).map_err(WorkflowError::Io)?)?;
         for status in state.tasks.values_mut() {
             if matches!(status, TaskStatus::Running) {
                 *status = TaskStatus::Pending;
@@ -39,41 +122,107 @@ impl WorkflowState {
         Ok(state)
     }
 
-    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), WorkflowError> {
-        let json = serde_json::to_vec_pretty(self).map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
-        std::fs::write(path, json).map_err(WorkflowError::Io)?;
-        Ok(())
+    /// Returns the workflow name.
+    pub fn workflow_name(&self) -> &str {
+        &self.workflow_name
     }
 
-    pub fn is_completed(&self, id: &str) -> bool {
-        matches!(self.tasks.get(id), Some(TaskStatus::Completed))
-    }
-
-    pub fn mark_running(&mut self, id: &str) {
-        self.tasks.insert(id.to_owned(), TaskStatus::Running);
-        self.last_updated = now_iso8601();
-    }
-
-    pub fn mark_completed(&mut self, id: &str) {
-        self.tasks.insert(id.to_owned(), TaskStatus::Completed);
-        self.last_updated = now_iso8601();
-    }
-
-    pub fn mark_failed(&mut self, id: &str, error: String) {
-        self.tasks.insert(id.to_owned(), TaskStatus::Failed { error });
-        self.last_updated = now_iso8601();
-    }
-
-    pub fn mark_skipped(&mut self, id: &str) {
-        self.tasks.insert(id.to_owned(), TaskStatus::Skipped);
-        self.last_updated = now_iso8601();
-    }
-
-    pub fn mark_skipped_due_to_dep_failure(&mut self, id: &str) {
-        self.tasks.insert(id.to_owned(), TaskStatus::SkippedDueToDependencyFailure);
-        self.last_updated = now_iso8601();
+    /// Returns the path to the state file.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 }
+
+impl StateStore for JsonStateStore {
+    fn get_status(&self, id: &str) -> Option<TaskStatus> {
+        self.tasks.get(id).cloned()
+    }
+
+    fn set_status(&mut self, id: &str, status: TaskStatus) {
+        self.tasks.insert(id.to_owned(), status);
+        self.last_updated = now_iso8601();
+    }
+
+    fn all_tasks(&self) -> HashMap<String, TaskStatus> {
+        self.tasks.clone()
+    }
+
+    fn save(&self) -> Result<(), WorkflowError> {
+        self.save()
+    }
+
+    fn load(path: impl AsRef<Path>) -> Result<JsonStateStore, WorkflowError> {
+        Self::load(path)
+    }
+}
+
+impl JsonStateStore {
+    /// Returns all task statuses.
+    pub fn all_task_statuses(&self) -> HashMap<String, TaskStatus> {
+        self.tasks.clone()
+    }
+}
+
+// Internal accessor for workflow module
+impl JsonStateStore {
+    pub(crate) fn tasks_mut(&mut self) -> &mut HashMap<String, TaskStatus> {
+        &mut self.tasks
+    }
+}
+
+impl StateStoreExt for JsonStateStore {
+    fn mark_running(&mut self, id: &str) {
+        self.set_status(id, TaskStatus::Running);
+    }
+
+    fn mark_completed(&mut self, id: &str) {
+        self.set_status(id, TaskStatus::Completed);
+    }
+
+    fn mark_failed(&mut self, id: &str, error: String) {
+        self.set_status(id, TaskStatus::Failed { error });
+    }
+
+    fn mark_pending(&mut self, id: &str) {
+        self.set_status(id, TaskStatus::Pending);
+    }
+
+    fn mark_skipped(&mut self, id: &str) {
+        self.set_status(id, TaskStatus::Skipped);
+    }
+
+    fn mark_skipped_due_to_dep_failure(&mut self, id: &str) {
+        self.set_status(id, TaskStatus::SkippedDueToDependencyFailure);
+    }
+
+    fn summary(&self) -> StateSummary {
+        let mut s = StateSummary {
+            pending: 0,
+            running: 0,
+            completed: 0,
+            failed: 0,
+            skipped: 0,
+        };
+        for status in self.tasks.values() {
+            match status {
+                TaskStatus::Pending => s.pending += 1,
+                TaskStatus::Running => s.running += 1,
+                TaskStatus::Completed => s.completed += 1,
+                TaskStatus::Failed { .. } => s.failed += 1,
+                TaskStatus::Skipped => s.skipped += 1,
+                TaskStatus::SkippedDueToDependencyFailure => s.skipped += 1,
+            }
+        }
+        s
+    }
+
+    fn is_completed(&self, id: &str) -> bool {
+        matches!(self.get_status(id), Some(TaskStatus::Completed))
+    }
+}
+
+/// Alias for backward compatibility with existing code.
+pub type WorkflowState = JsonStateStore;
 
 fn now_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -104,50 +253,122 @@ mod tests {
     fn round_trip_json() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("state.json");
-        let mut s = WorkflowState::new("test");
+        let mut s = JsonStateStore::new("test", path.clone());
         s.mark_completed("a");
-        s.save(&path).unwrap();
-        let loaded = WorkflowState::load(&path).unwrap();
-        assert!(loaded.is_completed("a"));
-        assert_eq!(loaded.workflow_name, "test");
+        s.save().unwrap();
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert!(loaded.get_status("a") == Some(TaskStatus::Completed));
+        assert_eq!(loaded.workflow_name(), "test");
     }
 
     #[test]
     fn status_transitions() {
-        let mut s = WorkflowState::new("w");
+        let mut s = JsonStateStore::new("w", PathBuf::from("/tmp"));
         s.mark_running("a");
-        assert!(!s.is_completed("a"));
+        assert!(s.get_status("a") == Some(TaskStatus::Running));
         s.mark_completed("a");
-        assert!(s.is_completed("a"));
+        assert!(s.get_status("a") == Some(TaskStatus::Completed));
     }
 
     #[test]
     fn load_resets_running_to_pending() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("state.json");
-        let mut s = WorkflowState::new("test");
+        let mut s = JsonStateStore::new("test", path.clone());
         s.mark_running("task1");
         s.mark_completed("task2");
-        s.save(&path).unwrap();
+        s.save().unwrap();
 
-        let loaded = WorkflowState::load(&path).unwrap();
-        assert_eq!(loaded.tasks.get("task1"), Some(&TaskStatus::Pending));
-        assert_eq!(loaded.tasks.get("task2"), Some(&TaskStatus::Completed));
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert_eq!(loaded.get_status("task1"), Some(TaskStatus::Pending));
+        assert_eq!(loaded.get_status("task2"), Some(TaskStatus::Completed));
     }
 
     #[test]
     fn load_corrupted_json_errors() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("corrupted.json");
-        std::fs::write(&path, b"not json at all").unwrap();
+        fs::write(&path, b"not json at all").unwrap();
 
-        let result = WorkflowState::load(&path);
+        let result = JsonStateStore::load(&path);
         assert!(matches!(result.unwrap_err(), WorkflowError::StateCorrupted(_)));
     }
 
     #[test]
     fn load_missing_errors() {
-        let result = WorkflowState::load("/nonexistent/path.json");
+        let result = JsonStateStore::load("/nonexistent/path.json");
         assert!(matches!(result.unwrap_err(), WorkflowError::Io(_)));
     }
+
+    #[test]
+    fn summary_counts() {
+        let mut s = JsonStateStore::new("test", PathBuf::from("/tmp"));
+        s.mark_pending("a");
+        s.mark_running("b");
+        s.mark_completed("c");
+        s.mark_failed("d", "error".to_string());
+        s.mark_skipped("e");
+
+        let summary = s.summary();
+        assert_eq!(summary.pending, 1);
+        assert_eq!(summary.running, 1);
+        assert_eq!(summary.completed, 1);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.skipped, 1); // Only mark_skipped was called
+    }
+
+    #[test]
+    fn all_tasks() {
+        let mut s = JsonStateStore::new("test", PathBuf::from("/tmp"));
+        s.mark_completed("a");
+        s.mark_running("b");
+        assert_eq!(s.all_task_statuses().len(), 2);
+    }
+
+    #[test]
+    fn alias_workflow_state() {
+        let mut s: WorkflowState = JsonStateStore::new("alias", PathBuf::from("/tmp"));
+        s.mark_completed("x");
+        assert!(s.is_completed("x"));
+    }
+
+    #[test]
+    fn save_load_roundtrip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("roundtrip.json");
+        let mut s1 = JsonStateStore::new("roundtrip", path.clone());
+        s1.mark_pending("t1");  // Use Pending instead of Running to avoid crash recovery reset
+        s1.mark_completed("t2");
+        s1.mark_failed("t3", "boom".to_string());
+        s1.save().unwrap();
+
+        let s2 = JsonStateStore::load(&path).unwrap();
+        assert_eq!(s1.get_status("t1"), s2.get_status("t1"));
+        assert_eq!(s1.get_status("t2"), s2.get_status("t2"));
+        assert_eq!(s1.get_status("t3"), s2.get_status("t3"));
+    }
+
+    #[test]
+    fn atomic_save() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("atomic.json");
+        let mut s = JsonStateStore::new("atomic", path.clone());
+        s.mark_completed("test");
+        // Force actual file write by checking temp path exists
+        let _temp = std::fs::File::create(path.with_extension(".tmp")).unwrap();
+        s.save().expect("save should succeed on second attempt");
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert!(loaded.get_status("test") == Some(TaskStatus::Completed));
+    }
+
+    #[test]
+    fn workflow_name_preserved() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("name.json");
+        let s = JsonStateStore::new("my_workflow", path.clone());
+        s.save().unwrap();
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert_eq!(loaded.workflow_name(), "my_workflow");
+    }
+
 }

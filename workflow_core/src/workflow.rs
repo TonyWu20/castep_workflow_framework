@@ -1,7 +1,7 @@
 use crate::dag::Dag;
 use crate::error::WorkflowError;
 use crate::monitoring::{HookContext, HookTrigger, MonitoringHook};
-use crate::state::{TaskStatus, WorkflowState};
+use crate::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
 use crate::task::Task;
 use bon::bon;
 use std::collections::{HashMap, HashSet};
@@ -132,12 +132,12 @@ impl Workflow {
         tracing::debug!("DAG execution order: {:?}", dag.topological_order());
 
         let mut state = if self.state_path.exists() {
-            WorkflowState::load(&self.state_path)?
+            JsonStateStore::load(&self.state_path)?
         } else {
-            WorkflowState::new(&self.name)
+            JsonStateStore::new(&self.name, self.state_path.clone())
         };
         for id in dag.task_ids() {
-            state.tasks.entry(id.clone()).or_insert(TaskStatus::Pending);
+            state.tasks_mut().entry(id.clone()).or_insert(TaskStatus::Pending);
         }
         let state = Arc::new(Mutex::new(state));
 
@@ -246,7 +246,7 @@ impl Workflow {
                         }
                     }
                 }
-                s.save(&self.state_path)?;
+                s.save()?;
             }
 
             {
@@ -256,14 +256,14 @@ impl Workflow {
                     changed = false;
                     let to_skip: Vec<String> = dag
                         .task_ids()
-                        .filter(|id| matches!(s.tasks.get(*id), Some(TaskStatus::Pending)))
+                        .filter(|id| matches!(s.get_status(*id), Some(TaskStatus::Pending)))
                         .filter(|id| {
                             self.tasks
                                 .get(*id)
                                 .map(|t| {
                                     t.dependencies.iter().any(|dep| {
                                         matches!(
-                                            s.tasks.get(dep.as_str()),
+                                            s.get_status(dep.as_str()),
                                             Some(TaskStatus::Failed { .. })
                                                 | Some(TaskStatus::Skipped)
                                                 | Some(TaskStatus::SkippedDueToDependencyFailure)
@@ -281,10 +281,10 @@ impl Workflow {
                         }
                     }
                 }
-                s.save(&self.state_path)?;
+                s.save()?;
             }
 
-            let statuses: HashMap<String, TaskStatus> = state.lock().unwrap().tasks.clone();
+            let statuses: HashMap<String, TaskStatus> = state.lock().unwrap().all_task_statuses();
             let done_set: HashSet<String> = statuses
                 .iter()
                 .filter(|(_, v)| {
@@ -346,7 +346,7 @@ impl Workflow {
                 let s = state.lock().unwrap();
                 dag.task_ids().all(|id| {
                     matches!(
-                        s.tasks.get(id),
+                        s.get_status(id),
                         Some(TaskStatus::Completed)
                             | Some(TaskStatus::Failed { .. })
                             | Some(TaskStatus::Skipped)
@@ -365,12 +365,12 @@ impl Workflow {
         let total_duration = workflow_start.elapsed();
         let final_state = state.lock().unwrap();
         let succeeded = final_state
-            .tasks
+            .all_task_statuses()
             .values()
             .filter(|status| matches!(status, TaskStatus::Completed))
             .count();
         let failed = final_state
-            .tasks
+            .all_task_statuses()
             .values()
             .filter(|status| matches!(status, TaskStatus::Failed { .. }))
             .count();
@@ -491,10 +491,10 @@ mod tests {
         wf.add_task(Task::new("a", || Err(anyhow::anyhow!("boom"))))?;
         wf.add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a"))?;
         wf.run()?;
-        let state = WorkflowState::load(dir.path().join(".wf_skip.workflow.json")).unwrap();
+        let state = JsonStateStore::load(dir.path().join(".wf_skip.workflow.json")).unwrap();
         assert!(matches!(
-            state.tasks["b"],
-            TaskStatus::SkippedDueToDependencyFailure
+            state.get_status("b"),
+            Some(TaskStatus::SkippedDueToDependencyFailure)
         ));
         Ok(())
     }
@@ -591,7 +591,7 @@ mod tests {
         wf2.add_task(Task::new("a", || Err(anyhow::anyhow!("should not re-run"))))
             .unwrap();
         wf2.run().unwrap();
-        let state = WorkflowState::load(dir.path().join(".wf_resume.workflow.json")).unwrap();
-        assert!(matches!(state.tasks["a"], TaskStatus::Completed));
+        let state = JsonStateStore::load(dir.path().join(".wf_resume.workflow.json")).unwrap();
+        assert!(state.get_status("a") == Some(TaskStatus::Completed));
     }
 }

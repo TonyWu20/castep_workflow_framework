@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
-use workflow_core::{Task, Workflow, state::WorkflowState};
+use workflow_core::{Task, Workflow, state::{WorkflowState, TaskStatus}, StateStore};
 
 #[test]
 fn test_diamond_ordering() {
@@ -64,7 +64,8 @@ fn test_failure_propagation() {
     let state_path = dir.path().join(".failure_prop.workflow.json");
     let state = WorkflowState::load(&state_path).unwrap();
 
-    assert!(matches!(state.tasks.get("b"), Some(&workflow_core::state::TaskStatus::SkippedDueToDependencyFailure)));
-    assert!(matches!(state.tasks.get("c"), Some(&workflow_core::state::TaskStatus::SkippedDueToDependencyFailure)));
-    assert!(matches!(state.tasks.get("d"), Some(&workflow_core::state::TaskStatus::SkippedDueToDependencyFailure)));
+    assert!(matches!(state.get_status("b"), Some(TaskStatus::SkippedDueToDependencyFailure)));
+    assert!(matches!(state.get_status("c"), Some(TaskStatus::SkippedDueToDependencyFailure)));
+    assert!(matches!(state.get_status("d"), Some(TaskStatus::SkippedDueToDependencyFailure)));
+
 }

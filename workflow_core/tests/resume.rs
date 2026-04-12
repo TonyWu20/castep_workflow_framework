@@ -1,15 +1,15 @@
 use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
-use workflow_core::{Task, Workflow, state::{TaskStatus, WorkflowState}};
+use workflow_core::{Task, Workflow, state::{StateStoreExt, JsonStateStore}, StateStore};
 
 #[test]
 fn test_resume_skips_completed_reruns_interrupted() {
     let dir = tempdir().unwrap();
     let state_path = dir.path().join(".test_resume.workflow.json");
-    let mut state = WorkflowState::new("test_resume");
-    state.tasks.insert("a".into(), TaskStatus::Completed);
-    state.tasks.insert("b".into(), TaskStatus::Running); // simulates crash mid-b
-    state.save(&state_path).unwrap();
+    let mut state = JsonStateStore::new("test_resume", state_path.clone());
+    state.mark_completed("a");
+    state.mark_running("b"); // simulates crash mid-b
+    state.save().unwrap();
 
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
 

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use tempfile::tempdir;
 use workflow_core::{
-    state::{TaskStatus, WorkflowState},
+    state::{TaskStatus, JsonStateStore, StateStore},
     Task, Workflow,
 };
 use workflow_utils::TaskExecutor;
@@ -54,19 +54,19 @@ fn test_hubbard_u_sweep_with_mock_castep() {
 
     // Verify all tasks completed
     let state_path = dir.path().join(".hubbard_u.workflow.json");
-    let state = WorkflowState::load(&state_path).unwrap();
+    let state = JsonStateStore::load(&state_path).unwrap();
 
     assert!(matches!(
-        state.tasks.get("scf_U0.0"),
-        Some(&TaskStatus::Completed)
+        state.get_status("scf_U0.0"),
+        Some(TaskStatus::Completed)
     ));
     assert!(matches!(
-        state.tasks.get("scf_U1.0"),
-        Some(&TaskStatus::Completed)
+        state.get_status("scf_U1.0"),
+        Some(TaskStatus::Completed)
     ));
     assert!(matches!(
-        state.tasks.get("scf_U2.0"),
-        Some(&TaskStatus::Completed)
+        state.get_status("scf_U2.0"),
+        Some(TaskStatus::Completed)
     ));
 
     // Verify castep output files exist
