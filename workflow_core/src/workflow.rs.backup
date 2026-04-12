@@ -1,7 +1,7 @@
 use crate::dag::Dag;
-use crate::error::WorkflowError;
 use crate::state::{TaskStatus, WorkflowState};
 use crate::task::Task;
+use anyhow::{bail, Result};
 use bon::bon;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -125,7 +125,7 @@ impl Workflow {
         name: String,
         #[builder(default = PathBuf::from("."))] state_dir: PathBuf,
         max_parallel: Option<usize>,
-    ) -> Result<Self, WorkflowError> {
+    ) -> Result<Self> {
         let max_parallel = max_parallel.unwrap_or_else(|| {
             std::thread::available_parallelism()
                 .map(|n| n.get())
@@ -133,7 +133,7 @@ impl Workflow {
         });
 
         if max_parallel == 0 {
-            return Err(WorkflowError::InvalidConfig("max_parallel must be at least 1".into()));
+            bail!("max_parallel must be at least 1");
         }
 
         let state_path = state_dir.join(format!(".{}.workflow.json", name));
@@ -145,27 +145,27 @@ impl Workflow {
         })
     }
 
-    pub fn add_task(&mut self, task: Task) -> Result<(), WorkflowError> {
+    pub fn add_task(&mut self, task: Task) -> Result<()> {
         if self.tasks.contains_key(&task.id) {
-            return Err(WorkflowError::DuplicateTaskId(task.id.clone()));
+            bail!("duplicate task id: {}", task.id);
         }
         self.tasks.insert(task.id.clone(), task);
         Ok(())
     }
 
-    pub fn dry_run(&self) -> Result<Vec<String>, WorkflowError> {
+    pub fn dry_run(&self) -> Result<Vec<String>> {
         Ok(self.build_dag()?.topological_order())
     }
 
     /// Resume a workflow by name, loading prior state from `state_dir` when `run()` is called.
-    pub fn resume(name: impl Into<String>, state_dir: impl Into<PathBuf>) -> Result<Self, WorkflowError> {
+    pub fn resume(name: impl Into<String>, state_dir: impl Into<PathBuf>) -> Result<Self> {
         Self::builder()
             .name(name.into())
             .state_dir(state_dir.into())
             .build()
     }
 
-    pub fn run(&mut self) -> Result<(), WorkflowError> {
+    pub fn run(&mut self) -> Result<()> {
         let dag = self.build_dag()?;
         tracing::debug!("DAG execution order: {:?}", dag.topological_order());
 
@@ -445,7 +445,7 @@ impl Workflow {
         Ok(())
     }
 
-    fn build_dag(&self) -> Result<Dag, WorkflowError> {
+    fn build_dag(&self) -> Result<Dag> {
         let mut dag = Dag::new();
         for id in self.tasks.keys() {
             dag.add_node(id.clone())?;
@@ -488,7 +488,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn single_task_completes() -> Result<(), Box<dyn std::error::Error>> {
+    fn single_task_completes() -> anyhow::Result<()> {
         let dir = tempfile::tempdir().unwrap();
         let flag = Arc::new(Mutex::new(false));
         let flag2 = flag.clone();
@@ -500,7 +500,7 @@ mod tests {
             .unwrap();
         wf.add_task(Task::new("a", move || {
             *flag2.lock().unwrap() = true;
-            Ok::<_, anyhow::Error>(())
+            Ok::<(), anyhow::Error>(())
         }))?;
         wf.run()?;
         assert!(*flag.lock().unwrap());
@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn chain_respects_order() -> Result<(), Box<dyn std::error::Error>> {
+    fn chain_respects_order() -> anyhow::Result<()> {
         let dir = tempfile::tempdir().unwrap();
         let log = Arc::new(Mutex::new(Vec::<String>::new()));
         let l1 = log.clone();
@@ -521,12 +521,12 @@ mod tests {
             .unwrap();
         wf.add_task(Task::new("a", move || {
             l1.lock().unwrap().push("a".into());
-            Ok::<_, anyhow::Error>(())
+            Ok::<(), anyhow::Error>(())
         }))?;
         wf.add_task(
             Task::new("b", move || {
                 l2.lock().unwrap().push("b".into());
-                Ok::<_, anyhow::Error>(())
+                Ok::<(), anyhow::Error>(())
             })
             .depends_on("a"),
         )?;
@@ -536,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_task_skips_dependent() -> Result<(), Box<dyn std::error::Error>> {
+    fn failed_task_skips_dependent() -> anyhow::Result<()> {
         let dir = tempdir().unwrap();
         let mut wf = Workflow::builder()
             .name("wf_skip".to_string())
@@ -545,7 +545,7 @@ mod tests {
             .build()
             .unwrap();
         wf.add_task(Task::new("a", || Err(anyhow::anyhow!("boom"))))?;
-        wf.add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a"))?;
+        wf.add_task(Task::new("b", || Ok::<(), anyhow::Error>(())).depends_on("a"))?;
         wf.run()?;
         let state = WorkflowState::load(dir.path().join(".wf_skip.workflow.json")).unwrap();
         assert!(matches!(
@@ -556,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_returns_topo_order() -> Result<(), Box<dyn std::error::Error>> {
+    fn dry_run_returns_topo_order() -> anyhow::Result<()> {
         let dir = tempdir().unwrap();
         let mut wf = Workflow::builder()
             .name("wf_dry".to_string())
@@ -564,8 +564,8 @@ mod tests {
             .max_parallel(4)
             .build()
             .unwrap();
-        wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(())))?;
-        wf.add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a"))?;
+        wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))?;
+        wf.add_task(Task::new("b", || Ok::<(), anyhow::Error>(())).depends_on("a"))?;
         let order = wf.dry_run()?;
         let pa = order.iter().position(|x| x == "a").unwrap();
         let pb = order.iter().position(|x| x == "b").unwrap();
@@ -574,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_task_id_errors() -> Result<(), Box<dyn std::error::Error>> {
+    fn duplicate_task_id_errors() -> anyhow::Result<()> {
         let dir = tempdir().unwrap();
         let mut wf = Workflow::builder()
             .name("wf_dup".to_string())
@@ -582,19 +582,23 @@ mod tests {
             .max_parallel(4)
             .build()
             .unwrap();
-        wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(())))?;
-        assert_eq!(wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(()))), Err(WorkflowError::DuplicateTaskId("a".to_string())));
+        wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))?;
+        assert!(wf
+            .add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))
+            .is_err());
         Ok(())
     }
 
     #[test]
-    fn valid_dependency_add() -> Result<(), Box<dyn std::error::Error>> {
+    fn valid_dependency_add() -> anyhow::Result<()> {
         let mut wf = Workflow::builder()
             .name("wf_dep".to_string())
             .build()
             .unwrap();
-        wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(())))?;
-        assert!(wf.add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a")).is_ok());
+        wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))?;
+        assert!(wf
+            .add_task(Task::new("b", || Ok::<(), anyhow::Error>(())).depends_on("a"))
+            .is_ok());
         Ok(())
     }
 

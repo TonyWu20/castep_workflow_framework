@@ -1,6 +1,6 @@
-use crate::error::WorkflowError;
 use std::collections::HashMap;
 use std::path::Path;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,8 +29,8 @@ impl WorkflowState {
         Self { workflow_name: name.to_owned(), created_at: now.clone(), last_updated: now, tasks: HashMap::new() }
     }
 
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, WorkflowError> {
-        let mut state: Self = serde_json::from_slice(&std::fs::read(path).map_err(|e| WorkflowError::Io(e))?)?;
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let mut state: Self = serde_json::from_slice(&std::fs::read(path)?)?;
         for status in state.tasks.values_mut() {
             if matches!(status, TaskStatus::Running) {
                 *status = TaskStatus::Pending;
@@ -39,9 +39,8 @@ impl WorkflowState {
         Ok(state)
     }
 
-    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), WorkflowError> {
-        let json = serde_json::to_vec_pretty(self).map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
-        std::fs::write(path, json).map_err(|e| WorkflowError::Io(e))?;
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
+        std::fs::write(path, serde_json::to_vec_pretty(self)?)?;
         Ok(())
     }
 
@@ -113,6 +112,11 @@ mod tests {
     }
 
     #[test]
+    fn load_missing_errors() {
+        assert!(WorkflowState::load("/nonexistent/path.json").is_err());
+    }
+
+    #[test]
     fn status_transitions() {
         let mut s = WorkflowState::new("w");
         s.mark_running("a");
@@ -133,21 +137,5 @@ mod tests {
         let loaded = WorkflowState::load(&path).unwrap();
         assert_eq!(loaded.tasks.get("task1"), Some(&TaskStatus::Pending));
         assert_eq!(loaded.tasks.get("task2"), Some(&TaskStatus::Completed));
-    }
-
-    #[test]
-    fn load_corrupted_json_errors() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("corrupted.json");
-        std::fs::write(&path, b"not json at all").unwrap();
-
-        let result = WorkflowState::load(&path);
-        assert!(matches!(result.unwrap_err(), WorkflowError::StateCorrupted(_)));
-    }
-
-    #[test]
-    fn load_missing_errors() {
-        let result = WorkflowState::load("/nonexistent/path.json");
-        assert!(matches!(result.unwrap_err(), WorkflowError::Io(_)));
     }
 }

@@ -15,7 +15,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Crate/Module**: `workflow_core/src/error.rs`, `workflow_core/src/lib.rs`, `workflow_core/Cargo.toml`
 - **Responsible For**: Defining the single error type used across all of `workflow_core`'s public API.
 - **Depends On**: None
-- **Enables**: TASK-2, TASK-3, TASK-5, TASK-6, TASK-8, TASK-9, TASK-11
+- **Enables**: TASK-2a, TASK-3, TASK-5, TASK-6, TASK-8, TASK-9, TASK-11
 - **Can Run In Parallel With**: None (foundational)
 - **Acceptance Criteria**:
   - `workflow_core/src/error.rs` exists with the `WorkflowError` enum as specified below.
@@ -43,31 +43,118 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
       Interrupted,
   }
   ```
-  Do NOT change existing function signatures yet -- just define the type and re-export it. Existing code keeps using `anyhow::Result` until TASK-2 migrates it.
+  Do NOT change existing function signatures yet -- just define the type and re-export it. Existing code keeps using `anyhow::Result` until TASK-2d migrates it.
 
 ---
 
-#### TASK-2: Migrate `workflow_core` public API from `anyhow::Result` to `Result<T, WorkflowError>`
-- **Scope**: Change all public function signatures in `workflow_core` (dag.rs, workflow.rs, state.rs) from `anyhow::Result<T>` to `Result<T, WorkflowError>`, update internal error construction to use the enum variants, and write error-contract tests.
-- **Crate/Module**: `workflow_core/src/dag.rs`, `workflow_core/src/workflow.rs`, `workflow_core/src/state.rs`, `workflow_core/src/lib.rs`
-- **Responsible For**: The actual signature migration from anyhow to typed errors, and TDD tests for error contracts.
+#### TASK-2a: Add `PartialEq` impl and `InvalidConfig` variant to `WorkflowError`
+- **Scope**: Add a manual `PartialEq` implementation for `WorkflowError` (comparing `Io` variants by `ErrorKind`) and add the `InvalidConfig(String)` variant needed by the `workflow.rs` migration.
+- **Crate/Module**: `workflow_core/src/error.rs`
+- **Responsible For**: Making `WorkflowError` equality-comparable for test assertions and adding the missing variant for config-validation errors.
 - **Depends On**: TASK-1
-- **Enables**: TASK-4, TASK-8, TASK-9, TASK-11
+- **Enables**: TASK-2b, TASK-2c, TASK-2d
 - **Can Run In Parallel With**: TASK-3, TASK-6
 - **Acceptance Criteria**:
-  - `Dag::add_node` returns `Result<(), WorkflowError>` with `WorkflowError::DuplicateTaskId`.
-  - `Dag::add_edge` returns `Result<(), WorkflowError>` with `WorkflowError::CycleDetected` or `WorkflowError::UnknownDependency`.
-  - `WorkflowState::load` returns `Result<Self, WorkflowError>` with `WorkflowError::StateCorrupted` for parse errors and `WorkflowError::Io` for file errors.
-  - `WorkflowState::save` returns `Result<(), WorkflowError>`.
-  - `Workflow::add_task`, `Workflow::run`, `Workflow::dry_run` all return `Result<T, WorkflowError>`.
-  - Error-contract tests:
-    1. `add_task` with duplicate ID returns `WorkflowError::DuplicateTaskId`.
-    2. `add_edge` creating a cycle returns `WorkflowError::CycleDetected`.
-    3. Unknown dependency returns `WorkflowError::UnknownDependency`.
-    4. Loading corrupted JSON returns `WorkflowError::StateCorrupted`.
-  - All existing tests in `workflow_core` updated and pass.
-  - `cargo check -p workflow_core` and `cargo test -p workflow_core` both succeed.
-- **Notes for Subagent**: `anyhow` can remain as a dev-dependency for test convenience. The `Workflow::run` method currently returns `Result<()>` via `anyhow` -- change it to `Result<(), WorkflowError>`. Internal uses of `anyhow::bail!` become `return Err(WorkflowError::...)`. The `bon` builder's `build()` method should keep its own error type (bon-generated); only the methods YOU define change. The `?` operator on `std::io::Error` works automatically via `#[from]`. For `serde_json::Error` in state loading, map it: `.map_err(|e| WorkflowError::StateCorrupted(e.to_string()))`.
+  - Manual `impl PartialEq for WorkflowError` comparing `Io` variants by `ErrorKind` only, all other variants by structural equality.
+  - The impl carries a doc comment: `// Note: Io variants compared by ErrorKind only (lossy, sufficient for test assertions).`
+  - New variant `InvalidConfig(String)` with `#[error("invalid configuration: {0}")]`, placed after `TaskTimeout` and before `Io`.
+  - `InvalidConfig` included in the `PartialEq` match arms: `(Self::InvalidConfig(a), Self::InvalidConfig(b)) => a == b`.
+  - `cargo check -p workflow_core` passes.
+  - `cargo test -p workflow_core -- dag::tests::cycle_detection` and `dag::tests::unknown_dep_errors` compile and pass (these are blocked by the missing `PartialEq`).
+- **Notes for Subagent**: You CANNOT use `#[derive(PartialEq)]` because `std::io::Error` does not implement `PartialEq`. The impl must be written manually. The `#[non_exhaustive]` attribute is already present — do not remove it. Back up `error.rs` before editing (project convention). After editing, run `cargo test -p workflow_core 2>&1 | head -40` to confirm the `PartialEq`-related compile errors are gone.
+  ```rust
+  // Note: Io variants compared by ErrorKind only (lossy, sufficient for test assertions).
+  impl PartialEq for WorkflowError {
+      fn eq(&self, other: &Self) -> bool {
+          match (self, other) {
+              (Self::DuplicateTaskId(a), Self::DuplicateTaskId(b)) => a == b,
+              (Self::CycleDetected, Self::CycleDetected) => true,
+              (Self::UnknownDependency { task: t1, dependency: d1 },
+               Self::UnknownDependency { task: t2, dependency: d2 }) => t1 == t2 && d1 == d2,
+              (Self::StateCorrupted(a), Self::StateCorrupted(b)) => a == b,
+              (Self::TaskTimeout(a), Self::TaskTimeout(b)) => a == b,
+              (Self::InvalidConfig(a), Self::InvalidConfig(b)) => a == b,
+              (Self::Io(a), Self::Io(b)) => a.kind() == b.kind(),
+              (Self::Interrupted, Self::Interrupted) => true,
+              _ => false,
+          }
+      }
+  }
+  ```
+
+---
+
+#### TASK-2b: Add error-contract tests for `dag.rs`
+- **Scope**: Add the missing `DuplicateTaskId` error-contract test to `dag.rs`'s test module. Purely additive — no non-test code is touched.
+- **Crate/Module**: `workflow_core/src/dag.rs` (test module only)
+- **Responsible For**: Ensuring `dag.rs` has complete error-contract test coverage for all `WorkflowError` variants it can produce.
+- **Depends On**: TASK-2a
+- **Enables**: TASK-2d
+- **Can Run In Parallel With**: TASK-2c
+- **Acceptance Criteria**:
+  - A new test function `duplicate_node_errors` (or similar) exists in `dag.rs::tests` that:
+    1. Creates a `Dag`, calls `add_node("x".to_owned())` successfully.
+    2. Calls `add_node("x".to_owned())` again.
+    3. Asserts the error equals `WorkflowError::DuplicateTaskId("x".to_string())`.
+  - All existing `dag.rs` tests continue to pass.
+  - `cargo test -p workflow_core -- dag` passes with zero failures.
+- **Notes for Subagent**: Purely additive — add only a new `#[test]` function inside the existing `#[cfg(test)] mod tests` block. Follow the style of `unknown_dep_errors` and `cycle_detection` which already use `assert_eq!` with `WorkflowError` variants. Do NOT modify any non-test code in `dag.rs`.
+
+---
+
+#### TASK-2c: Add error-contract tests for `state.rs`
+- **Scope**: Add a corrupted-JSON test and tighten the existing `load_missing_errors` test to assert specific `WorkflowError` variants instead of `is_err()`. Purely additive — no non-test code is touched.
+- **Crate/Module**: `workflow_core/src/state.rs` (test module only)
+- **Responsible For**: Ensuring `state.rs` has complete error-contract test coverage for all `WorkflowError` variants it can produce.
+- **Depends On**: TASK-2a
+- **Enables**: TASK-2d
+- **Can Run In Parallel With**: TASK-2b
+- **Acceptance Criteria**:
+  - A new test function `load_corrupted_json_errors` exists in `state.rs::tests` that:
+    1. Writes invalid JSON (e.g., `b"not json at all"`) to a tempfile.
+    2. Calls `WorkflowState::load` on that file.
+    3. Asserts `matches!(err, WorkflowError::StateCorrupted(_))` (inner string is non-deterministic).
+  - The existing `load_missing_errors` test is tightened to assert `matches!(err, WorkflowError::Io(_))` instead of `is_err()`.
+  - All existing `state.rs` tests continue to pass.
+  - `cargo test -p workflow_core -- state` passes with zero failures.
+- **Notes for Subagent**: Use `matches!()` rather than `assert_eq!` for both new assertions — the exact error messages from `serde_json` and the OS are non-deterministic. `tempfile` is already a dev-dependency; use `tempdir()` + `std::fs::write`. Do NOT modify any non-test code in `state.rs`.
+
+---
+
+#### TASK-2d: Migrate `workflow.rs` from `anyhow` to `WorkflowError`
+- **Scope**: Change all public and private function signatures in `workflow.rs` from `anyhow::Result` to `Result<T, WorkflowError>`, replace the two `bail!` calls with explicit `WorkflowError` construction, and update the 6 test functions that return `anyhow::Result<()>`.
+- **Crate/Module**: `workflow_core/src/workflow.rs`
+- **Responsible For**: Completing the `anyhow` removal from the `workflow_core` public API surface.
+- **Depends On**: TASK-2b, TASK-2c
+- **Enables**: TASK-4, TASK-8, TASK-9, TASK-11
+- **Can Run In Parallel With**: TASK-3, TASK-6 (those can proceed in parallel with TASK-2a/2b/2c; they must wait for TASK-2d to complete)
+- **Acceptance Criteria**:
+  - `use anyhow::{bail, Result};` is replaced with `use crate::error::WorkflowError;` (no top-level `use anyhow` line remains).
+  - All 6 function signatures use `Result<T, WorkflowError>`:
+    - `Workflow::new` → `Result<Self, WorkflowError>`
+    - `Workflow::add_task` → `Result<(), WorkflowError>`
+    - `Workflow::build_dag` (private) → `Result<Dag, WorkflowError>`
+    - `Workflow::dry_run` → `Result<Vec<String>, WorkflowError>`
+    - `Workflow::resume` → `Result<Self, WorkflowError>`
+    - `Workflow::run` → `Result<(), WorkflowError>`
+  - The 2 `bail!` calls are replaced:
+    - `bail!("max_parallel must be at least 1")` → `return Err(WorkflowError::InvalidConfig("max_parallel must be at least 1".into()))`
+    - `bail!("duplicate task id: {}", task.id)` → `return Err(WorkflowError::DuplicateTaskId(task.id.clone()))`
+  - Internal `anyhow` plumbing is NOT changed (leave fully-qualified `anyhow::` references in place):
+    - `JoinHandle<anyhow::Result<()>>` stays.
+    - The closure `HashMap` (`Arc<dyn Fn() -> anyhow::Result<()>...>`) stays.
+    - `capture_task_error_context(&anyhow::Error)` stays.
+    - `anyhow::anyhow!("thread panicked")` stays.
+  - The 6 test functions that currently return `-> anyhow::Result<()>` are changed to `-> Result<(), Box<dyn std::error::Error>>`. The affected tests are: `single_task_completes`, `chain_respects_order`, `failed_task_skips_dependent`, `dry_run_returns_topo_order`, `duplicate_task_id_errors`, `valid_dependency_add`. The remaining tests (e.g. `builder_with_custom_max_parallel`, `builder_validation_zero_parallelism`, `resume_uses_builder`, `resume_loads_existing_state`) return `()` implicitly and need no change.
+  - The `duplicate_task_id_errors` test is strengthened to assert `WorkflowError::DuplicateTaskId("a".to_string())` instead of `is_err()`.
+  - `anyhow` remains in `[dependencies]` (NOT moved to `[dev-dependencies]`) — `task.rs`'s public API (`execute_fn: Arc<dyn Fn() -> anyhow::Result<()>>`) requires it.
+  - `cargo test -p workflow_core` passes fully (all modules: dag, state, workflow, task).
+  - `cargo check -p workflow_core` passes with no unused-import warnings.
+- **Notes for Subagent**:
+  - **`bon` builder risk**: Run `cargo check -p workflow_core` immediately after changing ONLY `Workflow::new`'s signature (before touching any tests) to verify `bon` propagates `Result<Self, WorkflowError>` correctly. The builder's `.build()` return type mirrors `new()`'s return type; all test call sites use `.build().unwrap()` so they are safe regardless, but checking early isolates any surprises.
+  - **Import cleanup**: After removing `use anyhow::{bail, Result};`, the remaining `anyhow::Result`, `anyhow::Error`, and `anyhow::anyhow!` usages inside the function bodies and test closures are already fully-qualified and will compile without any `use anyhow` line.
+  - **Test closures stay unchanged**: `Task::new("a", || Ok::<(), anyhow::Error>(()))` and `Task::new("a", || Err(anyhow::anyhow!("boom")))` inside tests use `anyhow` because `Task::execute_fn` is typed as `Arc<dyn Fn() -> anyhow::Result<()>>`. Do NOT change these.
+  - **Backup note**: A `workflow.rs.backup` already exists from a previous executor — do NOT overwrite it. Skip the backup step.
 
 ---
 
@@ -77,7 +164,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Responsible For**: Flipping the dependency direction -- monitoring data types live in core.
 - **Depends On**: TASK-1
 - **Enables**: TASK-5, TASK-9
-- **Can Run In Parallel With**: TASK-2, TASK-6
+- **Can Run In Parallel With**: TASK-2a, TASK-6
 - **Acceptance Criteria**:
   - `workflow_core/src/monitoring.rs` contains `MonitoringHook`, `HookTrigger`, `HookContext`, `HookResult` (data types only, NO `execute` method).
   - `workflow_core/src/lib.rs` has `pub mod monitoring;` and re-exports the types.
@@ -96,8 +183,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Scope**: Refactor `ExecutionHandle` in `workflow_utils/src/executor.rs` to use the owned `Child` handle for process management instead of raw PID + nix signals.
 - **Crate/Module**: `workflow_utils/src/executor.rs`, `workflow_utils/Cargo.toml`
 - **Responsible For**: Making process management safe and portable by using `std::process::Child` directly.
-- **Depends On**: TASK-2, TASK-3
-- **Enables**: TASK-7
+- **Depends On**: TASK-2d, TASK-3
 - **Can Run In Parallel With**: TASK-5, TASK-6
 - **Acceptance Criteria**:
   - `ExecutionHandle` fields become:
@@ -189,7 +275,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Responsible For**: Defining the abstraction boundary for process execution so the workflow engine does not depend on a specific process runner.
 - **Depends On**: TASK-1
 - **Enables**: TASK-7, TASK-11
-- **Can Run In Parallel With**: TASK-2, TASK-3, TASK-4, TASK-5
+- **Can Run In Parallel With**: TASK-2a, TASK-3, TASK-4, TASK-5
 - **Acceptance Criteria**:
   - `workflow_core/src/process.rs` contains exactly:
     ```rust
@@ -385,7 +471,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Scope**: Replace the current `Task` struct (opaque `Arc<dyn Fn()>` closure) with the new three-phase lifecycle model using `ExecutionMode`.
 - **Crate/Module**: `workflow_core/src/task.rs`
 - **Responsible For**: The new Task data model.
-- **Depends On**: TASK-2, TASK-3
+- **Depends On**: TASK-2d, TASK-3
 - **Enables**: TASK-10, TASK-11
 - **Can Run In Parallel With**: TASK-7, TASK-8
 - **Acceptance Criteria**:
@@ -472,7 +558,7 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 - **Scope**: Rewrite the `Workflow` struct to accept trait objects (`Box<dyn StateStore>`, `Arc<dyn ProcessRunner>`, `Arc<dyn HookExecutor>`) and rewrite the `run()` method to use the new Task lifecycle and return `WorkflowSummary`.
 - **Crate/Module**: `workflow_core/src/workflow.rs`
 - **Responsible For**: The core execution engine rewrite.
-- **Depends On**: TASK-2, TASK-5, TASK-7, TASK-8, TASK-9, TASK-10
+- **Depends On**: TASK-2d, TASK-5, TASK-7, TASK-8, TASK-9, TASK-10
 - **Enables**: TASK-12, TASK-13, TASK-15, TASK-16
 - **Can Run In Parallel With**: None (convergence point)
 - **Acceptance Criteria**:
@@ -788,14 +874,19 @@ Phase 3 transforms the workflow framework from "tests pass" into "trustworthy fo
 
 ```mermaid
 graph TD
-  TASK-1 --> TASK-2
+  TASK-1 --> TASK-2a
   TASK-1 --> TASK-3
   TASK-1 --> TASK-6
 
-  TASK-2 --> TASK-4
+  TASK-2a --> TASK-2b
+  TASK-2a --> TASK-2c
+  TASK-2b --> TASK-2d
+  TASK-2c --> TASK-2d
+
+  TASK-2d --> TASK-4
   TASK-3 --> TASK-4
-  TASK-2 --> TASK-8
-  TASK-2 --> TASK-9
+  TASK-2d --> TASK-8
+  TASK-2d --> TASK-9
 
   TASK-3 --> TASK-5
   TASK-3 --> TASK-9
@@ -805,7 +896,7 @@ graph TD
 
   TASK-9 --> TASK-10
 
-  TASK-2 --> TASK-11
+  TASK-2d --> TASK-11
   TASK-5 --> TASK-11
   TASK-7 --> TASK-11
   TASK-8 --> TASK-11
@@ -843,8 +934,9 @@ graph TD
 | Phase | Tasks | Notes |
 |-------|-------|-------|
 | Phase 1 | TASK-1 | Foundation: error type |
-| Phase 2 (parallel) | TASK-2, TASK-3, TASK-6 | API migration, monitoring type move, process trait defs |
-| Phase 3 (parallel) | TASK-4, TASK-5 | ExecutionHandle refactor, HookExecutor impl+tests |
+| Phase 2 (parallel) | TASK-2a, TASK-3, TASK-6 | TASK-2a: error.rs PartialEq+InvalidConfig; TASK-3: monitoring type move; TASK-6: process trait defs |
+| Phase 2b (parallel) | TASK-2b, TASK-2c | dag.rs and state.rs error-contract tests (depend on TASK-2a) |
+| Phase 3 (parallel) | TASK-2d, TASK-4, TASK-5 | TASK-2d: workflow.rs migration (depends on 2b+2c); TASK-4: ExecutionHandle refactor; TASK-5: HookExecutor impl |
 | Phase 4 (parallel) | TASK-7, TASK-8, TASK-9 | SystemProcessRunner+tests, StateStore+tests, Task redesign |
 | Phase 5 | TASK-10 | WorkflowSummary struct |
 | Phase 6 (parallel) | TASK-11, TASK-12, TASK-18 | Workflow engine rewrite (critical path), resume reset, CLI crate setup |

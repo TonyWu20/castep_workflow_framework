@@ -1,4 +1,5 @@
 pub mod dag;
+pub mod error;
 pub mod state;
 pub mod task;
 pub mod workflow;
@@ -6,6 +7,7 @@ pub mod workflow;
 pub use task::Task;
 pub use workflow::Workflow;
 pub use state::{TaskStatus, WorkflowState};
+pub use error::WorkflowError;
 
 /// Initialize default tracing subscriber with env-based filtering.
 /// Call once at start of main(). Controlled via RUST_LOG env var.
