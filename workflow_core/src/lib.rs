@@ -7,7 +7,7 @@ pub mod task;
 pub mod workflow;
 
 pub use error::WorkflowError;
-pub use monitoring::{HookContext, HookResult, HookTrigger, MonitoringHook};
+pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, MonitoringHook};
 pub use process::{ProcessHandle, ProcessResult, ProcessRunner};
 pub use state::{TaskStatus, WorkflowState};
 pub use task::Task;

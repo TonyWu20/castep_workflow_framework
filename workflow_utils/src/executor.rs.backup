@@ -1,7 +1,9 @@
+use anyhow::{Context, Result};
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-pub use workflow_core::WorkflowError;
+use std::time::Duration;
 
 pub struct TaskExecutor {
     workdir: PathBuf,
@@ -40,14 +42,14 @@ impl TaskExecutor {
         self
     }
 
-    pub fn execute(&self) -> Result<ExecutionResult, WorkflowError> {
+    pub fn execute(&self) -> Result<ExecutionResult> {
         let start = std::time::Instant::now();
         let output = std::process::Command::new(&self.command)
             .args(&self.args)
             .envs(&self.env)
             .current_dir(&self.workdir)
             .output()
-            .map_err(WorkflowError::Io)?;
+            .with_context(|| format!("failed to execute: {}", self.command))?;
         Ok(ExecutionResult {
             exit_code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -56,14 +58,15 @@ impl TaskExecutor {
         })
     }
 
-    pub fn spawn(&self) -> Result<ExecutionHandle, WorkflowError> {
+    pub fn spawn(&self) -> Result<ExecutionHandle> {
         let child = std::process::Command::new(&self.command)
             .args(&self.args)
             .envs(&self.env)
             .current_dir(&self.workdir)
             .spawn()
-            .map_err(WorkflowError::Io)?;
-        Ok(ExecutionHandle { child })
+            .with_context(|| format!("failed to spawn: {}", self.command))?;
+        let pid = child.id() as i32;
+        Ok(ExecutionHandle { pid, child })
     }
 }
 
@@ -71,7 +74,7 @@ pub struct ExecutionResult {
     pub exit_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
-    pub duration: std::time::Duration,
+    pub duration: Duration,
 }
 
 impl ExecutionResult {
@@ -81,19 +84,27 @@ impl ExecutionResult {
 }
 
 pub struct ExecutionHandle {
+    pid: i32,
+    // Held to prevent the child process from being orphaned on drop
+    #[allow(dead_code)]
     child: std::process::Child,
 }
 
 impl ExecutionHandle {
     pub fn pid(&self) -> i32 {
-        self.child.id() as i32
+        self.pid
     }
 
-    pub fn is_running(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None))
+    pub fn is_running(&self) -> bool {
+        use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+        matches!(
+            waitpid(Pid::from_raw(self.pid), Some(WaitPidFlag::WNOHANG)),
+            Ok(WaitStatus::StillAlive)
+        )
     }
 
-    pub fn terminate(&mut self) -> Result<(), WorkflowError> {
-        self.child.kill().map_err(WorkflowError::Io)
+    pub fn terminate(&self) -> Result<()> {
+        kill(Pid::from_raw(self.pid), Signal::SIGTERM)
+            .with_context(|| format!("failed to terminate pid {}", self.pid))
     }
 }
