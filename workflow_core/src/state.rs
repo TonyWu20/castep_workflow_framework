@@ -30,7 +30,7 @@ impl WorkflowState {
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, WorkflowError> {
-        let mut state: Self = serde_json::from_slice(&std::fs::read(path).map_err(|e| WorkflowError::Io(e))?)?;
+        let mut state: Self = serde_json::from_slice(&std::fs::read(path).map_err(WorkflowError::Io)?)?;
         for status in state.tasks.values_mut() {
             if matches!(status, TaskStatus::Running) {
                 *status = TaskStatus::Pending;
@@ -41,7 +41,7 @@ impl WorkflowState {
 
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), WorkflowError> {
         let json = serde_json::to_vec_pretty(self).map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
-        std::fs::write(path, json).map_err(|e| WorkflowError::Io(e))?;
+        std::fs::write(path, json).map_err(WorkflowError::Io)?;
         Ok(())
     }
 
