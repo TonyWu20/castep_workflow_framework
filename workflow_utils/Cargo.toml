@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = { workspace = true }
 serde = { workspace = true }
 nix = { workspace = true }
+workflow_core = { path = "../workflow_core" }
 
 [dev-dependencies]
 tempfile = "3"

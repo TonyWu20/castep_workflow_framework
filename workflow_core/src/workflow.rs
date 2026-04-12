@@ -1,14 +1,17 @@
 use crate::dag::Dag;
 use crate::error::WorkflowError;
+use crate::monitoring::{HookContext, HookTrigger, MonitoringHook};
 use crate::state::{TaskStatus, WorkflowState};
 use crate::task::Task;
 use bon::bon;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
-use workflow_utils::{HookContext, HookTrigger};
 
 struct PeriodicHookHandle {
     thread: std::thread::JoinHandle<()>,
@@ -21,15 +24,12 @@ struct PeriodicHookManager {
 
 impl PeriodicHookManager {
     fn new() -> Self {
-        Self { handles: HashMap::new() }
+        Self {
+            handles: HashMap::new(),
+        }
     }
 
-    fn spawn_for_task(
-        &mut self,
-        task_id: String,
-        hooks: Vec<workflow_utils::MonitoringHook>,
-        ctx: HookContext,
-    ) {
+    fn spawn_for_task(&mut self, task_id: String, hooks: &[MonitoringHook], ctx: HookContext) {
         let mut task_handles = Vec::new();
 
         for hook in hooks {
@@ -46,23 +46,7 @@ impl PeriodicHookManager {
                             break;
                         }
 
-                        match hook_clone.execute(&ctx_clone) {
-                            Ok(result) => {
-                                tracing::info!(
-                                    hook_name = %hook_clone.name,
-                                    task_id = %ctx_clone.task_id,
-                                    "Hook output:\n{}",
-                                    Self::indent_output(&result.output)
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    hook_name = %hook_clone.name,
-                                    error = %e,
-                                    "Hook failed (task continues)"
-                                );
-                            }
-                        }
+                        let _ = crate::monitoring::execute_hook(&hook_clone, &ctx_clone);
                     }
                 });
 
@@ -87,11 +71,13 @@ impl PeriodicHookManager {
         }
     }
 
+    #[allow(dead_code)]
     fn indent_output(output: &str) -> String {
         if output.is_empty() {
             return "<no output>".to_string();
         }
-        output.lines()
+        output
+            .lines()
             .map(|line| format!("  {}", line))
             .collect::<Vec<_>>()
             .join("\n")
@@ -133,7 +119,9 @@ impl Workflow {
         });
 
         if max_parallel == 0 {
-            return Err(WorkflowError::InvalidConfig("max_parallel must be at least 1".into()));
+            return Err(WorkflowError::InvalidConfig(
+                "max_parallel must be at least 1".into(),
+            ));
         }
 
         let state_path = state_dir.join(format!(".{}.workflow.json", name));
@@ -158,7 +146,10 @@ impl Workflow {
     }
 
     /// Resume a workflow by name, loading prior state from `state_dir` when `run()` is called.
-    pub fn resume(name: impl Into<String>, state_dir: impl Into<PathBuf>) -> Result<Self, WorkflowError> {
+    pub fn resume(
+        name: impl Into<String>,
+        state_dir: impl Into<PathBuf>,
+    ) -> Result<Self, WorkflowError> {
         Self::builder()
             .name(name.into())
             .state_dir(state_dir.into())
@@ -185,12 +176,16 @@ impl Workflow {
             .tasks
             .iter()
             .map(|(id, t)| {
-                tracing::debug!("Registered task '{}' with {} dependencies", id, t.dependencies.len());
+                tracing::debug!(
+                    "Registered task '{}' with {} dependencies",
+                    id,
+                    t.dependencies.len()
+                );
                 (id.clone(), Arc::clone(&t.execute_fn))
             })
             .collect();
 
-        let monitors: HashMap<String, Vec<workflow_utils::MonitoringHook>> = self
+        let monitors: HashMap<String, Vec<crate::monitoring::MonitoringHook>> = self
             .tasks
             .iter()
             .map(|(id, t)| (id.clone(), t.monitors.clone()))
@@ -235,7 +230,8 @@ impl Workflow {
                         // Stop periodic hooks first
                         periodic_manager.stop_for_task(&id);
 
-                        let duration = task_start_times.remove(&id)
+                        let duration = task_start_times
+                            .remove(&id)
                             .map(|start| start.elapsed())
                             .unwrap_or(Duration::from_secs(0));
 
@@ -259,7 +255,7 @@ impl Workflow {
                                 .iter()
                                 .filter(|h| matches!(h.trigger, HookTrigger::OnComplete))
                             {
-                                let _ = hook.execute(&ctx);
+                                let _ = crate::monitoring::execute_hook(hook, &ctx);
                             }
                         }
                     }
@@ -267,15 +263,13 @@ impl Workflow {
                         // Stop periodic hooks first
                         periodic_manager.stop_for_task(&id);
 
-                        let duration = task_start_times.remove(&id)
+                        let duration = task_start_times
+                            .remove(&id)
                             .map(|start| start.elapsed())
                             .unwrap_or(Duration::from_secs(0));
 
-                        let error_context = Self::capture_task_error_context(
-                            &task_workdirs[&id],
-                            &id,
-                            &e,
-                        );
+                        let error_context =
+                            Self::capture_task_error_context(&task_workdirs[&id], &id, &e);
                         tracing::error!("{}", error_context);
 
                         tracing::error!(
@@ -298,7 +292,7 @@ impl Workflow {
                                 .iter()
                                 .filter(|h| matches!(h.trigger, HookTrigger::OnFailure))
                             {
-                                let _ = hook.execute(&ctx);
+                                let _ = crate::monitoring::execute_hook(hook, &ctx);
                             }
                         }
                     }
@@ -387,14 +381,18 @@ impl Workflow {
                             };
 
                             if !periodic_hooks.is_empty() {
-                                periodic_manager.spawn_for_task(id.clone(), periodic_hooks, ctx.clone());
+                                periodic_manager.spawn_for_task(
+                                    id.clone(),
+                                    &periodic_hooks,
+                                    ctx.clone(),
+                                );
                             }
 
                             for hook in hooks
                                 .iter()
                                 .filter(|h| matches!(h.trigger, HookTrigger::OnStart))
                             {
-                                let _ = hook.execute(&ctx);
+                                let _ = crate::monitoring::execute_hook(hook, &ctx);
                             }
                         }
 
@@ -426,10 +424,14 @@ impl Workflow {
 
         let total_duration = workflow_start.elapsed();
         let final_state = state.lock().unwrap();
-        let succeeded = final_state.tasks.values()
+        let succeeded = final_state
+            .tasks
+            .values()
             .filter(|status| matches!(status, TaskStatus::Completed))
             .count();
-        let failed = final_state.tasks.values()
+        let failed = final_state
+            .tasks
+            .values()
             .filter(|status| matches!(status, TaskStatus::Failed { .. }))
             .count();
 
@@ -476,7 +478,9 @@ impl Workflow {
     fn capture_task_error_context(workdir: &Path, task_id: &str, error: &anyhow::Error) -> String {
         format!(
             "Task '{}' failed: {}\nWorkdir: {}\n",
-            task_id, error, workdir.display()
+            task_id,
+            error,
+            workdir.display()
         )
     }
 }
@@ -583,7 +587,10 @@ mod tests {
             .build()
             .unwrap();
         wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(())))?;
-        assert_eq!(wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(()))), Err(WorkflowError::DuplicateTaskId("a".to_string())));
+        assert_eq!(
+            wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(()))),
+            Err(WorkflowError::DuplicateTaskId("a".to_string()))
+        );
         Ok(())
     }
 
@@ -594,7 +601,9 @@ mod tests {
             .build()
             .unwrap();
         wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(())))?;
-        assert!(wf.add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a")).is_ok());
+        assert!(wf
+            .add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a"))
+            .is_ok());
         Ok(())
     }
 

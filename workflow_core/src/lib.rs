@@ -1,13 +1,18 @@
+mod monitoring;
 pub mod dag;
 pub mod error;
+pub mod process;
 pub mod state;
 pub mod task;
 pub mod workflow;
 
+pub use monitoring::{
+    HookContext, HookResult, HookTrigger, MonitoringHook,
+};
 pub use task::Task;
-pub use workflow::Workflow;
-pub use state::{TaskStatus, WorkflowState};
 pub use error::WorkflowError;
+pub use state::{TaskStatus, WorkflowState};
+pub use process::{ProcessHandle, ProcessRunner, ProcessResult};
 
 /// Initialize default tracing subscriber with env-based filtering.
 /// Call once at start of main(). Controlled via RUST_LOG env var.

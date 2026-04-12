@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
-use castep_cell_fmt::{parse, ToCellFile, format::to_string_many_spaced};
-use castep_cell_io::CellDocument;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
 use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
-use workflow_core::Workflow;
-use workflow_utils::{TaskExecutor, create_dir, write_file};
+use castep_cell_io::CellDocument;
+use workflow_core::workflow::Workflow;
+use workflow_utils::{create_dir, write_file, TaskExecutor};
 
 fn main() -> Result<()> {
     let seed_cell = include_str!("../seeds/ZnO.cell");
@@ -21,7 +21,8 @@ fn main() -> Result<()> {
         let task = workflow_core::Task::new(&task_id, move || {
             create_dir(&workdir)?;
 
-            let mut cell_doc: CellDocument = parse(seed_cell).context("failed to parse seed ZnO.cell")?;
+            let mut cell_doc: CellDocument =
+                parse(seed_cell).context("failed to parse seed ZnO.cell")?;
 
             let atom_u = AtomHubbardU::builder()
                 .species(Species::Symbol("Zn".to_string()))
@@ -50,5 +51,5 @@ fn main() -> Result<()> {
         workflow.add_task(task)?;
     }
 
-    workflow.run()
+    Ok(workflow.run()?)
 }

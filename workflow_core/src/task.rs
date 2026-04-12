@@ -1,6 +1,7 @@
+use crate::monitoring::MonitoringHook;
+
 use std::path::PathBuf;
 use std::sync::Arc;
-use workflow_utils::MonitoringHook;
 
 pub struct Task {
     pub id: String,

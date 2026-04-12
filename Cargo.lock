@@ -1156,7 +1156,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tracing",
  "tracing-subscriber",
- "workflow_utils",
 ]
 
 [[package]]
@@ -1167,6 +1166,7 @@ dependencies = [
  "nix",
  "serde",
  "tempfile",
+ "workflow_core",
 ]
 
 [[package]]
