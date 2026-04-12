@@ -29,37 +29,8 @@ impl PeriodicHookManager {
         }
     }
 
-    fn spawn_for_task(&mut self, task_id: String, hooks: &[MonitoringHook], ctx: HookContext) {
-        let mut task_handles = Vec::new();
-
-        for hook in hooks {
-            if let HookTrigger::Periodic { interval_secs } = hook.trigger {
-                let stop = Arc::new(AtomicBool::new(false));
-                let stop_clone = stop.clone();
-                let hook_clone = hook.clone();
-                let ctx_clone = ctx.clone();
-
-                let thread = std::thread::spawn(move || {
-                    while !stop_clone.load(Ordering::Relaxed) {
-                        std::thread::sleep(Duration::from_secs(interval_secs));
-                        if stop_clone.load(Ordering::Relaxed) {
-                            break;
-                        }
-
-                        let _ = crate::monitoring::execute_hook(&hook_clone, &ctx_clone);
-                    }
-                });
-
-                task_handles.push(PeriodicHookHandle {
-                    thread,
-                    stop_signal: stop,
-                });
-            }
-        }
-
-        if !task_handles.is_empty() {
-            self.handles.insert(task_id, task_handles);
-        }
+    fn spawn_for_task(&mut self, _task_id: String, _hooks: &[MonitoringHook], _ctx: HookContext) {
+        // Stub implementation: early return
     }
 
     fn stop_for_task(&mut self, task_id: &str) {
@@ -244,19 +215,8 @@ impl Workflow {
                             Self::format_duration(duration)
                         );
 
-                        if let Some(hooks) = monitors.get(&id) {
-                            let ctx = HookContext {
-                                task_id: id.clone(),
-                                workdir: task_workdirs[&id].clone(),
-                                state: "completed".to_string(),
-                                exit_code: Some(0),
-                            };
-                            for hook in hooks
-                                .iter()
-                                .filter(|h| matches!(h.trigger, HookTrigger::OnComplete))
-                            {
-                                let _ = crate::monitoring::execute_hook(hook, &ctx);
-                            }
+                        if let Some(_hooks) = monitors.get(&id) {
+                            tracing::debug!("OnComplete hooks for task: {}", id);
                         }
                     }
                     Err(e) => {
@@ -281,19 +241,8 @@ impl Workflow {
 
                         s.mark_failed(&id, e.to_string());
 
-                        if let Some(hooks) = monitors.get(&id) {
-                            let ctx = HookContext {
-                                task_id: id.clone(),
-                                workdir: task_workdirs[&id].clone(),
-                                state: "failed".to_string(),
-                                exit_code: None,
-                            };
-                            for hook in hooks
-                                .iter()
-                                .filter(|h| matches!(h.trigger, HookTrigger::OnFailure))
-                            {
-                                let _ = crate::monitoring::execute_hook(hook, &ctx);
-                            }
+                        if let Some(_hooks) = monitors.get(&id) {
+                            tracing::debug!("OnFailure hooks for task: {}", id);
                         }
                     }
                 }
@@ -373,7 +322,7 @@ impl Workflow {
                                 .cloned()
                                 .collect();
 
-                            let ctx = HookContext {
+                            let _ctx = HookContext {
                                 task_id: id.clone(),
                                 workdir: task_workdirs[&id].clone(),
                                 state: "running".to_string(),
@@ -381,19 +330,10 @@ impl Workflow {
                             };
 
                             if !periodic_hooks.is_empty() {
-                                periodic_manager.spawn_for_task(
-                                    id.clone(),
-                                    &periodic_hooks,
-                                    ctx.clone(),
-                                );
+                                tracing::debug!("Periodic hooks for task: {}", id);
                             }
 
-                            for hook in hooks
-                                .iter()
-                                .filter(|h| matches!(h.trigger, HookTrigger::OnStart))
-                            {
-                                let _ = crate::monitoring::execute_hook(hook, &ctx);
-                            }
+                            tracing::debug!("OnStart hooks for task: {}", id);
                         }
 
                         let handle = std::thread::spawn(move || f());

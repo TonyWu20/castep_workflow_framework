@@ -1,60 +1,6 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use crate::executor::TaskExecutor;
-
-/// A monitoring hook that can be triggered by a task event.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MonitoringHook {
-    /// Human-readable name of the hook.
-    pub name: String,
-    /// Command to execute when the hook is triggered.
-    pub command: String,
-    /// The trigger event that activates this hook.
-    pub trigger: HookTrigger,
-}
-
-impl MonitoringHook {
-    /// Creates a new monitoring hook with the specified configuration.
-    pub fn new(name: impl Into<String>, command: impl Into<String>, trigger: HookTrigger) -> Self {
-        Self { name: name.into(), command: command.into(), trigger }
-    }
-}
-
-/// The event that triggers a monitoring hook.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum HookTrigger {
-    /// Triggered when a task starts.
-    OnStart,
-    /// Triggered when a task completes successfully.
-    OnComplete,
-    /// Triggered when a task fails.
-    OnFailure,
-    /// Triggered periodically at specified intervals.
-    Periodic { interval_secs: u64 },
-}
-
-/// Context available to monitoring hooks during execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookContext {
-    /// ID of the task this hook is associated with.
-    pub task_id: String,
-    /// Working directory for the task.
-    pub workdir: PathBuf,
-    /// Current state of the task (running, completed, failed, etc.).
-    pub state: String,
-    /// Exit code of the task (if available).
-    pub exit_code: Option<i32>,
-}
-
-/// Result of executing a monitoring hook.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookResult {
-    /// Whether the hook execution was successful.
-    pub success: bool,
-    /// Output from the hook command.
-    pub output: String,
-}
+use workflow_core::{HookContext, HookResult, MonitoringHook};
 
 /// Executes a monitoring hook with the given context.
 /// This is a free function because it needs access to TaskExecutor from workflow_utils.
