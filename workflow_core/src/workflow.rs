@@ -256,10 +256,10 @@ pub struct WorkflowSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::monitoring::ShellHookExecutor;
-    use crate::process::SystemProcessRunner;
     use std::collections::HashMap;
     use std::io::Write;
+    use workflow_utils::ShellHookExecutor;
+    use workflow_utils::SystemProcessRunner;
 
     #[test]
     fn single_task_completes() -> Result<(), Box<dyn std::error::Error>> {
@@ -390,10 +390,7 @@ mod tests {
 
         let state = JsonStateStore::load(state_path).unwrap();
         // After load, SkippedDueToDependencyFailure resets to Pending for crash recovery
-        assert!(matches!(
-            state.get_status("b"),
-            Some(TaskStatus::Pending)
-        ));
+        assert!(matches!(state.get_status("b"), Some(TaskStatus::Pending)));
         Ok(())
     }
 

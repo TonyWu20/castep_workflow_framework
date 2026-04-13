@@ -46,3 +46,13 @@ Ordering hazard pattern: when a "delete crate" task and a "clean workspace deps"
 Resume semantics invariant: `TaskStatus::Skipped` (user-explicit) must NEVER be reset on load. Only `Running`, `Failed { .. }`, and `SkippedDueToDependencyFailure` reset to `Pending`. This distinction must be called out in every task that touches `JsonStateStore::load`.
 
 Side-effect counter pattern for "task did not re-run" assertions: use `Arc<AtomicUsize>` captured by the `.setup()` closure (closures must be `'static`; local variables cannot be captured by reference across runs).
+
+## Fix plan decomposition patterns (2026-04-13)
+
+Trait return-type change cascade: when changing `fn get_status() -> Option<T>` to `-> Option<&T>`, all callers using `==` or `assert_eq!` must switch to `matches!()` or `.cloned()`. This is a separate task from the trait change itself. Group: (1) trait signature, (2) impl signature, (3) caller/test fixups.
+
+Concrete-impl removal order: (1) remove struct+impl from `workflow_core`, (2) remove from `pub use` re-export in `lib.rs`, (3) update test imports to use `workflow_utils::` versions. Steps 1+2 are in the same file cluster and parallel-safe with other file removals. Step 3 depends on both.
+
+`StateStore` trait object coercion: `Box<JsonStateStore>.as_mut()` auto-coerces to `&mut dyn StateStore` after the signature change. No caller changes needed for boxed usage. Direct stack references (`&mut state`) also coerce. This is safe to assume -- do not add unnecessary `.as_mut()` calls.
+
+Hook wiring complexity: `Workflow::run()` removes tasks from `self.tasks` at dispatch time. Any data needed later (monitors, workdir) must be captured before insertion into the handles map. This is a consistent footgun -- always flag it when modifying the run loop.
