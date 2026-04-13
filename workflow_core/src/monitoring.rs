@@ -14,6 +14,96 @@ pub trait HookExecutor: Send + Sync {
     ) -> Result<HookResult, WorkflowError>;
 }
 
+/// A monitoring hook that can be triggered by a task event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonitoringHook {
+    /// Human-readable name of the hook.
+    pub name: String,
+    /// Command to execute when the hook is triggered.
+    pub command: String,
+    /// The trigger event that activates this hook.
+    pub trigger: HookTrigger,
+}
+
+impl MonitoringHook {
+    /// Creates a new monitoring hook with the specified configuration.
+    pub fn new(name: impl Into<String>, command: impl Into<String>, trigger: HookTrigger) -> Self {
+        Self {
+            name: name.into(),
+            command: command.into(),
+            trigger,
+        }
+    }
+}
+
+/// The event that triggers a monitoring hook.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum HookTrigger {
+    /// Triggered when a task starts.
+    OnStart,
+    /// Triggered when a task completes successfully.
+    OnComplete,
+    /// Triggered when a task fails.
+    OnFailure,
+    /// Triggered periodically at specified intervals.
+    Periodic { interval_secs: u64 },
+}
+
+/// Context available to monitoring hooks during execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookContext {
+    /// ID of the task this hook is associated with.
+    pub task_id: String,
+    /// Working directory for the task.
+    pub workdir: std::path::PathBuf,
+    /// Current state of the task (running, completed, failed, etc.).
+    pub state: String,
+    /// Exit code of the task (if available).
+    pub exit_code: Option<i32>,
+}
+
+/// Result of executing a monitoring hook.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookResult {
+    /// Whether the hook execution was successful.
+    pub success: bool,
+    /// Output from the hook command.
+    pub output: String,
+}
+
+/// Concrete implementation of HookExecutor that executes hooks via shell commands.
+pub struct ShellHookExecutor;
+
+impl HookExecutor for ShellHookExecutor {
+    fn execute_hook(
+        &self,
+        hook: &MonitoringHook,
+        ctx: &HookContext,
+    ) -> Result<HookResult, WorkflowError> {
+        let mut parts = hook.command.split_whitespace();
+        let cmd = parts.next().unwrap_or_default();
+        let args: Vec<String> = parts.map(String::from).collect();
+
+        let output = std::process::Command::new(cmd)
+            .args(&args)
+            .env("TASK_ID", &ctx.task_id)
+            .env("TASK_STATE", &ctx.state)
+            .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
+            .env(
+                "EXIT_CODE",
+                ctx.exit_code.map(|c| c.to_string()).unwrap_or_default(),
+            )
+            .current_dir(&ctx.workdir)
+            .output()
+            .map_err(WorkflowError::Io)?;
+
+        Ok(HookResult {
+            success: output.status.success(),
+            output: String::from_utf8_lossy(&output.stdout).into_owned(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,61 +207,4 @@ mod tests {
             Err(WorkflowError::Io(_))
         ));
     }
-}
-
-/// A monitoring hook that can be triggered by a task event.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MonitoringHook {
-    /// Human-readable name of the hook.
-    pub name: String,
-    /// Command to execute when the hook is triggered.
-    pub command: String,
-    /// The trigger event that activates this hook.
-    pub trigger: HookTrigger,
-}
-
-impl MonitoringHook {
-    /// Creates a new monitoring hook with the specified configuration.
-    pub fn new(name: impl Into<String>, command: impl Into<String>, trigger: HookTrigger) -> Self {
-        Self {
-            name: name.into(),
-            command: command.into(),
-            trigger,
-        }
-    }
-}
-
-/// The event that triggers a monitoring hook.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum HookTrigger {
-    /// Triggered when a task starts.
-    OnStart,
-    /// Triggered when a task completes successfully.
-    OnComplete,
-    /// Triggered when a task fails.
-    OnFailure,
-    /// Triggered periodically at specified intervals.
-    Periodic { interval_secs: u64 },
-}
-
-/// Context available to monitoring hooks during execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookContext {
-    /// ID of the task this hook is associated with.
-    pub task_id: String,
-    /// Working directory for the task.
-    pub workdir: std::path::PathBuf,
-    /// Current state of the task (running, completed, failed, etc.).
-    pub state: String,
-    /// Exit code of the task (if available).
-    pub exit_code: Option<i32>,
-}
-
-/// Result of executing a monitoring hook.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookResult {
-    /// Whether the hook execution was successful.
-    pub success: bool,
-    /// Output from the hook command.
-    pub output: String,
 }

@@ -34,7 +34,7 @@ pub trait StateStore {
     fn save(&self) -> Result<(), WorkflowError>;
 
     /// Loads state from disk. Running tasks are reset to Pending for crash recovery.
-    fn load(path: impl AsRef<Path>) -> Result<JsonStateStore, WorkflowError>;
+    fn load(path: impl AsRef<Path>) -> Result<JsonStateStore, WorkflowError> where Self: Sized;
 }
 
 /// Extension trait providing convenience methods for state management.
@@ -103,7 +103,7 @@ impl JsonStateStore {
     }
 
     /// Saves state atomically using temp file + rename pattern.
-    fn save(&self) -> Result<(), WorkflowError> {
+    pub fn save(&self) -> Result<(), WorkflowError> {
         let temp_path = self.path.with_extension(".tmp");
         let json = serde_json::to_vec_pretty(self).map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
         fs::write(&temp_path, json).map_err(|e| WorkflowError::Io(e))?;

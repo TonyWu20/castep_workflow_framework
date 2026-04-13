@@ -1,107 +1,42 @@
 use crate::dag::Dag;
 use crate::error::WorkflowError;
-use crate::monitoring::{HookContext, HookTrigger, MonitoringHook};
+use crate::monitoring::HookExecutor;
+use crate::process::{ProcessHandle, ProcessRunner};
 use crate::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
-use crate::task::Task;
-use bon::bon;
+use crate::task::{ExecutionMode, Task};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-struct PeriodicHookHandle {
-    thread: std::thread::JoinHandle<()>,
-    stop_signal: Arc<AtomicBool>,
-}
-
-struct PeriodicHookManager {
-    handles: HashMap<String, Vec<PeriodicHookHandle>>,
-}
-
-impl PeriodicHookManager {
-    fn new() -> Self {
-        Self {
-            handles: HashMap::new(),
-        }
-    }
-
-    fn spawn_for_task(&mut self, _task_id: String, _hooks: &[MonitoringHook], _ctx: HookContext) {
-        // Stub implementation: early return
-    }
-
-    fn stop_for_task(&mut self, task_id: &str) {
-        if let Some(handles) = self.handles.remove(task_id) {
-            for handle in handles {
-                handle.stop_signal.store(true, Ordering::Relaxed);
-                let _ = handle.thread.join();
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    fn indent_output(output: &str) -> String {
-        if output.is_empty() {
-            return "<no output>".to_string();
-        }
-        output
-            .lines()
-            .map(|line| format!("  {}", line))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-}
-
-impl Drop for PeriodicHookManager {
-    fn drop(&mut self) {
-        for (task_id, handles) in self.handles.drain() {
-            tracing::debug!("Stopping periodic hooks for task: {}", task_id);
-            for handle in handles {
-                handle.stop_signal.store(true, Ordering::Relaxed);
-                let _ = handle.thread.join();
-            }
-        }
-    }
-}
 
 pub struct Workflow {
     pub name: String,
     tasks: HashMap<String, Task>,
-    state_path: PathBuf,
     max_parallel: usize,
 }
 
-#[bon]
 impl Workflow {
-    /// Creates a new Workflow instance using the builder pattern.
-    #[builder]
-    pub fn new(
-        name: String,
-        #[builder(default = PathBuf::from("."))] state_dir: PathBuf,
-        max_parallel: Option<usize>,
-    ) -> Result<Self, WorkflowError> {
-        let max_parallel = max_parallel.unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(4)
-        });
+    /// Creates a new Workflow instance.
+    pub fn new(name: impl Into<String>) -> Self {
+        let max_parallel = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
 
-        if max_parallel == 0 {
+        Self {
+            name: name.into(),
+            tasks: HashMap::new(),
+            max_parallel,
+        }
+    }
+
+    /// Sets the maximum parallel execution limit.
+    pub fn with_max_parallel(mut self, n: usize) -> Result<Self, WorkflowError> {
+        if n == 0 {
             return Err(WorkflowError::InvalidConfig(
                 "max_parallel must be at least 1".into(),
             ));
         }
-
-        let state_path = state_dir.join(format!(".{}.workflow.json", name));
-        Ok(Self {
-            name,
-            tasks: HashMap::new(),
-            state_path,
-            max_parallel,
-        })
+        self.max_parallel = n;
+        Ok(self)
     }
 
     pub fn add_task(&mut self, task: Task) -> Result<(), WorkflowError> {
@@ -116,176 +51,92 @@ impl Workflow {
         Ok(self.build_dag()?.topological_order())
     }
 
-    /// Resume a workflow by name, loading prior state from `state_dir` when `run()` is called.
-    pub fn resume(
-        name: impl Into<String>,
-        state_dir: impl Into<PathBuf>,
-    ) -> Result<Self, WorkflowError> {
-        Self::builder()
-            .name(name.into())
-            .state_dir(state_dir.into())
-            .build()
-    }
-
-    pub fn run(&mut self) -> Result<(), WorkflowError> {
+    /// Runs the workflow with dependency injection for state, runner, and hook executor.
+    pub fn run(
+        &mut self,
+        state: &mut JsonStateStore,
+        runner: Arc<dyn ProcessRunner>,
+        _hook_executor: Arc<dyn HookExecutor>,
+    ) -> Result<WorkflowSummary, WorkflowError> {
         let dag = self.build_dag()?;
-        tracing::debug!("DAG execution order: {:?}", dag.topological_order());
 
-        let mut state = if self.state_path.exists() {
-            JsonStateStore::load(&self.state_path)?
-        } else {
-            JsonStateStore::new(&self.name, self.state_path.clone())
-        };
+        // Initialize state for all tasks
         for id in dag.task_ids() {
-            state.tasks_mut().entry(id.clone()).or_insert(TaskStatus::Pending);
+            if state.get_status(id).is_none() {
+                state.set_status(id, TaskStatus::Pending);
+            }
         }
-        let state = Arc::new(Mutex::new(state));
+        state.save()?;
 
-        tracing::debug!("Registered {} tasks", self.tasks.len());
-
-        let fns: HashMap<String, Arc<dyn Fn() -> anyhow::Result<()> + Send + Sync>> = self
-            .tasks
-            .iter()
-            .map(|(id, t)| {
-                tracing::debug!(
-                    "Registered task '{}' with {} dependencies",
-                    id,
-                    t.dependencies.len()
-                );
-                (id.clone(), Arc::clone(&t.execute_fn))
-            })
-            .collect();
-
-        let monitors: HashMap<String, Vec<crate::monitoring::MonitoringHook>> = self
-            .tasks
-            .iter()
-            .map(|(id, t)| (id.clone(), t.monitors.clone()))
-            .collect();
-
-        let task_workdirs: HashMap<String, std::path::PathBuf> = self
-            .tasks
-            .iter()
-            .map(|(id, t)| (id.clone(), t.workdir.clone()))
-            .collect();
-
-        let mut handles: HashMap<String, std::thread::JoinHandle<anyhow::Result<()>>> =
-            HashMap::new();
-
+        let mut handles: HashMap<String, (Box<dyn ProcessHandle>, Instant)> = HashMap::new();
         let workflow_start = Instant::now();
-        let mut task_start_times: HashMap<String, Instant> = HashMap::new();
-        let mut periodic_manager = PeriodicHookManager::new();
-
-        tracing::info!(
-            workflow_name = %self.name,
-            total_tasks = self.tasks.len(),
-            max_parallel = self.max_parallel,
-            "Starting workflow"
-        );
 
         loop {
-            let finished: Vec<String> = handles
-                .keys()
-                .filter(|id| handles[*id].is_finished())
-                .cloned()
-                .collect();
+            // Poll finished tasks
+            let mut finished: Vec<String> = Vec::new();
+            for (id, handle) in handles.iter_mut() {
+                if !handle.0.is_running() {
+                    finished.push(id.clone());
+                }
+            }
+
+            // Remove and process finished tasks
             for id in finished {
-                // task threads don't hold the lock when they panic — poisoning is not expected
-                let mut s = state.lock().unwrap();
-                let result = handles
-                    .remove(&id)
-                    .expect("id was just confirmed present in finished list")
-                    .join()
-                    .unwrap_or_else(|_| Err(anyhow::anyhow!("thread panicked")));
-                match result {
-                    Ok(()) => {
-                        // Stop periodic hooks first
-                        periodic_manager.stop_for_task(&id);
+                if let Some((mut handle, start)) = handles.remove(&id) {
+                    let _duration = start.elapsed();
 
-                        let duration = task_start_times
-                            .remove(&id)
-                            .map(|start| start.elapsed())
-                            .unwrap_or(Duration::from_secs(0));
-
-                        s.mark_completed(&id);
-
-                        tracing::info!(
-                            task_id = %id,
-                            duration_secs = duration.as_secs(),
-                            "Task completed in {}",
-                            Self::format_duration(duration)
-                        );
-
-                        if let Some(_hooks) = monitors.get(&id) {
-                            tracing::debug!("OnComplete hooks for task: {}", id);
+                    // Execute the process and handle result
+                    if let Ok(process_result) = handle.wait() {
+                        match process_result.exit_code {
+                            Some(0) => state.mark_completed(&id),
+                            _ => state.mark_failed(
+                                &id,
+                                format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
+                            ),
                         }
+                    } else {
+                        state.mark_failed(&id, "process terminated".to_string());
                     }
-                    Err(e) => {
-                        // Stop periodic hooks first
-                        periodic_manager.stop_for_task(&id);
-
-                        let duration = task_start_times
-                            .remove(&id)
-                            .map(|start| start.elapsed())
-                            .unwrap_or(Duration::from_secs(0));
-
-                        let error_context =
-                            Self::capture_task_error_context(&task_workdirs[&id], &id, &e);
-                        tracing::error!("{}", error_context);
-
-                        tracing::error!(
-                            task_id = %id,
-                            duration_secs = duration.as_secs(),
-                            "Task failed after {}",
-                            Self::format_duration(duration)
-                        );
-
-                        s.mark_failed(&id, e.to_string());
-
-                        if let Some(_hooks) = monitors.get(&id) {
-                            tracing::debug!("OnFailure hooks for task: {}", id);
-                        }
-                    }
+                    state.save()?;
                 }
-                s.save()?;
             }
 
-            {
-                let mut s = state.lock().unwrap();
-                let mut changed = true;
-                while changed {
-                    changed = false;
-                    let to_skip: Vec<String> = dag
-                        .task_ids()
-                        .filter(|id| matches!(s.get_status(*id), Some(TaskStatus::Pending)))
-                        .filter(|id| {
-                            self.tasks
-                                .get(*id)
-                                .map(|t| {
-                                    t.dependencies.iter().any(|dep| {
-                                        matches!(
-                                            s.get_status(dep.as_str()),
-                                            Some(TaskStatus::Failed { .. })
-                                                | Some(TaskStatus::Skipped)
-                                                | Some(TaskStatus::SkippedDueToDependencyFailure)
-                                        )
-                                    })
+            // Skip propagation logic
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let to_skip: Vec<String> = dag
+                    .task_ids()
+                    .filter(|id| matches!(state.get_status(*id), Some(TaskStatus::Pending)))
+                    .filter(|id| {
+                        self.tasks
+                            .get(*id)
+                            .map(|t| {
+                                t.dependencies.iter().any(|dep| {
+                                    matches!(
+                                        state.get_status(dep.as_str()),
+                                        Some(TaskStatus::Failed { .. })
+                                            | Some(TaskStatus::Skipped)
+                                            | Some(TaskStatus::SkippedDueToDependencyFailure)
+                                    )
                                 })
-                                .unwrap_or(false)
-                        })
-                        .cloned()
-                        .collect();
-                    if !to_skip.is_empty() {
-                        changed = true;
-                        for id in to_skip {
-                            s.mark_skipped_due_to_dep_failure(&id);
-                        }
+                            })
+                            .unwrap_or(false)
+                    })
+                    .cloned()
+                    .collect();
+                if !to_skip.is_empty() {
+                    changed = true;
+                    for id in to_skip {
+                        state.mark_skipped_due_to_dep_failure(&id);
                     }
                 }
-                s.save()?;
             }
+            state.save()?;
 
-            let statuses: HashMap<String, TaskStatus> = state.lock().unwrap().all_task_statuses();
-            let done_set: HashSet<String> = statuses
+            // Dispatch ready tasks
+            let done_set: HashSet<String> = state
+                .all_tasks()
                 .iter()
                 .filter(|(_, v)| {
                     matches!(
@@ -302,89 +153,81 @@ impl Workflow {
                 if handles.len() >= self.max_parallel {
                     break;
                 }
-                if matches!(statuses.get(&id), Some(TaskStatus::Pending)) {
-                    if let Some(f) = fns.get(&id).cloned() {
-                        state.lock().unwrap().mark_running(&id);
+                if matches!(state.get_status(&id), Some(TaskStatus::Pending)) {
+                    // Take task from HashMap (consume it)
+                    if let Some(task) = self.tasks.remove(&id) {
+                        state.mark_running(&id);
 
-                        task_start_times.insert(id.clone(), Instant::now());
-
-                        tracing::info!(
-                            task_id = %id,
-                            workdir = %task_workdirs[&id].display(),
-                            "Task started"
-                        );
-
-                        // Spawn periodic hooks and OnStart hooks
-                        if let Some(hooks) = monitors.get(&id) {
-                            let periodic_hooks: Vec<_> = hooks
-                                .iter()
-                                .filter(|h| matches!(h.trigger, HookTrigger::Periodic { .. }))
-                                .cloned()
-                                .collect();
-
-                            let _ctx = HookContext {
-                                task_id: id.clone(),
-                                workdir: task_workdirs[&id].clone(),
-                                state: "running".to_string(),
-                                exit_code: None,
-                            };
-
-                            if !periodic_hooks.is_empty() {
-                                tracing::debug!("Periodic hooks for task: {}", id);
+                        // Execute setup closure if present
+                        if let Some(setup) = &task.setup {
+                            if let Err(e) = setup(&task.workdir) {
+                                state.mark_failed(&id, e.to_string());
+                                state.save()?;
+                                continue;
                             }
-
-                            tracing::debug!("OnStart hooks for task: {}", id);
                         }
 
-                        let handle = std::thread::spawn(move || f());
-                        handles.insert(id, handle);
+                        // Spawn process via runner
+                        match &task.mode {
+                            ExecutionMode::Direct {
+                                command,
+                                args,
+                                env,
+                                timeout: _,
+                            } => {
+                                let handle = runner.spawn(&task.workdir, command, args, env)?;
+                                handles.insert(id.clone(), (handle, Instant::now()));
+                            }
+                            ExecutionMode::Queued { .. } => {
+                                return Err(WorkflowError::Io(std::io::Error::other(
+                                    "queued execution not yet implemented",
+                                )));
+                            }
+                        }
                     }
                 }
             }
 
-            let all_done = {
-                let s = state.lock().unwrap();
-                dag.task_ids().all(|id| {
-                    matches!(
-                        s.get_status(id),
-                        Some(TaskStatus::Completed)
-                            | Some(TaskStatus::Failed { .. })
-                            | Some(TaskStatus::Skipped)
-                            | Some(TaskStatus::SkippedDueToDependencyFailure)
-                    )
-                })
-            };
+            // Check if all done
+            let all_done = dag.task_ids().all(|id| {
+                matches!(
+                    state.get_status(id),
+                    Some(TaskStatus::Completed)
+                        | Some(TaskStatus::Failed { .. })
+                        | Some(TaskStatus::Skipped)
+                        | Some(TaskStatus::SkippedDueToDependencyFailure)
+                )
+            });
 
             if all_done && handles.is_empty() {
                 break;
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(50));
         }
 
-        let total_duration = workflow_start.elapsed();
-        let final_state = state.lock().unwrap();
-        let succeeded = final_state
-            .all_task_statuses()
-            .values()
-            .filter(|status| matches!(status, TaskStatus::Completed))
-            .count();
-        let failed = final_state
-            .all_task_statuses()
-            .values()
-            .filter(|status| matches!(status, TaskStatus::Failed { .. }))
-            .count();
+        // Build WorkflowSummary
+        let mut succeeded = Vec::new();
+        let mut failed = Vec::new();
+        let mut skipped = Vec::new();
 
-        tracing::info!(
-            workflow_name = %self.name,
-            duration_secs = total_duration.as_secs(),
-            succeeded = succeeded,
-            failed = failed,
-            "Workflow completed in {}",
-            Self::format_duration(total_duration)
-        );
+        for (id, status) in state.all_tasks() {
+            match status {
+                TaskStatus::Completed => succeeded.push(id.clone()),
+                TaskStatus::Failed { error } => failed.push((id.clone(), error.clone())),
+                TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure => {
+                    skipped.push(id.clone())
+                }
+                _ => {}
+            }
+        }
 
-        Ok(())
+        Ok(WorkflowSummary {
+            succeeded,
+            failed,
+            skipped,
+            duration: workflow_start.elapsed(),
+        })
     }
 
     fn build_dag(&self) -> Result<Dag, WorkflowError> {
@@ -399,99 +242,153 @@ impl Workflow {
         }
         Ok(dag)
     }
+}
 
-    fn format_duration(d: Duration) -> String {
-        let secs = d.as_secs();
-        let hours = secs / 3600;
-        let mins = (secs % 3600) / 60;
-        let secs = secs % 60;
-
-        if hours > 0 {
-            format!("{}h {}m {}s", hours, mins, secs)
-        } else if mins > 0 {
-            format!("{}m {}s", mins, secs)
-        } else {
-            format!("{}s", secs)
-        }
-    }
-
-    fn capture_task_error_context(workdir: &Path, task_id: &str, error: &anyhow::Error) -> String {
-        format!(
-            "Task '{}' failed: {}\nWorkdir: {}\n",
-            task_id,
-            error,
-            workdir.display()
-        )
-    }
+/// Summary of workflow execution results.
+#[derive(Debug, Clone)]
+pub struct WorkflowSummary {
+    pub succeeded: Vec<String>,
+    pub failed: Vec<(String, String)>, // (task_id, error_message)
+    pub skipped: Vec<String>,
+    pub duration: Duration,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
-    use tempfile::tempdir;
+    use crate::monitoring::ShellHookExecutor;
+    use crate::process::SystemProcessRunner;
+    use std::collections::HashMap;
+    use std::io::Write;
 
     #[test]
     fn single_task_completes() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir().unwrap();
-        let flag = Arc::new(Mutex::new(false));
-        let flag2 = flag.clone();
-        let mut wf = Workflow::builder()
-            .name("wf_single".to_string())
-            .state_dir(dir.path().to_path_buf())
-            .max_parallel(4)
-            .build()
-            .unwrap();
-        wf.add_task(Task::new("a", move || {
-            *flag2.lock().unwrap() = true;
-            Ok::<_, anyhow::Error>(())
-        }))?;
-        wf.run()?;
-        assert!(*flag.lock().unwrap());
+
+        let mut wf = Workflow::new("wf_single").with_max_parallel(4)?;
+
+        wf.add_task(Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        ))
+        .unwrap();
+
+        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner);
+        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        let state_path = dir.path().join(".wf_single.workflow.json");
+        let mut state = Box::new(JsonStateStore::new("wf_single", state_path));
+
+        let summary = wf.run(state.as_mut(), runner, executor)?;
+        assert_eq!(summary.succeeded.len(), 1);
+        assert!(summary.failed.is_empty());
         Ok(())
     }
 
     #[test]
     fn chain_respects_order() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempfile::tempdir().unwrap();
-        let log = Arc::new(Mutex::new(Vec::<String>::new()));
-        let l1 = log.clone();
-        let l2 = log.clone();
-        let mut wf = Workflow::builder()
-            .name("wf_chain".to_string())
-            .state_dir(dir.path().to_path_buf())
-            .max_parallel(4)
-            .build()
-            .unwrap();
-        wf.add_task(Task::new("a", move || {
-            l1.lock().unwrap().push("a".into());
-            Ok::<_, anyhow::Error>(())
-        }))?;
+        let log_file = dir.path().join("log.txt");
+        let log_for_a = log_file.clone();
+        let log_for_b = log_file.clone();
+
+        let mut wf = Workflow::new("wf_chain").with_max_parallel(4)?;
+
         wf.add_task(
-            Task::new("b", move || {
-                l2.lock().unwrap().push("b".into());
-                Ok::<_, anyhow::Error>(())
-            })
-            .depends_on("a"),
-        )?;
-        wf.run()?;
-        assert_eq!(*log.lock().unwrap(), vec!["a", "b"]);
+            Task::new(
+                "a",
+                ExecutionMode::Direct {
+                    command: "true".into(),
+                    args: vec![],
+                    env: HashMap::new(),
+                    timeout: None,
+                },
+            )
+            .setup(move |_| {
+                let mut f = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_for_a)?;
+                writeln!(f, "a")?;
+                Ok(())
+            }),
+        )
+        .unwrap();
+
+        wf.add_task(
+            Task::new(
+                "b",
+                ExecutionMode::Direct {
+                    command: "true".into(),
+                    args: vec![],
+                    env: HashMap::new(),
+                    timeout: None,
+                },
+            )
+            .depends_on("a")
+            .setup(move |_| {
+                let mut f = std::fs::OpenOptions::new().append(true).open(&log_for_b)?;
+                writeln!(f, "b")?;
+                Ok(())
+            }),
+        )
+        .unwrap();
+
+        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner);
+        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        let state_path = dir.path().join(".wf_chain.workflow.json");
+        let mut state = Box::new(JsonStateStore::new("wf_chain", state_path));
+
+        wf.run(state.as_mut(), runner, executor)?;
+
+        let log = std::fs::read_to_string(&log_file).unwrap();
+        assert_eq!(log.lines().collect::<Vec<_>>(), vec!["a", "b"]);
         Ok(())
     }
 
     #[test]
     fn failed_task_skips_dependent() -> Result<(), Box<dyn std::error::Error>> {
-        let dir = tempdir().unwrap();
-        let mut wf = Workflow::builder()
-            .name("wf_skip".to_string())
-            .state_dir(dir.path().to_path_buf())
-            .max_parallel(4)
-            .build()
-            .unwrap();
-        wf.add_task(Task::new("a", || Err(anyhow::anyhow!("boom"))))?;
-        wf.add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a"))?;
-        wf.run()?;
-        let state = JsonStateStore::load(dir.path().join(".wf_skip.workflow.json")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut wf = Workflow::new("wf_skip").with_max_parallel(4)?;
+
+        wf.add_task(Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "false".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        ))
+        .unwrap();
+
+        wf.add_task(
+            Task::new(
+                "b",
+                ExecutionMode::Direct {
+                    command: "true".into(),
+                    args: vec![],
+                    env: HashMap::new(),
+                    timeout: None,
+                },
+            )
+            .depends_on("a"),
+        )
+        .unwrap();
+
+        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner);
+        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        let state_path = dir.path().join(".wf_skip.workflow.json");
+        let mut state = Box::new(JsonStateStore::new("wf_skip", state_path.clone()));
+
+        wf.run(state.as_mut(), runner, executor)?;
+
+        let state = JsonStateStore::load(state_path).unwrap();
         assert!(matches!(
             state.get_status("b"),
             Some(TaskStatus::SkippedDueToDependencyFailure)
@@ -501,15 +398,33 @@ mod tests {
 
     #[test]
     fn dry_run_returns_topo_order() -> Result<(), Box<dyn std::error::Error>> {
-        let dir = tempdir().unwrap();
-        let mut wf = Workflow::builder()
-            .name("wf_dry".to_string())
-            .state_dir(dir.path().to_path_buf())
-            .max_parallel(4)
-            .build()
-            .unwrap();
-        wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(())))?;
-        wf.add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a"))?;
+        let mut wf = Workflow::new("wf_dry");
+
+        wf.add_task(Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        ))
+        .unwrap();
+
+        wf.add_task(
+            Task::new(
+                "b",
+                ExecutionMode::Direct {
+                    command: "true".into(),
+                    args: vec![],
+                    env: HashMap::new(),
+                    timeout: None,
+                },
+            )
+            .depends_on("a"),
+        )
+        .unwrap();
+
         let order = wf.dry_run()?;
         let pa = order.iter().position(|x| x == "a").unwrap();
         let pb = order.iter().position(|x| x == "b").unwrap();
@@ -519,16 +434,29 @@ mod tests {
 
     #[test]
     fn duplicate_task_id_errors() -> Result<(), Box<dyn std::error::Error>> {
-        let dir = tempdir().unwrap();
-        let mut wf = Workflow::builder()
-            .name("wf_dup".to_string())
-            .state_dir(dir.path().to_path_buf())
-            .max_parallel(4)
-            .build()
-            .unwrap();
-        wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(())))?;
+        let mut wf = Workflow::new("wf_dup");
+
+        wf.add_task(Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        ))
+        .unwrap();
+
         assert_eq!(
-            wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(()))),
+            wf.add_task(Task::new(
+                "a",
+                ExecutionMode::Direct {
+                    command: "true".into(),
+                    args: vec![],
+                    env: HashMap::new(),
+                    timeout: None,
+                },
+            )),
             Err(WorkflowError::DuplicateTaskId("a".to_string()))
         );
         Ok(())
@@ -536,62 +464,93 @@ mod tests {
 
     #[test]
     fn valid_dependency_add() -> Result<(), Box<dyn std::error::Error>> {
-        let mut wf = Workflow::builder()
-            .name("wf_dep".to_string())
-            .build()
-            .unwrap();
-        wf.add_task(Task::new("a", || Ok::<_, anyhow::Error>(())))?;
+        let mut wf = Workflow::new("wf_dep");
+
+        wf.add_task(Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        ))
+        .unwrap();
+
         assert!(wf
-            .add_task(Task::new("b", || Ok::<_, anyhow::Error>(())).depends_on("a"))
+            .add_task(
+                Task::new(
+                    "b",
+                    ExecutionMode::Direct {
+                        command: "true".into(),
+                        args: vec![],
+                        env: HashMap::new(),
+                        timeout: None,
+                    },
+                )
+                .depends_on("a")
+            )
             .is_ok());
         Ok(())
     }
 
     #[test]
     fn builder_with_custom_max_parallel() {
-        let wf = Workflow::builder()
-            .name("test".to_string())
-            .state_dir(PathBuf::from("/tmp"))
-            .max_parallel(4)
-            .build()
-            .unwrap();
+        let wf = Workflow::new("test").with_max_parallel(4).unwrap();
         assert_eq!(wf.max_parallel, 4);
     }
 
     #[test]
     fn builder_validation_zero_parallelism() {
-        let result = Workflow::builder()
-            .name("test".to_string())
-            .state_dir(PathBuf::from("/tmp"))
-            .max_parallel(0)
-            .build();
+        let result = Workflow::new("test").with_max_parallel(0);
         assert!(result.is_err());
     }
 
     #[test]
-    fn resume_uses_builder() {
-        let dir = tempdir().unwrap();
-        let wf = Workflow::resume("test", dir.path()).unwrap();
-        assert_eq!(wf.name, "test");
-    }
+    fn resume_loads_existing_state() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join(".wf_resume.workflow.json");
 
-    #[test]
-    fn resume_loads_existing_state() {
-        let dir = tempdir().unwrap();
-        let mut wf = Workflow::builder()
-            .name("wf_resume".to_string())
-            .state_dir(dir.path().to_path_buf())
-            .build()
-            .unwrap();
-        wf.add_task(Task::new("a", || Ok::<(), anyhow::Error>(())))
-            .unwrap();
-        wf.run().unwrap();
+        // First run
+        let mut state1 = Box::new(JsonStateStore::new("wf_resume", state_path.clone()));
+        let mut wf1 = Workflow::new("wf_resume");
+        wf1.add_task(Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        ))
+        .unwrap();
+        wf1.run(
+            state1.as_mut(),
+            Arc::new(SystemProcessRunner),
+            Arc::new(ShellHookExecutor),
+        )?;
 
-        let mut wf2 = Workflow::resume("wf_resume", dir.path()).unwrap();
-        wf2.add_task(Task::new("a", || Err(anyhow::anyhow!("should not re-run"))))
-            .unwrap();
-        wf2.run().unwrap();
-        let state = JsonStateStore::load(dir.path().join(".wf_resume.workflow.json")).unwrap();
-        assert!(state.get_status("a") == Some(TaskStatus::Completed));
+        // Second run (resume)
+        let mut state2 = Box::new(JsonStateStore::load(&state_path).unwrap());
+        let mut wf2 = Workflow::new("wf_resume");
+        wf2.add_task(Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "false".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        ))
+        .unwrap();
+        wf2.run(
+            state2.as_mut(),
+            Arc::new(SystemProcessRunner),
+            Arc::new(ShellHookExecutor),
+        )?;
+
+        // Task "a" should still be Completed (not re-run)
+        assert!(state2.is_completed("a"));
+        Ok(())
     }
 }

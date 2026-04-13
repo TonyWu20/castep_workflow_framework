@@ -1,27 +1,45 @@
+use crate::error::WorkflowError;
 use crate::monitoring::MonitoringHook;
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+#[derive(Clone)]
+pub enum ExecutionMode {
+    Direct {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        timeout: Option<Duration>,
+    },
+    Queued {
+        submit_cmd: String,
+        poll_cmd: String,
+        cancel_cmd: String,
+    },
+}
 
 pub struct Task {
     pub id: String,
     pub dependencies: Vec<String>,
-    pub execute_fn: Arc<dyn Fn() -> anyhow::Result<()> + Send + Sync>,
-    pub monitors: Vec<MonitoringHook>,
     pub workdir: PathBuf,
+    pub mode: ExecutionMode,
+    pub setup: Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
+    pub collect: Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
+    pub monitors: Vec<MonitoringHook>,
 }
 
 impl Task {
-    pub fn new<F>(id: impl Into<String>, f: F) -> Self
-    where
-        F: Fn() -> anyhow::Result<()> + Send + Sync + 'static,
-    {
+    pub fn new(id: impl Into<String>, mode: ExecutionMode) -> Self {
         Self {
             id: id.into(),
             dependencies: Vec::new(),
-            execute_fn: Arc::new(f),
-            monitors: Vec::new(),
             workdir: PathBuf::from("."),
+            mode,
+            setup: None,
+            collect: None,
+            monitors: Vec::new(),
         }
     }
 
@@ -30,13 +48,24 @@ impl Task {
         self
     }
 
-    pub fn add_monitor(mut self, hook: MonitoringHook) -> Self {
-        self.monitors.push(hook);
+    pub fn workdir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.workdir = path.into();
         self
     }
 
-    pub fn workdir(mut self, path: impl Into<PathBuf>) -> Self {
-        self.workdir = path.into();
+    pub fn setup<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), WorkflowError> + Send + Sync + 'static,
+    {
+        self.setup = Some(Box::new(f));
+        self
+    }
+
+    pub fn collect<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), WorkflowError> + Send + Sync + 'static,
+    {
+        self.collect = Some(Box::new(f));
         self
     }
 
@@ -44,15 +73,29 @@ impl Task {
         self.monitors = hooks;
         self
     }
+
+    pub fn add_monitor(mut self, hook: MonitoringHook) -> Self {
+        self.monitors.push(hook);
+        self
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn task_builder() {
-        let t = Task::new("my_task", || Ok(()));
+        let t = Task::new(
+            "my_task",
+            ExecutionMode::Direct {
+                command: "echo".into(),
+                args: vec!["test".into()],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        );
         assert_eq!(t.id, "my_task");
         assert!(t.dependencies.is_empty());
         assert!(t.monitors.is_empty());
@@ -60,9 +103,17 @@ mod tests {
 
     #[test]
     fn depends_on_chaining() {
-        let t = Task::new("t", || Ok(()))
-            .depends_on("a")
-            .depends_on("b");
+        let t = Task::new(
+            "t",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        )
+        .depends_on("a")
+        .depends_on("b");
         assert_eq!(t.dependencies, vec!["a", "b"]);
     }
 }

@@ -7,11 +7,11 @@ pub mod task;
 pub mod workflow;
 
 pub use error::WorkflowError;
-pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, MonitoringHook};
-pub use process::{ProcessHandle, ProcessResult, ProcessRunner};
+pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, MonitoringHook, ShellHookExecutor};
+pub use process::{ProcessHandle, ProcessResult, ProcessRunner, SystemProcessRunner};
 pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary};
-pub use task::Task;
-pub use workflow::Workflow;
+pub use task::{ExecutionMode, Task};
+pub use workflow::{Workflow, WorkflowSummary};
 
 /// Initialize default tracing subscriber with env-based filtering.
 /// Call once at start of main(). Controlled via RUST_LOG env var.
