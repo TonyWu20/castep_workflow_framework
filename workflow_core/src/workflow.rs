@@ -1,9 +1,9 @@
 use crate::dag::Dag;
 use crate::error::WorkflowError;
-use crate::monitoring::HookExecutor;
 use crate::process::{ProcessHandle, ProcessRunner};
 use crate::state::{StateStore, StateStoreExt, TaskStatus};
 use crate::task::{ExecutionMode, Task};
+use crate::HookExecutor;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -68,7 +68,14 @@ impl Workflow {
         }
         state.save()?;
 
-        let mut handles: HashMap<String, (Box<dyn ProcessHandle>, Instant)> = HashMap::new();
+        let mut handles: HashMap<
+            String,
+            (
+                Box<dyn ProcessHandle>,
+                Instant,
+                Vec<crate::monitoring::MonitoringHook>,
+            ),
+        > = HashMap::new();
         let workflow_start = Instant::now();
 
         loop {
@@ -82,20 +89,52 @@ impl Workflow {
 
             // Remove and process finished tasks
             for id in finished {
-                if let Some((mut handle, start)) = handles.remove(&id) {
+                if let Some((mut handle, start, monitors)) = handles.remove(&id) {
                     let _duration = start.elapsed();
 
                     // Execute the process and handle result
-                    if let Ok(process_result) = handle.wait() {
+                    let (final_state, exit_code) = if let Ok(process_result) = handle.wait() {
                         match process_result.exit_code {
-                            Some(0) => state.mark_completed(&id),
-                            _ => state.mark_failed(
-                                &id,
-                                format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
-                            ),
+                            Some(0) => {
+                                state.mark_completed(&id);
+                                ("completed", process_result.exit_code)
+                            }
+                            _ => {
+                                state.mark_failed(
+                                    &id,
+                                    format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
+                                );
+                                ("failed", process_result.exit_code)
+                            }
                         }
                     } else {
                         state.mark_failed(&id, "process terminated".to_string());
+                        ("failed", None)
+                    };
+
+                    // Fire OnComplete/OnFailure hooks
+                    let ctx = crate::monitoring::HookContext {
+                        task_id: id.clone(),
+                        workdir: std::path::PathBuf::from("."),
+                        state: final_state.to_string(),
+                        exit_code,
+                    };
+                    for hook in &monitors {
+                        let should_fire = matches!(
+                            (&hook.trigger, final_state),
+                            (crate::monitoring::HookTrigger::OnComplete, "completed")
+                                | (crate::monitoring::HookTrigger::OnFailure, "failed")
+                        );
+                        if should_fire {
+                            if let Err(e) = hook_executor.execute_hook(hook, &ctx) {
+                                tracing::warn!(
+                                    "Hook '{}' for task '{}' failed: {}",
+                                    hook.name,
+                                    id,
+                                    e
+                                );
+                            }
+                        }
                     }
                     state.save()?;
                 }
@@ -107,7 +146,7 @@ impl Workflow {
                 changed = false;
                 let to_skip: Vec<String> = dag
                     .task_ids()
-                    .filter(|id| matches!(state.get_status(*id), Some(TaskStatus::Pending)))
+                    .filter(|id| matches!(state.get_status(id), Some(TaskStatus::Pending)))
                     .filter(|id| {
                         self.tasks
                             .get(*id)
@@ -175,8 +214,34 @@ impl Workflow {
                                 env,
                                 timeout: _,
                             } => {
+                                let monitors = task.monitors.clone();
+                                let task_workdir = task.workdir.clone();
                                 let handle = runner.spawn(&task.workdir, command, args, env)?;
-                                handles.insert(id.clone(), (handle, Instant::now()));
+
+                                // Fire OnStart hooks
+                                let ctx = crate::monitoring::HookContext {
+                                    task_id: id.clone(),
+                                    workdir: task_workdir,
+                                    state: "running".to_string(),
+                                    exit_code: None,
+                                };
+                                for hook in &monitors {
+                                    if matches!(
+                                        hook.trigger,
+                                        crate::monitoring::HookTrigger::OnStart
+                                    ) {
+                                        if let Err(e) = hook_executor.execute_hook(hook, &ctx) {
+                                            tracing::warn!(
+                                                "OnStart hook '{}' for task '{}' failed: {}",
+                                                hook.name,
+                                                id,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+
+                                handles.insert(id.clone(), (handle, Instant::now(), monitors));
                             }
                             ExecutionMode::Queued { .. } => {
                                 return Err(WorkflowError::Io(std::io::Error::other(
@@ -256,10 +321,74 @@ pub struct WorkflowSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::JsonStateStore;
     use std::collections::HashMap;
     use std::io::Write;
-    use workflow_utils::ShellHookExecutor;
-    use workflow_utils::SystemProcessRunner;
+
+    struct StubRunner;
+    impl ProcessRunner for StubRunner {
+        fn spawn(
+            &self,
+            workdir: &std::path::Path,
+            command: &str,
+            args: &[String],
+            env: &HashMap<String, String>,
+        ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
+            let child = std::process::Command::new(command)
+                .args(args)
+                .envs(env)
+                .current_dir(workdir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(WorkflowError::Io)?;
+            Ok(Box::new(StubHandle { child: Some(child), start: std::time::Instant::now() }))
+        }
+    }
+
+    struct StubHandle {
+        child: Option<std::process::Child>,
+        start: std::time::Instant,
+    }
+
+    impl ProcessHandle for StubHandle {
+        fn is_running(&mut self) -> bool {
+            match &mut self.child {
+                Some(child) => child.try_wait().ok().flatten().is_none(),
+                None => false,
+            }
+        }
+        fn terminate(&mut self) -> Result<(), WorkflowError> {
+            match &mut self.child {
+                Some(child) => child.kill().map_err(WorkflowError::Io),
+                None => Ok(()),
+            }
+        }
+        fn wait(&mut self) -> Result<crate::process::ProcessResult, WorkflowError> {
+            let child = self
+                .child
+                .take()
+                .ok_or_else(|| WorkflowError::InvalidConfig("wait() called twice".into()))?;
+            let output = child.wait_with_output().map_err(WorkflowError::Io)?;
+            Ok(crate::process::ProcessResult {
+                exit_code: output.status.code(),
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                duration: self.start.elapsed(),
+            })
+        }
+    }
+
+    struct StubHookExecutor;
+    impl HookExecutor for StubHookExecutor {
+        fn execute_hook(
+            &self,
+            _hook: &crate::monitoring::MonitoringHook,
+            _ctx: &crate::monitoring::HookContext,
+        ) -> Result<crate::monitoring::HookResult, WorkflowError> {
+            Ok(crate::monitoring::HookResult { success: true, output: String::new() })
+        }
+    }
 
     #[test]
     fn single_task_completes() -> Result<(), Box<dyn std::error::Error>> {
@@ -278,8 +407,8 @@ mod tests {
         ))
         .unwrap();
 
-        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner);
-        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        let runner: Arc<dyn ProcessRunner> = Arc::new(StubRunner);
+        let executor: Arc<dyn HookExecutor> = Arc::new(StubHookExecutor);
         let state_path = dir.path().join(".wf_single.workflow.json");
         let mut state = Box::new(JsonStateStore::new("wf_single", state_path));
 
@@ -338,8 +467,8 @@ mod tests {
         )
         .unwrap();
 
-        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner);
-        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        let runner: Arc<dyn ProcessRunner> = Arc::new(StubRunner);
+        let executor: Arc<dyn HookExecutor> = Arc::new(StubHookExecutor);
         let state_path = dir.path().join(".wf_chain.workflow.json");
         let mut state = Box::new(JsonStateStore::new("wf_chain", state_path));
 
@@ -381,8 +510,8 @@ mod tests {
         )
         .unwrap();
 
-        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner);
-        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        let runner: Arc<dyn ProcessRunner> = Arc::new(StubRunner);
+        let executor: Arc<dyn HookExecutor> = Arc::new(StubHookExecutor);
         let state_path = dir.path().join(".wf_skip.workflow.json");
         let mut state = Box::new(JsonStateStore::new("wf_skip", state_path.clone()));
 
@@ -524,8 +653,8 @@ mod tests {
         .unwrap();
         wf1.run(
             state1.as_mut(),
-            Arc::new(SystemProcessRunner),
-            Arc::new(ShellHookExecutor),
+            Arc::new(StubRunner),
+            Arc::new(StubHookExecutor),
         )?;
 
         // Second run (resume)
@@ -543,8 +672,8 @@ mod tests {
         .unwrap();
         wf2.run(
             state2.as_mut(),
-            Arc::new(SystemProcessRunner),
-            Arc::new(ShellHookExecutor),
+            Arc::new(StubRunner),
+            Arc::new(StubHookExecutor),
         )?;
 
         // Task "a" should still be Completed (not re-run)
