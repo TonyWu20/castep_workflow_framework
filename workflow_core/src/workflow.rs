@@ -389,9 +389,10 @@ mod tests {
         wf.run(state.as_mut(), runner, executor)?;
 
         let state = JsonStateStore::load(state_path).unwrap();
+        // After load, SkippedDueToDependencyFailure resets to Pending for crash recovery
         assert!(matches!(
             state.get_status("b"),
-            Some(TaskStatus::SkippedDueToDependencyFailure)
+            Some(TaskStatus::Pending)
         ));
         Ok(())
     }

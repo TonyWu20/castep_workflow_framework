@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Task status enum.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -11,7 +11,9 @@ pub enum TaskStatus {
     Pending,
     Running,
     Completed,
-    Failed { error: String },
+    Failed {
+        error: String,
+    },
     /// Explicitly skipped by the user or workflow logic.
     Skipped,
     /// Skipped because an upstream dependency failed; eligible for retry after fixing upstream.
@@ -34,7 +36,9 @@ pub trait StateStore {
     fn save(&self) -> Result<(), WorkflowError>;
 
     /// Loads state from disk. Running tasks are reset to Pending for crash recovery.
-    fn load(path: impl AsRef<Path>) -> Result<JsonStateStore, WorkflowError> where Self: Sized;
+    fn load(path: impl AsRef<Path>) -> Result<JsonStateStore, WorkflowError>
+    where
+        Self: Sized;
 }
 
 /// Extension trait providing convenience methods for state management.
@@ -105,9 +109,10 @@ impl JsonStateStore {
     /// Saves state atomically using temp file + rename pattern.
     pub fn save(&self) -> Result<(), WorkflowError> {
         let temp_path = self.path.with_extension(".tmp");
-        let json = serde_json::to_vec_pretty(self).map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
-        fs::write(&temp_path, json).map_err(|e| WorkflowError::Io(e))?;
-        fs::rename(&temp_path, &self.path).map_err(|e| WorkflowError::Io(e))?;
+        let json = serde_json::to_vec_pretty(self)
+            .map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
+        fs::write(&temp_path, json).map_err(WorkflowError::Io)?;
+        fs::rename(&temp_path, &self.path).map_err(WorkflowError::Io)?;
         Ok(())
     }
 
@@ -115,7 +120,12 @@ impl JsonStateStore {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, WorkflowError> {
         let mut state: Self = serde_json::from_slice(&fs::read(path).map_err(WorkflowError::Io)?)?;
         for status in state.tasks.values_mut() {
-            if matches!(status, TaskStatus::Running) {
+            if matches!(
+                status,
+                TaskStatus::Running
+                    | TaskStatus::Failed { .. }
+                    | TaskStatus::SkippedDueToDependencyFailure
+            ) {
                 *status = TaskStatus::Pending;
             }
         }
@@ -226,7 +236,10 @@ pub type WorkflowState = JsonStateStore;
 
 fn now_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let s = secs % 60;
     let m = (secs / 60) % 60;
     let h = (secs / 3600) % 24;
@@ -277,11 +290,19 @@ mod tests {
         let mut s = JsonStateStore::new("test", path.clone());
         s.mark_running("task1");
         s.mark_completed("task2");
+        // Add these three lines
+        s.mark_failed("task3", "boom".into());
+        s.mark_skipped_due_to_dep_failure("task4");
+        s.mark_skipped("task5"); // must NOT reset
         s.save().unwrap();
 
         let loaded = JsonStateStore::load(&path).unwrap();
         assert_eq!(loaded.get_status("task1"), Some(TaskStatus::Pending));
         assert_eq!(loaded.get_status("task2"), Some(TaskStatus::Completed));
+        // Add these three lines
+        assert_eq!(loaded.get_status("task3"), Some(TaskStatus::Pending));
+        assert_eq!(loaded.get_status("task4"), Some(TaskStatus::Pending));
+        assert_eq!(loaded.get_status("task5"), Some(TaskStatus::Skipped)); // must NOT reset
     }
 
     #[test]
@@ -291,7 +312,10 @@ mod tests {
         fs::write(&path, b"not json at all").unwrap();
 
         let result = JsonStateStore::load(&path);
-        assert!(matches!(result.unwrap_err(), WorkflowError::StateCorrupted(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            WorkflowError::StateCorrupted(_)
+        ));
     }
 
     #[test]
@@ -337,9 +361,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("roundtrip.json");
         let mut s1 = JsonStateStore::new("roundtrip", path.clone());
-        s1.mark_pending("t1");  // Use Pending instead of Running to avoid crash recovery reset
+        s1.mark_pending("t1"); // Use Pending instead of Running to avoid crash recovery reset
         s1.mark_completed("t2");
-        s1.mark_failed("t3", "boom".to_string());
+        s1.mark_pending("t3"); // Use Pending instead of Failed to avoid crash recovery reset
         s1.save().unwrap();
 
         let s2 = JsonStateStore::load(&path).unwrap();
@@ -370,5 +394,4 @@ mod tests {
         let loaded = JsonStateStore::load(&path).unwrap();
         assert_eq!(loaded.workflow_name(), "my_workflow");
     }
-
 }
