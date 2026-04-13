@@ -2,7 +2,7 @@ use crate::dag::Dag;
 use crate::error::WorkflowError;
 use crate::monitoring::HookExecutor;
 use crate::process::{ProcessHandle, ProcessRunner};
-use crate::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+use crate::state::{StateStore, StateStoreExt, TaskStatus};
 use crate::task::{ExecutionMode, Task};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -54,9 +54,9 @@ impl Workflow {
     /// Runs the workflow with dependency injection for state, runner, and hook executor.
     pub fn run(
         &mut self,
-        state: &mut JsonStateStore,
+        state: &mut dyn StateStore,
         runner: Arc<dyn ProcessRunner>,
-        _hook_executor: Arc<dyn HookExecutor>,
+        hook_executor: Arc<dyn HookExecutor>,
     ) -> Result<WorkflowSummary, WorkflowError> {
         let dag = self.build_dag()?;
 
@@ -211,7 +211,7 @@ impl Workflow {
         let mut failed = Vec::new();
         let mut skipped = Vec::new();
 
-        for (id, status) in state.all_tasks() {
+        for (id, status) in state.all_tasks().iter() {
             match status {
                 TaskStatus::Completed => succeeded.push(id.clone()),
                 TaskStatus::Failed { error } => failed.push((id.clone(), error.clone())),

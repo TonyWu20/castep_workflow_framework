@@ -94,7 +94,7 @@ pub trait StateStoreExt: StateStore {
     }
 }
 
-impl<T: StateStore> StateStoreExt for T {}
+impl<T: ?Sized + StateStore> StateStoreExt for T {}
 
 /// Summary of workflow state.
 #[derive(Debug, Clone)]
@@ -197,7 +197,6 @@ impl JsonStateStore {
     }
 }
 
-
 /// Alias for backward compatibility with existing code.
 pub type WorkflowState = JsonStateStore;
 
@@ -237,7 +236,10 @@ mod tests {
         s.mark_completed("a");
         s.save().unwrap();
         let loaded = JsonStateStore::load(&path).unwrap();
-        assert!(matches!(loaded.get_status("a"), Some(TaskStatus::Completed)));
+        assert!(matches!(
+            loaded.get_status("a"),
+            Some(TaskStatus::Completed)
+        ));
         assert_eq!(loaded.workflow_name(), "test");
     }
 
@@ -264,12 +266,27 @@ mod tests {
         s.save().unwrap();
 
         let loaded = JsonStateStore::load(&path).unwrap();
-        assert!(matches!(loaded.get_status("task1"), Some(TaskStatus::Pending)));
-        assert!(matches!(loaded.get_status("task2"), Some(TaskStatus::Completed)));
+        assert!(matches!(
+            loaded.get_status("task1"),
+            Some(TaskStatus::Pending)
+        ));
+        assert!(matches!(
+            loaded.get_status("task2"),
+            Some(TaskStatus::Completed)
+        ));
         // Add these three lines
-        assert!(matches!(loaded.get_status("task3"), Some(TaskStatus::Pending)));
-        assert!(matches!(loaded.get_status("task4"), Some(TaskStatus::Pending)));
-        assert!(matches!(loaded.get_status("task5"), Some(TaskStatus::Skipped))); // must NOT reset
+        assert!(matches!(
+            loaded.get_status("task3"),
+            Some(TaskStatus::Pending)
+        ));
+        assert!(matches!(
+            loaded.get_status("task4"),
+            Some(TaskStatus::Pending)
+        ));
+        assert!(matches!(
+            loaded.get_status("task5"),
+            Some(TaskStatus::Skipped)
+        )); // must NOT reset
     }
 
     #[test]
@@ -349,7 +366,10 @@ mod tests {
         let _temp = std::fs::File::create(path.with_extension(".tmp")).unwrap();
         s.save().expect("save should succeed on second attempt");
         let loaded = JsonStateStore::load(&path).unwrap();
-        assert!(matches!(loaded.get_status("test"), Some(TaskStatus::Completed)));
+        assert!(matches!(
+            loaded.get_status("test"),
+            Some(TaskStatus::Completed)
+        ));
     }
 
     #[test]

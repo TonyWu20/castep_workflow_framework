@@ -293,8 +293,25 @@ pub trait StateStoreExt: StateStore {
     }
 }
 
-impl<T: StateStore> StateStoreExt for T {}
+impl<T: ?Sized + StateStore> StateStoreExt for T {}
 ```
+
+> **Architectural decision (2026-04-14)**: The blanket impl uses `?Sized` to relax the
+> implicit `Sized` bound. This is required because `Workflow::run()` accepts
+> `state: &mut dyn StateStore` (a trait object, which is unsized), and calls
+> `StateStoreExt` convenience methods on it. Without `?Sized`, `dyn StateStore` does not
+> satisfy the blanket impl and the compiler rejects calls like `state.mark_completed()`.
+>
+> Alternatives were evaluated and rejected:
+> - **Making `run()` generic over `S: StateStore`**: would monomorphise a long imperative
+>   loop for every concrete store type, bloating compile output and contradicting the
+>   intentional use of runtime polymorphism.
+> - **Making `StateStoreExt` a supertrait of `StateStore`**: creates a circular dependency
+>   (`StateStoreExt: StateStore` and `StateStore: StateStoreExt`).
+>
+> The `?Sized` fix is the standard, idiomatic solution — used pervasively in the Rust
+> standard library (e.g. `impl<T: ?Sized + Display> ToString for T`). It carries no
+> coherence, object-safety, or double-impl risks.
 
 Then **delete** the entire existing `impl StateStoreExt for JsonStateStore { ... }` block. Locate it by its opening line:
 ```rust
