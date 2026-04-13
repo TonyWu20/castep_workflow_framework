@@ -1,4 +1,5 @@
-use workflow_utils::{HookContext, HookTrigger, MonitoringHook};
+use workflow_core::HookExecutor;
+use workflow_utils::{HookContext, HookTrigger, MonitoringHook, ShellHookExecutor};
 
 #[test]
 fn test_hook_executes() {
@@ -9,7 +10,8 @@ fn test_hook_executes() {
         state: "Completed".into(),
         exit_code: Some(0),
     };
-    let result = hook.execute(&ctx).unwrap();
+    let executor = ShellHookExecutor;
+    let result = executor.execute_hook(&hook, &ctx).unwrap();
     assert!(result.success);
     assert!(result.output.contains("hook_output"));
 }
@@ -23,6 +25,7 @@ fn test_hook_receives_context() {
         state: "Completed".into(),
         exit_code: Some(0),
     };
-    let result = hook.execute(&ctx).unwrap();
+    let executor = ShellHookExecutor;
+    let result = executor.execute_hook(&hook, &ctx).unwrap();
     assert!(result.success);
 }
