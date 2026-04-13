@@ -37,7 +37,7 @@ fn test_executor_with_env() {
 
 #[test]
 fn test_executor_spawn_and_terminate() {
-    let handle = TaskExecutor::new("/tmp")
+    let mut handle = TaskExecutor::new("/tmp")
         .command("sleep")
         .arg("60")
         .spawn()
