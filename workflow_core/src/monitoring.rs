@@ -71,39 +71,6 @@ pub struct HookResult {
     pub output: String,
 }
 
-/// Concrete implementation of HookExecutor that executes hooks via shell commands.
-pub struct ShellHookExecutor;
-
-impl HookExecutor for ShellHookExecutor {
-    fn execute_hook(
-        &self,
-        hook: &MonitoringHook,
-        ctx: &HookContext,
-    ) -> Result<HookResult, WorkflowError> {
-        let mut parts = hook.command.split_whitespace();
-        let cmd = parts.next().unwrap_or_default();
-        let args: Vec<String> = parts.map(String::from).collect();
-
-        let output = std::process::Command::new(cmd)
-            .args(&args)
-            .env("TASK_ID", &ctx.task_id)
-            .env("TASK_STATE", &ctx.state)
-            .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
-            .env(
-                "EXIT_CODE",
-                ctx.exit_code.map(|c| c.to_string()).unwrap_or_default(),
-            )
-            .current_dir(&ctx.workdir)
-            .output()
-            .map_err(WorkflowError::Io)?;
-
-        Ok(HookResult {
-            success: output.status.success(),
-            output: String::from_utf8_lossy(&output.stdout).into_owned(),
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
