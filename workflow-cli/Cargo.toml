@@ -11,3 +11,4 @@ path = "src/main.rs"
 workflow_core = { path = "../workflow_core" }
 clap = { workspace = true }
 anyhow = { workspace = true }
+tempfile = "3.27.0"
