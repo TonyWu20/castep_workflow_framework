@@ -29,6 +29,8 @@ TASK-20 ────────────────────────
 
 ## TASK-12: Extend `JsonStateStore::load` reset logic
 
+> **Status: ALREADY IMPLEMENTED** — confirmed in `workflow_core/src/state.rs` lines 256-290.
+
 - **Scope**: Widen the `matches!` guard in `JsonStateStore::load` to reset `Failed { .. }` and `SkippedDueToDependencyFailure` to `Pending`.
 - **Crate/Module**: `workflow_core/src/state.rs`
 - **Depends On**: None
@@ -78,9 +80,9 @@ s.mark_skipped("task5");
 Add after load assertions:
 
 ```rust
-assert_eq!(loaded.get_status("task3"), Some(TaskStatus::Pending));
-assert_eq!(loaded.get_status("task4"), Some(TaskStatus::Pending));
-assert_eq!(loaded.get_status("task5"), Some(TaskStatus::Skipped)); // must NOT reset
+assert!(matches!(loaded.get_status("task3"), Some(TaskStatus::Pending)));
+assert!(matches!(loaded.get_status("task4"), Some(TaskStatus::Pending)));
+assert!(matches!(loaded.get_status("task5"), Some(TaskStatus::Skipped))); // must NOT reset
 ```
 
 **Verify**: `cargo test -p workflow_core -- state::tests::load_resets_running_to_pending`
@@ -217,6 +219,8 @@ Steps in order:
 
 ## TASK-15: Add `interrupt` field + failing tests
 
+> **Status: ALREADY IMPLEMENTED** — `interrupt` field and both tests confirmed in `workflow_core/src/workflow.rs`.
+
 - **Scope**: Add `pub(crate) interrupt: Arc<AtomicBool>` to `Workflow` and write two failing tests.
 - **Crate/Module**: `workflow_core/src/workflow.rs`
 - **Depends On**: None
@@ -267,7 +271,7 @@ fn interrupt_before_run_dispatches_nothing() -> Result<(), Box<dyn std::error::E
     })).unwrap();
     wf.interrupt.store(true, Ordering::SeqCst);
     let mut state = JsonStateStore::new("wf_interrupt", dir.path().join(".wf_interrupt.workflow.json"));
-    let result = wf.run(&mut state, Arc::new(SystemProcessRunner), Arc::new(ShellHookExecutor));
+    let result = wf.run(&mut state, Arc::new(StubRunner), Arc::new(StubHookExecutor));
     assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
     assert!(!matches!(state.get_status("a"), Some(TaskStatus::Completed)));
     Ok(())
@@ -292,7 +296,7 @@ fn interrupt_mid_run_stops_dispatch() -> Result<(), Box<dyn std::error::Error>> 
     ).unwrap();
     wf.interrupt = Arc::clone(&flag);
     let mut state = JsonStateStore::new("wf_interrupt2", dir.path().join(".wf_interrupt2.workflow.json"));
-    let result = wf.run(&mut state, Arc::new(SystemProcessRunner), Arc::new(ShellHookExecutor));
+    let result = wf.run(&mut state, Arc::new(StubRunner), Arc::new(StubHookExecutor));
     assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
     Ok(())
 }
@@ -303,6 +307,8 @@ fn interrupt_mid_run_stops_dispatch() -> Result<(), Box<dyn std::error::Error>> 
 ---
 
 ## TASK-16: Implement interrupt check in `Workflow::run`
+
+> **Status: ALREADY IMPLEMENTED** — confirmed in `workflow_core/src/workflow.rs` lines 88-98.
 
 - **Scope**: Insert `AtomicBool` check at top of run loop; return `Err(WorkflowError::Interrupted)` on signal.
 - **Crate/Module**: `workflow_core/src/workflow.rs`
@@ -328,7 +334,7 @@ loop {
         for id in handles.keys() {
             state.set_status(id, TaskStatus::Pending);
         }
-        for (_, (handle, _)) in handles.iter_mut() {
+        for (_, (handle, _, _)) in handles.iter_mut() {
             handle.terminate().ok();
         }
         state.save()?;
@@ -380,14 +386,14 @@ ExecutionMode::Direct { command, args, env, timeout } => {
         task_timeouts.insert(id.clone(), *d);
     }
     let handle = runner.spawn(&task.workdir, command, args, env)?;
-    handles.insert(id.clone(), (handle, Instant::now()));
+    handles.insert(id.clone(), (handle, Instant::now(), monitors));
 }
 ```
 
 **Change 3** — add timeout check at the top of the "Poll finished tasks" loop, before `is_running()`:
 
 ```rust
-for (id, (handle, start)) in handles.iter_mut() {
+for (id, (handle, start, _)) in handles.iter_mut() {
     // Timeout check first
     if let Some(&timeout) = task_timeouts.get(id) {
         if start.elapsed() >= timeout {
@@ -398,7 +404,7 @@ for (id, (handle, start)) in handles.iter_mut() {
             continue;
         }
     }
-    if !handle.0.is_running() {
+    if !handle.is_running() {
         finished.push(id.clone());
     }
 }
@@ -408,7 +414,7 @@ for (id, (handle, start)) in handles.iter_mut() {
 
 ```rust
 for id in finished {
-    if let Some((mut handle, start)) = handles.remove(&id) {
+    if let Some((mut handle, start, _)) = handles.remove(&id) {
         // Skip wait() if already marked failed (e.g. timed out)
         if matches!(state.get_status(&id), Some(TaskStatus::Failed { .. })) {
             continue;
@@ -590,7 +596,9 @@ fn load_state(path: &str) -> anyhow::Result<JsonStateStore> {
 }
 
 fn cmd_status(state: &JsonStateStore) -> String {
-    let mut tasks: Vec<_> = state.all_tasks().into_iter().collect();
+    let mut tasks: Vec<(String, &TaskStatus)> = state.all_tasks().iter()
+        .map(|(k, v)| (k.clone(), v))
+        .collect();
     tasks.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out = String::new();
     for (id, status) in &tasks {
@@ -616,7 +624,9 @@ fn cmd_inspect(state: &JsonStateStore, task_id: Option<&str>) -> anyhow::Result<
             Some(s) => Ok(format!("task: {}\nstatus: {:?}", id, s)),
         },
         None => {
-            let mut tasks: Vec<_> = state.all_tasks().into_iter().collect();
+            let mut tasks: Vec<(String, &TaskStatus)> = state.all_tasks().iter()
+                .map(|(k, v)| (k.clone(), v))
+                .collect();
             tasks.sort_by(|a, b| a.0.cmp(&b.0));
             Ok(tasks.iter()
                 .map(|(id, s)| format!("{}: {:?}", id, s))
@@ -721,9 +731,9 @@ fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) {
         }
     }
     let to_reset: Vec<String> = state.all_tasks()
-        .into_iter()
+        .iter()
         .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
-        .map(|(id, _)| id)
+        .map(|(id, _)| id.clone())
         .collect();
     for id in to_reset {
         state.mark_pending(&id);
@@ -749,9 +759,9 @@ fn retry_resets_failed_and_skipped_dep() {
     let mut s = make_state(dir.path());
     // task_b=Failed, task_c=SkippedDueToDependencyFailure, task_a=Completed
     cmd_retry(&mut s, &["task_b".to_string()]);
-    assert_eq!(s.get_status("task_b"), Some(TaskStatus::Pending));
-    assert_eq!(s.get_status("task_c"), Some(TaskStatus::Pending));
-    assert_eq!(s.get_status("task_a"), Some(TaskStatus::Completed)); // unchanged
+    assert!(matches!(s.get_status("task_b"), Some(TaskStatus::Pending)));
+    assert!(matches!(s.get_status("task_c"), Some(TaskStatus::Pending)));
+    assert!(matches!(s.get_status("task_a"), Some(TaskStatus::Completed))); // unchanged
 }
 ```
 
@@ -819,8 +829,8 @@ fn resume_skips_completed_reruns_failed() {
 
     // Run 2: load resets b+c to Pending; b now succeeds; a must NOT re-run
     let mut state2 = JsonStateStore::load(&state_path).unwrap();
-    assert_eq!(state2.get_status("b"), Some(TaskStatus::Pending));
-    assert_eq!(state2.get_status("c"), Some(TaskStatus::Pending));
+    assert!(matches!(state2.get_status("b"), Some(TaskStatus::Pending)));
+    assert!(matches!(state2.get_status("c"), Some(TaskStatus::Pending)));
 
     let mut wf2 = Workflow::new("integration").with_max_parallel(4).unwrap();
     // A uses "false" — would fail if re-dispatched, proving it is skipped
