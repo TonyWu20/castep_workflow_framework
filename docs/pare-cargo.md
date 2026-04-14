@@ -46,6 +46,37 @@ Example (add tokio as dev dependency):
   path: "/Users/tony/programming/castep_workflow_framework",
   compact: true — all other boolean flags: false
 
+## Tool loading note
+
+`pare-cargo add` (and other tools like `remove`, `fmt`, `doc`, `update`, `tree`, `audit`) are
+**not loaded by default**. You must explicitly load them before use:
+
+1. Put `"name":"mcp__pare-cargo__discover-tools"` in the `<tool_call>` schema, with `load: ["add"]` to load the tool.
+2. Then call `ToolSearch` with `query: "select:mcp__pare-cargo__add"` to fetch its schema.
+3. Only after both steps is `mcp__pare-cargo__add` callable.
+
+Example (add tempfile to workflow-cli):
+
+Step 1 — discover and load:
+
+```
+{"name":"mcp__pare-cargo__discover-tools", "input": { "load": ["add"] }
+```
+
+Step 2 — fetch schema:
+
+```
+ToolSearch { query: "select:mcp__pare-cargo__add", max_results: 1 }
+```
+
+Step 3 — call the tool:
+
+- packages: ["tempfile"], package: "workflow-cli",
+  path: "/Users/tony/programming/castep_workflow_framework",
+  compact: true — all other boolean flags: false
+
+Expected response: `{ "success": true, "packages": ["tempfile"], "dependencyType": "normal" }`
+
 pare-cargo - clippy (MCP)
 
 - Use `package` to lint a single crate (maps to `cargo clippy -p <pkg>`).

@@ -9,6 +9,7 @@
   - **For validation**: Check LSP diagnostics first, then run acceptance commands
 
   **Key LSP workflows**:
+  **These are not bash commands**
   1. **Understanding code**: `LSP hover`, `LSP definition`, `LSP references` to understand what exists
   2. **Finding symbols**: `LSP documentSymbol` to locate functions/structs/modules before editing
   3. **Validation**: `LSP diagnostics` to check for errors immediately after edits
