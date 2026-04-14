@@ -81,6 +81,9 @@ impl Workflow {
         > = HashMap::new();
         let workflow_start = Instant::now();
 
+        // Task timeout tracking
+        let mut task_timeouts: HashMap<String, Duration> = HashMap::new();
+
         loop {
             // Interrupt check — must be first
             if self.interrupt.load(Ordering::SeqCst) {
@@ -96,8 +99,21 @@ impl Workflow {
 
             // Poll finished tasks
             let mut finished: Vec<String> = Vec::new();
-            for (id, handle) in handles.iter_mut() {
-                if !handle.0.is_running() {
+            for (id, (handle, start, _)) in handles.iter_mut() {
+                // Timeout check first
+                if let Some(&timeout) = task_timeouts.get(id) {
+                    if start.elapsed() >= timeout {
+                        handle.terminate().ok();
+                        state.mark_failed(
+                            id,
+                            format!("task '{}' timed out after {:?}", id, timeout),
+                        );
+                        state.save()?;
+                        finished.push(id.clone());
+                        continue;
+                    }
+                }
+                if !handle.is_running() {
                     finished.push(id.clone());
                 }
             }
@@ -105,6 +121,11 @@ impl Workflow {
             // Remove and process finished tasks
             for id in finished {
                 if let Some((mut handle, start, monitors)) = handles.remove(&id) {
+                    // Skip wait() if already marked failed (e.g., timed out)
+                    if matches!(state.get_status(&id), Some(TaskStatus::Failed { .. })) {
+                        continue;
+                    }
+
                     let _duration = start.elapsed();
 
                     // Execute the process and handle result
@@ -227,8 +248,13 @@ impl Workflow {
                                 command,
                                 args,
                                 env,
-                                timeout: _,
+                                timeout,
                             } => {
+                                // Register timeout if specified
+                                if let Some(d) = timeout {
+                                    task_timeouts.insert(id.clone(), *d);
+                                }
+
                                 let monitors = task.monitors.clone();
                                 let task_workdir = task.workdir.clone();
                                 let handle = runner.spawn(&task.workdir, command, args, env)?;
@@ -357,7 +383,10 @@ mod tests {
                 .stderr(std::process::Stdio::piped())
                 .spawn()
                 .map_err(WorkflowError::Io)?;
-            Ok(Box::new(StubHandle { child: Some(child), start: std::time::Instant::now() }))
+            Ok(Box::new(StubHandle {
+                child: Some(child),
+                start: std::time::Instant::now(),
+            }))
         }
     }
 
@@ -401,7 +430,10 @@ mod tests {
             _hook: &crate::monitoring::MonitoringHook,
             _ctx: &crate::monitoring::HookContext,
         ) -> Result<crate::monitoring::HookResult, WorkflowError> {
-            Ok(crate::monitoring::HookResult { success: true, output: String::new() })
+            Ok(crate::monitoring::HookResult {
+                success: true,
+                output: String::new(),
+            })
         }
     }
 
@@ -711,10 +743,16 @@ mod tests {
         ))
         .unwrap();
         wf.interrupt.store(true, Ordering::SeqCst);
-        let mut state = JsonStateStore::new("wf_interrupt", dir.path().join(".wf_interrupt.workflow.json"));
+        let mut state = JsonStateStore::new(
+            "wf_interrupt",
+            dir.path().join(".wf_interrupt.workflow.json"),
+        );
         let result = wf.run(&mut state, Arc::new(StubRunner), Arc::new(StubHookExecutor));
         assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
-        assert!(!matches!(state.get_status("a"), Some(TaskStatus::Completed)));
+        assert!(!matches!(
+            state.get_status("a"),
+            Some(TaskStatus::Completed)
+        ));
         Ok(())
     }
 
@@ -725,27 +763,39 @@ mod tests {
         let flag = Arc::new(AtomicBool::new(false));
         let flag_clone = Arc::clone(&flag);
         wf.add_task(
-            Task::new("a", ExecutionMode::Direct {
-                command: "true".into(),
-                args: vec![],
-                env: HashMap::new(),
-                timeout: None,
-            })
-            .setup(move |_| { flag_clone.store(true, Ordering::SeqCst); Ok(()) }),
+            Task::new(
+                "a",
+                ExecutionMode::Direct {
+                    command: "true".into(),
+                    args: vec![],
+                    env: HashMap::new(),
+                    timeout: None,
+                },
+            )
+            .setup(move |_| {
+                flag_clone.store(true, Ordering::SeqCst);
+                Ok(())
+            }),
         )
         .unwrap();
         wf.add_task(
-            Task::new("b", ExecutionMode::Direct {
-                command: "true".into(),
-                args: vec![],
-                env: HashMap::new(),
-                timeout: None,
-            })
+            Task::new(
+                "b",
+                ExecutionMode::Direct {
+                    command: "true".into(),
+                    args: vec![],
+                    env: HashMap::new(),
+                    timeout: None,
+                },
+            )
             .depends_on("a"),
         )
         .unwrap();
         wf.interrupt = Arc::clone(&flag);
-        let mut state = JsonStateStore::new("wf_interrupt2", dir.path().join(".wf_interrupt2.workflow.json"));
+        let mut state = JsonStateStore::new(
+            "wf_interrupt2",
+            dir.path().join(".wf_interrupt2.workflow.json"),
+        );
         let result = wf.run(&mut state, Arc::new(StubRunner), Arc::new(StubHookExecutor));
         assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
         Ok(())

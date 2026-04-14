@@ -350,6 +350,8 @@ loop {
 
 ## TASK-16b: Per-task timeout enforcement
 
+> **Status: VERIFIED** — confirmed working in `workflow_core/src/workflow.rs` with timeout checks at dispatch and poll loop.
+
 - **Scope**: Add `task_timeouts: HashMap<String, Duration>` at dispatch; enforce in poll loop before `is_running()`.
 - **Crate/Module**: `workflow_core/src/workflow.rs`
 - **Depends On**: TASK-16
