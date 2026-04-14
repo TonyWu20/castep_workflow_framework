@@ -11,6 +11,7 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 thiserror = "1"
+signal-hook = { workspace = true }
 
 [features]
 default-logging = ["dep:tracing-subscriber"]

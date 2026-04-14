@@ -5,6 +5,7 @@ use crate::state::{StateStore, StateStoreExt, TaskStatus};
 use crate::task::{ExecutionMode, Task};
 use crate::HookExecutor;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -61,6 +62,9 @@ impl Workflow {
         runner: Arc<dyn ProcessRunner>,
         hook_executor: Arc<dyn HookExecutor>,
     ) -> Result<WorkflowSummary, WorkflowError> {
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
+        signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
+
         let dag = self.build_dag()?;
 
         // Initialize state for all tasks
@@ -77,6 +81,7 @@ impl Workflow {
                 Box<dyn ProcessHandle>,
                 Instant,
                 Vec<crate::monitoring::MonitoringHook>,
+                Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
             ),
         > = HashMap::new();
         let workflow_start = Instant::now();
@@ -90,7 +95,7 @@ impl Workflow {
                 for id in handles.keys() {
                     state.set_status(id, TaskStatus::Pending);
                 }
-                for (_, (handle, _, _)) in handles.iter_mut() {
+                for (_, (handle, _, _, _)) in handles.iter_mut() {
                     handle.terminate().ok();
                 }
                 state.save()?;
@@ -99,7 +104,7 @@ impl Workflow {
 
             // Poll finished tasks
             let mut finished: Vec<String> = Vec::new();
-            for (id, (handle, start, _)) in handles.iter_mut() {
+            for (id, (handle, start, _, _)) in handles.iter_mut() {
                 // Timeout check first
                 if let Some(&timeout) = task_timeouts.get(id) {
                     if start.elapsed() >= timeout {
@@ -120,7 +125,7 @@ impl Workflow {
 
             // Remove and process finished tasks
             for id in finished {
-                if let Some((mut handle, start, monitors)) = handles.remove(&id) {
+                if let Some((mut handle, start, monitors, collect_fn)) = handles.remove(&id) {
                     // Skip wait() if already marked failed (e.g., timed out)
                     if matches!(state.get_status(&id), Some(TaskStatus::Failed { .. })) {
                         continue;
@@ -133,6 +138,15 @@ impl Workflow {
                         match process_result.exit_code {
                             Some(0) => {
                                 state.mark_completed(&id);
+                                if let Some(ref collect) = collect_fn {
+                                    if let Err(e) = collect(std::path::Path::new(".")) {
+                                        tracing::warn!(
+                                            "Collect closure for task '{}' failed: {}",
+                                            id,
+                                            e
+                                        );
+                                    }
+                                }
                                 ("completed", process_result.exit_code)
                             }
                             _ => {
@@ -282,7 +296,7 @@ impl Workflow {
                                     }
                                 }
 
-                                handles.insert(id.clone(), (handle, Instant::now(), monitors));
+                                handles.insert(id.clone(), (handle, Instant::now(), monitors, task.collect));
                             }
                             ExecutionMode::Queued { .. } => {
                                 return Err(WorkflowError::Io(std::io::Error::other(
@@ -563,6 +577,12 @@ mod tests {
         let mut state = Box::new(JsonStateStore::new("wf_skip", state_path.clone()));
 
         wf.run(state.as_mut(), runner, executor)?;
+
+        // Verify in-memory state shows skip propagation actually worked
+        assert!(matches!(
+            state.get_status("b"),
+            Some(TaskStatus::SkippedDueToDependencyFailure)
+        ));
 
         let state = JsonStateStore::load(state_path).unwrap();
         // After load, SkippedDueToDependencyFailure resets to Pending for crash recovery

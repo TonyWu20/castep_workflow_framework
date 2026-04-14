@@ -1,5 +1,5 @@
 use std::time::Duration;
-use workflow_utils::TaskExecutor;
+use workflow_utils::{TaskExecutor, ExecutionHandle};
 
 #[test]
 fn test_executor_basic() {
@@ -47,3 +47,15 @@ fn test_executor_spawn_and_terminate() {
     std::thread::sleep(Duration::from_millis(200));
     assert!(!handle.is_running());
 }
+
+#[test]
+fn test_execution_handle_pid() {
+    let handle = TaskExecutor::new("/tmp")
+        .command("echo")
+        .arg("hello")
+        .spawn()
+        .unwrap();
+    let pid = handle.pid();
+    assert!(pid > 0);
+}
+

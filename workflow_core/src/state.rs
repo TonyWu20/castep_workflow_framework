@@ -136,7 +136,7 @@ impl JsonStateStore {
 
     /// Saves state atomically using temp file + rename pattern.
     pub fn save(&self) -> Result<(), WorkflowError> {
-        let temp_path = self.path.with_extension(".tmp");
+        let temp_path = self.path.with_extension("tmp");
         let json = serde_json::to_vec_pretty(self)
             .map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
         fs::write(&temp_path, json).map_err(WorkflowError::Io)?;
@@ -363,7 +363,7 @@ mod tests {
         let mut s = JsonStateStore::new("atomic", path.clone());
         s.mark_completed("test");
         // Force actual file write by checking temp path exists
-        let _temp = std::fs::File::create(path.with_extension(".tmp")).unwrap();
+        let _temp = std::fs::File::create(path.with_extension("tmp")).unwrap();
         s.save().expect("save should succeed on second attempt");
         let loaded = JsonStateStore::load(&path).unwrap();
         assert!(matches!(
