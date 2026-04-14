@@ -26,6 +26,26 @@ Example (integration test by function name):
   path: "/Users/tony/programming/castep_workflow_framework",
   compact: true — all other boolean flags: false
 
+pare-cargo - add (MCP)
+
+- Use to add dependencies to a crate (`cargo add` equivalent).
+- Specify `package` to target a specific crate in a workspace.
+- Pass `features` as an array to enable specific features.
+- Use `dev: true` for dev dependencies, `build: true` for build dependencies.
+- `dryRun: true` previews changes without modifying `Cargo.toml`.
+
+Example (add serde with derive feature to a workspace crate):
+
+- packages: ["serde"], features: ["derive"], package: "workflow_core",
+  path: "/Users/tony/programming/castep_workflow_framework",
+  compact: true — all other boolean flags: false
+
+Example (add tokio as dev dependency):
+
+- packages: ["tokio"], features: ["full"], dev: true, package: "workflow_core",
+  path: "/Users/tony/programming/castep_workflow_framework",
+  compact: true — all other boolean flags: false
+
 pare-cargo - clippy (MCP)
 
 - Use `package` to lint a single crate (maps to `cargo clippy -p <pkg>`).
