@@ -18,6 +18,7 @@ These tasks touch `workflow_core/src/state.rs` and must be applied sequentially 
 - **File**: `/Users/tony/programming/castep_workflow_framework/workflow_core/src/state.rs`
 - **Target**: `pub trait StateStore`
 - **Before**:
+
 ```rust
 pub trait StateStore {
     /// Returns the current status of a task.
@@ -39,7 +40,9 @@ pub trait StateStore {
         Self: Sized;
 }
 ```
+
 - **After**:
+
 ```rust
 pub trait StateStore: Send + Sync {
     /// Returns the current status of a task.
@@ -56,6 +59,7 @@ pub trait StateStore: Send + Sync {
     fn save(&self) -> Result<(), WorkflowError>;
 }
 ```
+
 - **Verification**: `cd /Users/tony/programming/castep_workflow_framework && cargo check -p workflow_core 2>&1 | head -40` (expect errors from callers -- those are fixed in FIX-4b)
 - **Depends on**: none
 - **Can run in parallel with**: none (all FIX-4/5 tasks are sequential)
@@ -68,6 +72,7 @@ pub trait StateStore: Send + Sync {
 - **File**: `/Users/tony/programming/castep_workflow_framework/workflow_core/src/state.rs`
 - **Target**: `impl StateStore for JsonStateStore`
 - **Before**:
+
 ```rust
 impl StateStore for JsonStateStore {
     fn get_status(&self, id: &str) -> Option<TaskStatus> {
@@ -92,7 +97,9 @@ impl StateStore for JsonStateStore {
     }
 }
 ```
+
 - **After**:
+
 ```rust
 impl StateStore for JsonStateStore {
     fn get_status(&self, id: &str) -> Option<&TaskStatus> {
@@ -113,6 +120,7 @@ impl StateStore for JsonStateStore {
     }
 }
 ```
+
 - **Verification**: `cd /Users/tony/programming/castep_workflow_framework && cargo check -p workflow_core 2>&1 | head -40` (expect errors from callers in `state.rs` tests -- those are fixed next)
 - **Depends on**: FIX-4a
 - **Can run in parallel with**: none
@@ -128,21 +136,27 @@ impl StateStore for JsonStateStore {
 After FIX-4a/4b, `get_status()` returns `Option<&TaskStatus>` instead of `Option<TaskStatus>`. Callers using `==` comparisons need updating.
 
 - **Before** (in `round_trip_json`):
+
 ```rust
         assert!(loaded.get_status("a") == Some(TaskStatus::Completed));
 ```
+
 - **After**:
+
 ```rust
         assert!(matches!(loaded.get_status("a"), Some(TaskStatus::Completed)));
 ```
 
 - **Before** (in `status_transitions`):
+
 ```rust
         assert!(s.get_status("a") == Some(TaskStatus::Running));
         s.mark_completed("a");
         assert!(s.get_status("a") == Some(TaskStatus::Completed));
 ```
+
 - **After**:
+
 ```rust
         assert!(matches!(s.get_status("a"), Some(TaskStatus::Running)));
         s.mark_completed("a");
@@ -150,6 +164,7 @@ After FIX-4a/4b, `get_status()` returns `Option<&TaskStatus>` instead of `Option
 ```
 
 - **Before** (in `load_resets_running_to_pending`):
+
 ```rust
         assert_eq!(loaded.get_status("task1"), Some(TaskStatus::Pending));
         assert_eq!(loaded.get_status("task2"), Some(TaskStatus::Completed));
@@ -158,7 +173,9 @@ After FIX-4a/4b, `get_status()` returns `Option<&TaskStatus>` instead of `Option
         assert_eq!(loaded.get_status("task4"), Some(TaskStatus::Pending));
         assert_eq!(loaded.get_status("task5"), Some(TaskStatus::Skipped)); // must NOT reset
 ```
+
 - **After**:
+
 ```rust
         assert!(matches!(loaded.get_status("task1"), Some(TaskStatus::Pending)));
         assert!(matches!(loaded.get_status("task2"), Some(TaskStatus::Completed)));
@@ -168,21 +185,27 @@ After FIX-4a/4b, `get_status()` returns `Option<&TaskStatus>` instead of `Option
 ```
 
 - **Before** (in `atomic_save`):
+
 ```rust
         assert!(loaded.get_status("test") == Some(TaskStatus::Completed));
 ```
+
 - **After**:
+
 ```rust
         assert!(matches!(loaded.get_status("test"), Some(TaskStatus::Completed)));
 ```
 
 - **Before** (in `save_load_roundtrip`):
+
 ```rust
         assert_eq!(s1.get_status("t1"), s2.get_status("t1"));
         assert_eq!(s1.get_status("t2"), s2.get_status("t2"));
         assert_eq!(s1.get_status("t3"), s2.get_status("t3"));
 ```
+
 - **After**:
+
 ```rust
         assert_eq!(s1.get_status("t1").cloned(), s2.get_status("t1").cloned());
         assert_eq!(s1.get_status("t2").cloned(), s2.get_status("t2").cloned());
@@ -204,6 +227,7 @@ After FIX-4a/4b, `get_status()` returns `Option<&TaskStatus>` instead of `Option
 Replace the bodiless trait and its explicit impl with a supertrait that has default method bodies, plus a blanket impl.
 
 - **Before** (the trait definition, lines 45-69):
+
 ```rust
 /// Extension trait providing convenience methods for state management.
 pub trait StateStoreExt {
@@ -232,7 +256,9 @@ pub trait StateStoreExt {
     fn is_completed(&self, id: &str) -> bool;
 }
 ```
+
 - **After**:
+
 ```rust
 /// Extension trait providing convenience methods for state management.
 pub trait StateStoreExt: StateStore {
@@ -303,6 +329,7 @@ impl<T: ?Sized + StateStore> StateStoreExt for T {}
 > satisfy the blanket impl and the compiler rejects calls like `state.mark_completed()`.
 >
 > Alternatives were evaluated and rejected:
+>
 > - **Making `run()` generic over `S: StateStore`**: would monomorphise a long imperative
 >   loop for every concrete store type, bloating compile output and contradicting the
 >   intentional use of runtime polymorphism.
@@ -314,10 +341,12 @@ impl<T: ?Sized + StateStore> StateStoreExt for T {}
 > coherence, object-safety, or double-impl risks.
 
 Then **delete** the entire existing `impl StateStoreExt for JsonStateStore { ... }` block. Locate it by its opening line:
+
 ```rust
 impl StateStoreExt for JsonStateStore {
     fn mark_running(&mut self, id: &str) {
 ```
+
 Delete from that `impl` line through the matching closing `}`, including all method bodies inside it.
 
 - **Verification**: `cd /Users/tony/programming/castep_workflow_framework && cargo test -p workflow_core --lib state::tests 2>&1 | tail -20`
@@ -333,6 +362,7 @@ Delete from that `impl` line through the matching closing `}`, including all met
 - **Target**: second `impl JsonStateStore` block containing `tasks_mut`
 
 - **Before**:
+
 ```rust
 // Internal accessor for workflow module
 impl JsonStateStore {
@@ -341,6 +371,7 @@ impl JsonStateStore {
     }
 }
 ```
+
 - **After**: (delete entirely)
 - **Verification**: `cd /Users/tony/programming/castep_workflow_framework && cargo check -p workflow_core 2>&1 | tail -10`
 - **Depends on**: FIX-5 (do this after all state.rs trait work is done to avoid merge conflicts)
@@ -361,24 +392,29 @@ These two tasks touch different files and can run in parallel.
 - **Target**: Everything after `pub struct ProcessResult { ... }`
 
 **Step 1**: Delete everything from the comment `/// Concrete implementation of ProcessRunner for system processes.` through the end of the file. The block to remove starts with:
+
 ```rust
 /// Concrete implementation of ProcessRunner for system processes.
 pub struct SystemProcessRunner;
 
 impl ProcessRunner for SystemProcessRunner {
 ```
+
 and ends with the closing `}` of `impl ProcessHandle for SystemProcessHandle`. Everything before this block (the three trait/struct definitions — `ProcessRunner`, `ProcessHandle`, `ProcessResult`) must be kept.
 
 **Step 2**: Update the imports at the top of the file.
 
 - **Before** (lines 1-4):
+
 ```rust
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 ```
+
 - **After**:
+
 ```rust
 use std::collections::HashMap;
 use std::path::Path;
@@ -388,10 +424,13 @@ use std::time::Duration;
 **Step 3**: Update re-exports in `workflow_core/src/lib.rs`.
 
 - **Before** (line 11):
+
 ```rust
 pub use process::{ProcessHandle, ProcessResult, ProcessRunner, SystemProcessRunner};
 ```
+
 - **After**:
+
 ```rust
 pub use process::{ProcessHandle, ProcessResult, ProcessRunner};
 ```
@@ -411,6 +450,7 @@ pub use process::{ProcessHandle, ProcessResult, ProcessRunner};
 **Step 1**: Delete lines 74-105 (the doc comment, the struct, and the impl block).
 
 - **Before** (lines 74-105):
+
 ```rust
 /// Concrete implementation of HookExecutor that executes hooks via shell commands.
 pub struct ShellHookExecutor;
@@ -445,15 +485,19 @@ impl HookExecutor for ShellHookExecutor {
     }
 }
 ```
+
 - **After**: (delete entirely -- the `#[cfg(test)] mod tests` block that follows should remain)
 
 **Step 2**: Update re-exports in `workflow_core/src/lib.rs`.
 
 - **Before** (line 10):
+
 ```rust
 pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, MonitoringHook, ShellHookExecutor};
 ```
+
 - **After**:
+
 ```rust
 pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, MonitoringHook};
 ```
@@ -475,6 +519,7 @@ pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, Monitor
 - **Target**: `pub fn run(` in `impl Workflow`
 
 - **Before**:
+
 ```rust
     pub fn run(
         &mut self,
@@ -483,7 +528,9 @@ pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, Monitor
         _hook_executor: Arc<dyn HookExecutor>,
     ) -> Result<WorkflowSummary, WorkflowError> {
 ```
+
 - **After**:
+
 ```rust
     pub fn run(
         &mut self,
@@ -496,10 +543,13 @@ pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, Monitor
 Also update the import line in `workflow.rs` to remove `JsonStateStore`:
 
 - **Before** (line 5):
+
 ```rust
 use crate::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
 ```
+
 - **After**:
+
 ```rust
 use crate::state::{StateStore, StateStoreExt, TaskStatus};
 ```
@@ -507,10 +557,13 @@ use crate::state::{StateStore, StateStoreExt, TaskStatus};
 **Important**: After FIX-4a/4b, `all_tasks()` returns `&HashMap` and `get_status()` returns `Option<&TaskStatus>`. One call site in `workflow.rs` uses `state.all_tasks()` in a `for` loop that needs updating:
 
 - **Before** (inside `run()`, in the "Build WorkflowSummary" section):
+
 ```rust
         for (id, status) in state.all_tasks() {
 ```
+
 - **After**:
+
 ```rust
         for (id, status) in state.all_tasks().iter() {
 ```
@@ -523,35 +576,132 @@ All other `get_status()` and `all_tasks()` call sites in `workflow.rs` use `matc
 
 ---
 
-### FIX-2b: Fix `workflow.rs` test imports -- replace removed concrete types with `workflow_utils` versions
+### FIX-2b: Fix `workflow.rs` unit tests -- replace removed concrete types with in-crate stubs
 
 - **Task ID**: FIX-2b
 - **File**: `/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs`
 - **Target**: `#[cfg(test)] mod tests` block
 
-Since `SystemProcessRunner` and `ShellHookExecutor` are removed from `workflow_core` (FIX-1, FIX-2a), the tests must import them from `workflow_utils`. The crate already has `workflow_utils` as a `[dev-dependencies]` in `Cargo.toml`.
+> **⚠ Architecture note (2026-04-14)**: The original plan said to import `SystemProcessRunner`
+> and `ShellHookExecutor` from `workflow_utils`. This causes a **diamond dependency / duplicate
+> crate instance** compile error (E0277):
+>
+> ```
+> workflow_core test binary
+> ├── workflow_core (lib, instance A)   ← traits defined here
+> └── workflow_utils (dev-dep)
+>     └── workflow_core (instance B)   ← impls implement these traits
+> ```
+>
+> `workflow_utils::SystemProcessRunner` implements `ProcessRunner` from instance B.
+> The test tries to coerce it to `Arc<dyn ProcessRunner>` from instance A.
+> Rust treats these as different traits and rejects the cast.
+>
+> **Do NOT remove `workflow_utils` from `[dev-dependencies]` in `workflow_core/Cargo.toml`.**
+> The integration tests under `workflow_core/tests/` (`hubbard_u_sweep.rs`, `resume.rs`)
+> import `workflow_utils` directly and must keep it. Integration test binaries are separate
+> compilation units that do not have this diamond problem.
+>
+> The correct fix is to use **in-module stubs** that implement the traits directly from
+> `crate::`, avoiding the cross-instance type mismatch entirely.
 
-Two edits are needed in the `#[cfg(test)] mod tests` block:
-
-**Edit A** — replace crate-local imports with `workflow_utils` imports:
+**Edit A** — replace the import block:
 
 - **Before**:
+
 ```rust
     use super::*;
     use crate::monitoring::ShellHookExecutor;
     use crate::process::SystemProcessRunner;
     use std::collections::HashMap;
 ```
+
 - **After**:
+
 ```rust
     use super::*;
     use crate::state::JsonStateStore;
-    use workflow_utils::ShellHookExecutor;
-    use workflow_utils::SystemProcessRunner;
     use std::collections::HashMap;
+    use std::io::Write;
 ```
 
-**Edit B** is already handled by Edit A above — `JsonStateStore` is now imported explicitly in the test module, which is needed because FIX-3 removed it from the parent module's `use` statement.
+**Edit B** — add stub types after the `use` block and before the first `#[test]`:
+
+```rust
+    struct StubRunner;
+    impl ProcessRunner for StubRunner {
+        fn spawn(
+            &self,
+            workdir: &std::path::Path,
+            command: &str,
+            args: &[String],
+            env: &HashMap<String, String>,
+        ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
+            let child = std::process::Command::new(command)
+                .args(args)
+                .envs(env)
+                .current_dir(workdir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(WorkflowError::Io)?;
+            Ok(Box::new(StubHandle { child: Some(child), start: std::time::Instant::now() }))
+        }
+    }
+
+    struct StubHandle {
+        child: Option<std::process::Child>,
+        start: std::time::Instant,
+    }
+
+    impl ProcessHandle for StubHandle {
+        fn is_running(&mut self) -> bool {
+            match &mut self.child {
+                Some(child) => child.try_wait().ok().flatten().is_none(),
+                None => false,
+            }
+        }
+        fn terminate(&mut self) -> Result<(), WorkflowError> {
+            match &mut self.child {
+                Some(child) => child.kill().map_err(WorkflowError::Io),
+                None => Ok(()),
+            }
+        }
+        fn wait(&mut self) -> Result<crate::process::ProcessResult, WorkflowError> {
+            let child = self
+                .child
+                .take()
+                .ok_or_else(|| WorkflowError::InvalidConfig("wait() called twice".into()))?;
+            let output = child.wait_with_output().map_err(WorkflowError::Io)?;
+            Ok(crate::process::ProcessResult {
+                exit_code: output.status.code(),
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                duration: self.start.elapsed(),
+            })
+        }
+    }
+
+    struct StubHookExecutor;
+    impl HookExecutor for StubHookExecutor {
+        fn execute_hook(
+            &self,
+            _hook: &crate::monitoring::MonitoringHook,
+            _ctx: &crate::monitoring::HookContext,
+        ) -> Result<crate::monitoring::HookResult, WorkflowError> {
+            Ok(crate::monitoring::HookResult { success: true, output: String::new() })
+        }
+    }
+```
+
+**Edit C** — replace all occurrences of the concrete types in the test functions:
+
+- `Arc::new(SystemProcessRunner)` → `Arc::new(StubRunner)`
+- `Arc::new(ShellHookExecutor)` → `Arc::new(StubHookExecutor)`
+
+This applies in: `single_task_completes`, `chain_respects_order`, `failed_task_skips_dependent`, `resume_loads_existing_state` (×2 call sites in the resume test).
+
+The `use std::io::Write` import already present in the original tests (`chain_respects_order` uses `writeln!`) must be kept — add it to Edit A's import block if it was missing.
 
 - **Verification**: `cd /Users/tony/programming/castep_workflow_framework && cargo test -p workflow_core --lib workflow::tests 2>&1 | tail -30`
 - **Depends on**: FIX-3
@@ -572,10 +722,13 @@ These tasks touch different files and can run in parallel.
 - **Target**: function `test_diamond_ancestry`
 
 - **Before**:
+
 ```rust
     assert_eq!(order, vec!["a", "b", "c", "d"]);
 ```
+
 - **After**:
+
 ```rust
     assert_eq!(order.len(), 4, "expected 4 tasks in topological order");
     let pa = order.iter().position(|x| x == "a").unwrap();
@@ -601,10 +754,13 @@ These tasks touch different files and can run in parallel.
 - **Target**: function `test_executor_spawn_and_terminate`
 
 - **Before**:
+
 ```rust
     let handle = TaskExecutor::new("/tmp")
 ```
+
 - **After**:
+
 ```rust
     let mut handle = TaskExecutor::new("/tmp")
 ```
@@ -622,10 +778,13 @@ These tasks touch different files and can run in parallel.
 - **Target**: function `test_executor_spawn_and_terminate`
 
 - **Before**:
+
 ```rust
     let handle = TaskExecutor::new("/tmp")
 ```
+
 - **After**:
+
 ```rust
     let mut handle = TaskExecutor::new("/tmp")
 ```
@@ -645,6 +804,7 @@ These tasks touch different files and can run in parallel.
 The tests currently call `hook.execute(&ctx)` which does not exist. They must use `ShellHookExecutor::execute_hook()`.
 
 - **Before** (entire file):
+
 ```rust
 use workflow_utils::{HookContext, HookTrigger, MonitoringHook};
 
@@ -675,7 +835,9 @@ fn test_hook_receives_context() {
     assert!(result.success);
 }
 ```
+
 - **After**:
+
 ```rust
 use workflow_core::HookExecutor;
 use workflow_utils::{HookContext, HookTrigger, MonitoringHook, ShellHookExecutor};
@@ -733,10 +895,13 @@ This is the most complex change. The `hook_executor` parameter was previously pr
 **Step 1**: Change the `handles` type to also store monitors.
 
 - **Before** (line 71):
+
 ```rust
         let mut handles: HashMap<String, (Box<dyn ProcessHandle>, Instant)> = HashMap::new();
 ```
+
 - **After**:
+
 ```rust
         let mut handles: HashMap<String, (Box<dyn ProcessHandle>, Instant, Vec<crate::monitoring::MonitoringHook>)> = HashMap::new();
 ```
@@ -744,11 +909,14 @@ This is the most complex change. The `hook_executor` parameter was previously pr
 **Step 2**: Update the poll/finished loop to destructure the new tuple.
 
 - **Before** (lines 77-78):
+
 ```rust
             for (id, handle) in handles.iter_mut() {
                 if !handle.0.is_running() {
 ```
+
 - **After**:
+
 ```rust
             for (id, (handle, _, _)) in handles.iter_mut() {
                 if !handle.is_running() {
@@ -757,10 +925,13 @@ This is the most complex change. The `hook_executor` parameter was previously pr
 **Step 3**: Update the finished-task removal to destructure the new tuple.
 
 - **Before** (line 85):
+
 ```rust
                 if let Some((mut handle, start)) = handles.remove(&id) {
 ```
+
 - **After**:
+
 ```rust
                 if let Some((mut handle, start, monitors)) = handles.remove(&id) {
 ```
@@ -768,6 +939,7 @@ This is the most complex change. The `hook_executor` parameter was previously pr
 **Step 4**: After `state.mark_completed(&id)` or `state.mark_failed(...)`, fire OnComplete/OnFailure hooks.
 
 - **Before** (lines 89-99):
+
 ```rust
                     // Execute the process and handle result
                     if let Ok(process_result) = handle.wait() {
@@ -782,7 +954,9 @@ This is the most complex change. The `hook_executor` parameter was previously pr
                         state.mark_failed(&id, "process terminated".to_string());
                     }
 ```
+
 - **After**:
+
 ```rust
                     // Execute the process and handle result
                     let (final_state, exit_code) = if let Ok(process_result) = handle.wait() {
@@ -828,11 +1002,14 @@ This is the most complex change. The `hook_executor` parameter was previously pr
 **Step 5**: At dispatch time, fire OnStart hooks and store monitors.
 
 - **Before** (lines 178-179):
+
 ```rust
                                 let handle = runner.spawn(&task.workdir, command, args, env)?;
                                 handles.insert(id.clone(), (handle, Instant::now()));
 ```
+
 - **After**:
+
 ```rust
                                 let monitors = task.monitors.clone();
                                 let task_workdir = task.workdir.clone();
@@ -874,9 +1051,11 @@ This is the most complex change. The `hook_executor` parameter was previously pr
 - **Before**: N/A
 - **After**: N/A
 - **Verification**:
+
 ```bash
 cd /Users/tony/programming/castep_workflow_framework && cargo test --workspace 2>&1 | tail -40
 ```
+
 - **Depends on**: FIX-6, FIX-7, FIX-8a, FIX-8b, FIX-9
 - **Can run in parallel with**: none
 
@@ -911,32 +1090,35 @@ graph TD
 
 ## Execution Phases
 
-| Phase | Tasks | Notes |
-|-------|-------|-------|
-| Phase 1a | FIX-4a | Add Send+Sync, return references, remove load() from trait |
-| Phase 1b | FIX-4b | Update impl to match new trait signatures |
-| Phase 1c | FIX-4c | Fix state.rs test assertions |
-| Phase 1d | FIX-5 | Convert StateStoreExt to blanket impl |
-| Phase 1e | FIX-10 | Remove tasks_mut() dead code |
-| Phase 2 (parallel) | FIX-1, FIX-2a | Remove concrete impls + update lib.rs re-exports |
-| Phase 3 | FIX-3 | Change run() signature to &mut dyn StateStore |
-| Phase 3b | FIX-2b | Fix workflow.rs test imports |
-| Phase 4 (parallel) | FIX-6, FIX-7, FIX-8a, FIX-8b, FIX-9 | Hook wiring + all test fixes |
-| Phase 5 | FIX-FINAL | Full workspace test verification |
+| Phase              | Tasks                               | Notes                                                      |
+| ------------------ | ----------------------------------- | ---------------------------------------------------------- |
+| Phase 1a           | FIX-4a                              | Add Send+Sync, return references, remove load() from trait |
+| Phase 1b           | FIX-4b                              | Update impl to match new trait signatures                  |
+| Phase 1c           | FIX-4c                              | Fix state.rs test assertions                               |
+| Phase 1d           | FIX-5                               | Convert StateStoreExt to blanket impl                      |
+| Phase 1e           | FIX-10                              | Remove tasks_mut() dead code                               |
+| Phase 2 (parallel) | FIX-1, FIX-2a                       | Remove concrete impls + update lib.rs re-exports           |
+| Phase 3            | FIX-3                               | Change run() signature to &mut dyn StateStore              |
+| Phase 3b           | FIX-2b                              | Fix workflow.rs test imports                               |
+| Phase 4 (parallel) | FIX-6, FIX-7, FIX-8a, FIX-8b, FIX-9 | Hook wiring + all test fixes                               |
+| Phase 5            | FIX-FINAL                           | Full workspace test verification                           |
 
 ---
 
 ## Risk and Ambiguity Flags
 
 ### Ambiguous
+
 - **FIX-6 hook context workdir**: The fix document says to capture `task_ref.workdir`, but at finish time the task has been consumed (`self.tasks.remove`). The plan above captures `task.monitors` and `task.workdir` before insertion into `handles`. However, the workdir used in the finished-task hooks falls back to `PathBuf::from(".")` since the task is consumed. If the workdir matters for hooks at completion time, it must also be stored in the `handles` map. The plan above stores monitors but uses `"."` for the workdir in the completion hook context. **Recommendation**: store `task.workdir.clone()` in the handles tuple as a 4th element if needed.
 
 ### Risky
+
 - **FIX-6 (hook wiring)**: Most complex change -- touching the core run loop. Must be tested carefully. Risk of breaking existing tests if the handles tuple shape change is not applied consistently everywhere handles are accessed.
 - **FIX-4a/4b (reference returns)**: Changing `Option<TaskStatus>` to `Option<&TaskStatus>` affects all callers. The `matches!()` macro auto-derefs, but `==` comparisons break. All test call sites using `==` or `assert_eq!` must be updated.
 - **FIX-5 (`StateStoreExt::save` ambiguity)**: After the blanket impl, calling `state.save()` on a `dyn StateStore` object goes through the trait method, which for `JsonStateStore` calls `self.save()` -- this is the inherent method, not a recursive call, because `impl StateStore for JsonStateStore` delegates `fn save(&self)` to `self.save()` (the inherent method). This works but is subtle. No change needed.
 
 ### Missing work not in the fix document
+
 - **`examples/hubbard_u_sweep/src/main.rs` line 70**: Calls `workflow.run(&mut state, runner, executor)` where `state` is `JsonStateStore` (not boxed). After FIX-3, `&mut state` coerces to `&mut dyn StateStore` since `JsonStateStore: StateStore`. This should compile without changes.
 - **Integration tests** (`workflow_core/tests/dependencies.rs`, `resume.rs`, `hubbard_u_sweep.rs`): These use `state.as_mut()` on `Box<JsonStateStore>` which coerces to `&mut dyn StateStore`. Should compile without changes after FIX-3.
 - **`workflow_core/tests/dependencies.rs` line 115, `resume.rs` line 64, `hubbard_u_sweep.rs` line 76**: These call `state.get_status(...)` which now returns `Option<&TaskStatus>`. They use `matches!()` which auto-derefs. Should work without changes.

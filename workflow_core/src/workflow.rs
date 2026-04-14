@@ -5,6 +5,7 @@ use crate::state::{StateStore, StateStoreExt, TaskStatus};
 use crate::task::{ExecutionMode, Task};
 use crate::HookExecutor;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -12,6 +13,7 @@ pub struct Workflow {
     pub name: String,
     tasks: HashMap<String, Task>,
     max_parallel: usize,
+    pub(crate) interrupt: Arc<AtomicBool>,
 }
 
 impl Workflow {
@@ -25,6 +27,7 @@ impl Workflow {
             name: name.into(),
             tasks: HashMap::new(),
             max_parallel,
+            interrupt: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -678,6 +681,61 @@ mod tests {
 
         // Task "a" should still be Completed (not re-run)
         assert!(state2.is_completed("a"));
+        Ok(())
+    }
+
+    #[test]
+    fn interrupt_before_run_dispatches_nothing() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut wf = Workflow::new("wf_interrupt").with_max_parallel(4)?;
+        wf.add_task(Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        ))
+        .unwrap();
+        wf.interrupt.store(true, Ordering::SeqCst);
+        let mut state = JsonStateStore::new("wf_interrupt", dir.path().join(".wf_interrupt.workflow.json"));
+        let result = wf.run(&mut state, Arc::new(StubRunner), Arc::new(StubHookExecutor));
+        assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
+        assert!(!matches!(state.get_status("a"), Some(TaskStatus::Completed)));
+        Ok(())
+    }
+
+    #[test]
+    fn interrupt_mid_run_stops_dispatch() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut wf = Workflow::new("wf_interrupt2").with_max_parallel(4)?;
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = Arc::clone(&flag);
+        wf.add_task(
+            Task::new("a", ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            })
+            .setup(move |_| { flag_clone.store(true, Ordering::SeqCst); Ok(()) }),
+        )
+        .unwrap();
+        wf.add_task(
+            Task::new("b", ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            })
+            .depends_on("a"),
+        )
+        .unwrap();
+        wf.interrupt = Arc::clone(&flag);
+        let mut state = JsonStateStore::new("wf_interrupt2", dir.path().join(".wf_interrupt2.workflow.json"));
+        let result = wf.run(&mut state, Arc::new(StubRunner), Arc::new(StubHookExecutor));
+        assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
         Ok(())
     }
 }
