@@ -82,6 +82,18 @@ impl Workflow {
         let workflow_start = Instant::now();
 
         loop {
+            // Interrupt check — must be first
+            if self.interrupt.load(Ordering::SeqCst) {
+                for id in handles.keys() {
+                    state.set_status(id, TaskStatus::Pending);
+                }
+                for (_, (handle, _, _)) in handles.iter_mut() {
+                    handle.terminate().ok();
+                }
+                state.save()?;
+                return Err(WorkflowError::Interrupted);
+            }
+
             // Poll finished tasks
             let mut finished: Vec<String> = Vec::new();
             for (id, handle) in handles.iter_mut() {

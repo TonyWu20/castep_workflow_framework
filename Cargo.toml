@@ -3,6 +3,7 @@ members = [
     "workflow_core",
     "workflow_utils",
     "examples/hubbard_u_sweep",
+    "workflow-cli",
 ]
 resolver = "2"
 
@@ -15,3 +16,4 @@ bon = "3.9.1"
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+clap = { version = "4", features = ["derive"] }
