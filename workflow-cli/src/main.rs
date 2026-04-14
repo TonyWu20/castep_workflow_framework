@@ -62,9 +62,30 @@ fn cmd_inspect(state: &JsonStateStore, task_id: Option<&str>) -> anyhow::Result<
             tasks.sort_by(|a, b| a.0.cmp(&b.0));
             Ok(tasks.iter()
                 .map(|(id, s)| format!("{}: {:?}", id, s))
-                .collect::<Vec<_>>().join("\n"))
+                .collect::<Vec<_>>()
+                .join("\n"))
         }
     }
+}
+
+fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) {
+    for id in task_ids {
+        if state.get_status(id).is_none() {
+            eprintln!("warn: task '{}' not found", id);
+        } else {
+            state.mark_pending(id);
+        }
+    }
+    let to_reset: Vec<String> = state
+        .all_tasks()
+        .iter()
+        .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in to_reset {
+        state.mark_pending(&id);
+    }
+    state.save().unwrap();
 }
 
 fn main() -> anyhow::Result<()> {
@@ -75,7 +96,11 @@ fn main() -> anyhow::Result<()> {
             println!("{}", cmd_status(&state));
             Ok(())
         }
-        Commands::Retry { state_file, task_ids } => todo!(),
+        Commands::Retry { state_file, task_ids } => {
+            let mut state = load_state(&state_file)?;
+            cmd_retry(&mut state, &task_ids);
+            Ok(())
+        }
         Commands::Inspect { state_file, task_id } => {
             let state = load_state(&state_file)?;
             match cmd_inspect(&state, task_id.as_deref()) {
@@ -98,6 +123,17 @@ mod tests {
         s.mark_skipped_due_to_dep_failure("task_c");
         s.save().unwrap();
         s
+    }
+
+    #[test]
+    fn retry_resets_failed_and_skipped_dep() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = make_state(dir.path());
+        // task_b=Failed, task_c=SkippedDueToDependencyFailure, task_a=Completed
+        cmd_retry(&mut s, &["task_b".to_string()]);
+        assert!(matches!(s.get_status("task_b"), Some(TaskStatus::Pending)));
+        assert!(matches!(s.get_status("task_c"), Some(TaskStatus::Pending)));
+        assert!(matches!(s.get_status("task_a"), Some(TaskStatus::Completed))); // unchanged
     }
 
     #[test]
