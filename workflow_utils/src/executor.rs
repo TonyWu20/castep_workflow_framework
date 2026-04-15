@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::Instant;
 
 pub use workflow_core::WorkflowError;
 
@@ -98,9 +100,6 @@ impl ExecutionHandle {
     }
 }
 
-use std::path::Path;
-use std::process::{Child, Command, Stdio};
-use std::time::Instant;
 
 pub use workflow_core::{ProcessRunner, ProcessHandle, ProcessResult};
 

@@ -197,13 +197,6 @@ impl StateStore for JsonStateStore {
     }
 }
 
-impl JsonStateStore {
-    /// Returns all task statuses.
-    pub fn all_task_statuses(&self) -> HashMap<String, TaskStatus> {
-        self.tasks.clone()
-    }
-}
-
 fn now_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -334,7 +327,7 @@ mod tests {
         let mut s = JsonStateStore::new("test", PathBuf::from("/tmp"));
         s.mark_completed("a");
         s.mark_running("b");
-        assert_eq!(s.all_task_statuses().len(), 2);
+        assert_eq!(s.all_tasks().len(), 2);
     }
 
 
