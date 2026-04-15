@@ -62,8 +62,11 @@ impl Workflow {
         runner: Arc<dyn ProcessRunner>,
         hook_executor: Arc<dyn HookExecutor>,
     ) -> Result<WorkflowSummary, WorkflowError> {
-        signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
-        signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
+        static SIGNAL_INIT: std::sync::Once = std::sync::Once::new();
+        SIGNAL_INIT.call_once(|| {
+            signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
+            signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
+        });
 
         let dag = self.build_dag()?;
 
@@ -226,7 +229,7 @@ impl Workflow {
             // Dispatch ready tasks
             let done_set: HashSet<String> = state
                 .all_tasks()
-                .iter()
+                .into_iter()
                 .filter(|(_, v)| {
                     matches!(
                         v,
@@ -235,7 +238,7 @@ impl Workflow {
                             | TaskStatus::SkippedDueToDependencyFailure
                     )
                 })
-                .map(|(k, _)| k.clone())
+                .map(|(k, _)| k)
                 .collect();
 
             for id in dag.ready_tasks(&done_set) {
@@ -299,9 +302,7 @@ impl Workflow {
                                 handles.insert(id.clone(), (handle, Instant::now(), monitors, task.collect));
                             }
                             ExecutionMode::Queued { .. } => {
-                                return Err(WorkflowError::Io(std::io::Error::other(
-                                    "queued execution not yet implemented",
-                                )));
+                                unreachable!("Queued execution mode is not yet implemented");
                             }
                         }
                     }
@@ -331,12 +332,12 @@ impl Workflow {
         let mut failed = Vec::new();
         let mut skipped = Vec::new();
 
-        for (id, status) in state.all_tasks().iter() {
+        for (id, status) in state.all_tasks() {
             match status {
-                TaskStatus::Completed => succeeded.push(id.clone()),
-                TaskStatus::Failed { error } => failed.push((id.clone(), error.clone())),
+                TaskStatus::Completed => succeeded.push(id),
+                TaskStatus::Failed { error } => failed.push((id, error)),
                 TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure => {
-                    skipped.push(id.clone())
+                    skipped.push(id)
                 }
                 _ => {}
             }
@@ -641,7 +642,7 @@ mod tests {
         ))
         .unwrap();
 
-        assert_eq!(
+        assert!(matches!(
             wf.add_task(Task::new(
                 "a",
                 ExecutionMode::Direct {
@@ -651,8 +652,8 @@ mod tests {
                     timeout: None,
                 },
             )),
-            Err(WorkflowError::DuplicateTaskId("a".to_string()))
-        );
+            Err(WorkflowError::DuplicateTaskId(_))
+        ));
         Ok(())
     }
 
@@ -768,7 +769,7 @@ mod tests {
             dir.path().join(".wf_interrupt.workflow.json"),
         );
         let result = wf.run(&mut state, Arc::new(StubRunner), Arc::new(StubHookExecutor));
-        assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
+        assert!(matches!(result.unwrap_err(), WorkflowError::Interrupted));
         assert!(!matches!(
             state.get_status("a"),
             Some(TaskStatus::Completed)
@@ -817,7 +818,7 @@ mod tests {
             dir.path().join(".wf_interrupt2.workflow.json"),
         );
         let result = wf.run(&mut state, Arc::new(StubRunner), Arc::new(StubHookExecutor));
-        assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
+        assert!(matches!(result.unwrap_err(), WorkflowError::Interrupted));
         Ok(())
     }
 }

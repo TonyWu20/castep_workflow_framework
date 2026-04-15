@@ -23,13 +23,13 @@ pub enum TaskStatus {
 /// Trait defining the state management interface for workflows.
 pub trait StateStore: Send + Sync {
     /// Returns the current status of a task.
-    fn get_status(&self, id: &str) -> Option<&TaskStatus>;
+    fn get_status(&self, id: &str) -> Option<TaskStatus>;
 
     /// Sets the status of a task and updates timestamp.
     fn set_status(&mut self, id: &str, status: TaskStatus);
 
     /// Returns all task IDs and their statuses.
-    fn all_tasks(&self) -> &HashMap<String, TaskStatus>;
+    fn all_tasks(&self) -> Vec<(String, TaskStatus)>;
 
     /// Persists the current state to disk.
     fn save(&self) -> Result<(), WorkflowError>;
@@ -76,7 +76,7 @@ pub trait StateStoreExt: StateStore {
             failed: 0,
             skipped: 0,
         };
-        for status in self.all_tasks().values() {
+        for (_id, status) in self.all_tasks() {
             match status {
                 TaskStatus::Pending => s.pending += 1,
                 TaskStatus::Running => s.running += 1,
@@ -172,8 +172,8 @@ impl JsonStateStore {
 }
 
 impl StateStore for JsonStateStore {
-    fn get_status(&self, id: &str) -> Option<&TaskStatus> {
-        self.tasks.get(id)
+    fn get_status(&self, id: &str) -> Option<TaskStatus> {
+        self.tasks.get(id).cloned()
     }
 
     fn set_status(&mut self, id: &str, status: TaskStatus) {
@@ -181,8 +181,8 @@ impl StateStore for JsonStateStore {
         self.last_updated = now_iso8601();
     }
 
-    fn all_tasks(&self) -> &HashMap<String, TaskStatus> {
-        &self.tasks
+    fn all_tasks(&self) -> Vec<(String, TaskStatus)> {
+        self.tasks.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
     fn save(&self) -> Result<(), WorkflowError> {
@@ -351,9 +351,9 @@ mod tests {
         s1.save().unwrap();
 
         let s2 = JsonStateStore::load(&path).unwrap();
-        assert_eq!(s1.get_status("t1").cloned(), s2.get_status("t1").cloned());
-        assert_eq!(s1.get_status("t2").cloned(), s2.get_status("t2").cloned());
-        assert_eq!(s1.get_status("t3").cloned(), s2.get_status("t3").cloned());
+        assert_eq!(s1.get_status("t1"), s2.get_status("t1"));
+        assert_eq!(s1.get_status("t2"), s2.get_status("t2"));
+        assert_eq!(s1.get_status("t3"), s2.get_status("t3"));
     }
 
     #[test]

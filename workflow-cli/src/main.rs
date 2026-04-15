@@ -28,13 +28,11 @@ fn load_state(path: &str) -> anyhow::Result<JsonStateStore> {
 }
 
 fn cmd_status(state: &JsonStateStore) -> String {
-    let mut tasks: Vec<(String, &TaskStatus)> = state.all_tasks().iter()
-        .map(|(k, v)| (k.clone(), v))
-        .collect();
+    let mut tasks: Vec<(String, TaskStatus)> = state.all_tasks();
     tasks.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out = String::new();
     for (id, status) in &tasks {
-        match status {
+        match status.clone() {
             TaskStatus::Failed { error } => out.push_str(&format!("{}: Failed ({})\n", id, error)),
             other => out.push_str(&format!("{}: {:?}\n", id, other)),
         }
@@ -47,7 +45,7 @@ fn cmd_status(state: &JsonStateStore) -> String {
     out
 }
 
-fn cmd_inspect(state: &JsonStateStore, task_id: Option<&str>) -> anyhow::Result<String> {
+fn cmd_inspect(state: &dyn StateStore, task_id: Option<&str>) -> anyhow::Result<String> {
     match task_id {
         Some(id) => match state.get_status(id) {
             None => anyhow::bail!("task '{}' not found", id),
@@ -56,9 +54,7 @@ fn cmd_inspect(state: &JsonStateStore, task_id: Option<&str>) -> anyhow::Result<
             Some(s) => Ok(format!("task: {}\nstatus: {:?}", id, s)),
         },
         None => {
-            let mut tasks: Vec<(String, &TaskStatus)> = state.all_tasks().iter()
-                .map(|(k, v)| (k.clone(), v))
-                .collect();
+            let mut tasks: Vec<(String, TaskStatus)> = state.all_tasks();
             tasks.sort_by(|a, b| a.0.cmp(&b.0));
             Ok(tasks.iter()
                 .map(|(id, s)| format!("{}: {:?}", id, s))
@@ -68,7 +64,7 @@ fn cmd_inspect(state: &JsonStateStore, task_id: Option<&str>) -> anyhow::Result<
     }
 }
 
-fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) {
+fn cmd_retry(state: &mut dyn StateStore, task_ids: &[String]) -> anyhow::Result<()> {
     for id in task_ids {
         if state.get_status(id).is_none() {
             eprintln!("warn: task '{}' not found", id);
@@ -78,14 +74,15 @@ fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) {
     }
     let to_reset: Vec<String> = state
         .all_tasks()
-        .iter()
+        .into_iter()
         .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id)
         .collect();
     for id in to_reset {
         state.mark_pending(&id);
     }
-    state.save().unwrap();
+    state.save().map_err(|e| anyhow::anyhow!("failed to save state: {}", e))?;
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
@@ -98,7 +95,7 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Retry { state_file, task_ids } => {
             let mut state = load_state(&state_file)?;
-            cmd_retry(&mut state, &task_ids);
+            cmd_retry(&mut state, &task_ids)?;
             Ok(())
         }
         Commands::Inspect { state_file, task_id } => {
@@ -130,7 +127,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut s = make_state(dir.path());
         // task_b=Failed, task_c=SkippedDueToDependencyFailure, task_a=Completed
-        cmd_retry(&mut s, &["task_b".to_string()]);
+        let _ = cmd_retry(&mut s, &["task_b".to_string()]);
         assert!(matches!(s.get_status("task_b"), Some(TaskStatus::Pending)));
         assert!(matches!(s.get_status("task_c"), Some(TaskStatus::Pending)));
         assert!(matches!(s.get_status("task_a"), Some(TaskStatus::Completed))); // unchanged

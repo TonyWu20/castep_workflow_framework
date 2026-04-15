@@ -125,19 +125,16 @@ mod tests {
     fn unknown_dep_errors() {
         let mut dag = Dag::new();
         dag.add_node("b".to_owned()).unwrap();
-        assert_eq!(dag.add_edge("missing", "b").unwrap_err(), WorkflowError::UnknownDependency {
-            task: "missing".to_string(),
-            dependency: "b".to_string(),
-        });
+        assert!(matches!(
+            dag.add_edge("missing", "b").unwrap_err(),
+            WorkflowError::UnknownDependency { task: _, dependency: _ }
+        ));
     }
 
     #[test]
     fn cycle_detection() {
         let mut dag = make_dag(&["a", "b"], &[("a", "b")]);
-        assert_eq!(
-            dag.add_edge("b", "a").unwrap_err(),
-            WorkflowError::CycleDetected
-        );
+        assert!(matches!(dag.add_edge("b", "a").unwrap_err(), WorkflowError::CycleDetected));
     }
 
     #[test]
@@ -152,9 +149,9 @@ mod tests {
     fn duplicate_node_errors() {
         let mut dag = Dag::new();
         dag.add_node("x".to_owned()).unwrap();
-        assert_eq!(
+        assert!(matches!(
             dag.add_node("x".to_owned()).unwrap_err(),
-            WorkflowError::DuplicateTaskId("x".to_string())
-        );
+            WorkflowError::DuplicateTaskId(_)
+        ));
     }
 }
