@@ -5,6 +5,12 @@ use crate::error::WorkflowError;
 use crate::process::{ProcessHandle, ProcessRunner};
 use crate::state::{StateStore, StateStoreExt, TaskStatus};
 use crate::task::{ExecutionMode, Task, TaskClosure};
+
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
 use crate::HookExecutor;
 
 /// A handle to a running task with metadata.
@@ -15,11 +21,6 @@ pub(crate) struct InFlightTask {
     pub collect: Option<TaskClosure>,
     pub workdir: std::path::PathBuf,
 }
-
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
 
 pub struct Workflow {
     pub name: String,

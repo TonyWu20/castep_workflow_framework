@@ -4,6 +4,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Instant;
 
 pub use workflow_core::WorkflowError;
+pub use workflow_core::{ProcessRunner, ProcessHandle, ProcessResult};
 
 pub struct TaskExecutor {
     workdir: PathBuf,
@@ -99,9 +100,6 @@ impl ExecutionHandle {
         self.child.kill().map_err(WorkflowError::Io)
     }
 }
-
-
-pub use workflow_core::{ProcessRunner, ProcessHandle, ProcessResult};
 
 /// Concrete implementation of the ProcessRunner trait for system processes.
 /// Wraps `std::process::Child` with output capture and timing.
