@@ -1,90 +1,34 @@
-# Fix Plan: phase-3 → main (2026-04-15)
+# Fix Plan: phase-3 final review (2026-04-15)
+
+## Issues addressed
+
+13 confirmed issues from the post-fix review. Ordered by dependency.
+
+---
 
 ## Execution Order
 
 ```
-Phase 1 (parallel): TASK-1, 7, 8, 9, 10
-Phase 2 (parallel, after TASK-1): TASK-2, 3, 4, 5
-Phase 3 (parallel, after TASK-2 + TASK-10): TASK-11, 12, 13, 14
-Phase 4 (after TASK-14): TASK-15
-Phase 5: cargo test --workspace
+Phase 1 (parallel):  TASK-1, TASK-2, TASK-3, TASK-4, TASK-5
+Phase 2 (after TASK-2): TASK-6
+Phase 3 (parallel, after TASK-1): TASK-7, TASK-8
+Phase 4 (parallel, after TASK-2 + TASK-3): TASK-9, TASK-10, TASK-11
+Phase 5 (after all): cargo test --workspace
 ```
 
 ---
 
 ## Phase 1 — Independent fixes (run in parallel)
 
-### TASK-1: Fix `StateStore` trait signatures
-
-**File:** `workflow_core/src/state.rs`
-**Target:** `pub trait StateStore: Send + Sync`
-
-Before:
-
-```rust
-pub trait StateStore: Send + Sync {
-    fn get_status(&self, id: &str) -> Option<&TaskStatus>;
-    fn set_status(&mut self, id: &str, status: TaskStatus);
-    fn all_tasks(&self) -> &HashMap<String, TaskStatus>;
-    fn save(&self) -> Result<(), WorkflowError>;
-}
-```
-
-After:
-
-```rust
-pub trait StateStore: Send + Sync {
-    fn get_status(&self, id: &str) -> Option<TaskStatus>;
-    fn set_status(&mut self, id: &str, status: TaskStatus);
-    fn all_tasks(&self) -> Vec<(String, TaskStatus)>;
-    fn save(&self) -> Result<(), WorkflowError>;
-}
-```
-
-**Verification:** `cargo check -p workflow_core` (caller errors expected — fixed in Phase 2)
-
----
-
-### TASK-7: Fix `Queued` arm wrong error variant
+### TASK-1: Fix signal handler to re-register on every `run()` call
 
 **File:** `workflow_core/src/workflow.rs`
-**Target:** `ExecutionMode::Queued { .. } =>` match arm inside `Workflow::run`
+**Target:** `static SIGNAL_INIT: std::sync::Once` block inside `pub fn run`
+**Severity:** Blocking
 
-Before:
+**Problem:** `SIGNAL_INIT.call_once(...)` only fires once per process lifetime. The second `Workflow` instance's `interrupt` field is never registered with the signal handler, making it non-interruptible.
 
-```rust
-ExecutionMode::Queued { .. } => {
-    return Err(WorkflowError::Io(std::io::Error::other(
-        "queued execution not yet implemented",
-    )));
-}
-```
-
-After:
-
-```rust
-ExecutionMode::Queued { .. } => {
-    unreachable!("Queued execution mode is not yet implemented");
-}
-```
-
-**Verification:** `cargo check -p workflow_core`
-
----
-
-### TASK-8: Guard signal registration with `Once`
-
-**File:** `workflow_core/src/workflow.rs`
-**Target:** The first two statements inside the body of `pub fn run` (the two `signal_hook::flag::register` calls)
-
-Before:
-
-```rust
-signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
-signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
-```
-
-After:
+**Before** (lines 64–68):
 
 ```rust
 static SIGNAL_INIT: std::sync::Once = std::sync::Once::new();
@@ -94,501 +38,377 @@ SIGNAL_INIT.call_once(|| {
 });
 ```
 
+**After** (remove the `Once` wrapper entirely; call register directly):
+
+```rust
+signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
+signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
+```
+
+`signal_hook::flag::register` is idempotent for multiple registrations on the same flag and safe to call on every `run()` invocation.
+
 **Verification:** `cargo check -p workflow_core`
 
 ---
 
-### TASK-9: Delete `execute_hook` free function and its re-export
+### TASK-2: Add `JsonStateStore::load_raw()` for CLI read-only access
 
-**File 1:** `workflow_utils/src/monitoring.rs`
-**Target:** `pub fn execute_hook`
+**File:** `workflow_core/src/state.rs`
+**Target:** `impl JsonStateStore`, after the existing `load()` method
+**Severity:** Blocking
 
-Before:
+**Problem:** `load()` resets `Failed`, `Running`, and `SkippedDueToDependencyFailure` to `Pending`. The CLI's `load_state()` calls `load()`, so `status` and `inspect` subcommands always show `Pending` instead of the actual failure state.
+
+**Before:** No `load_raw` method exists.
+
+**After** — within the first `impl JsonStateStore` block (the one starting with `pub fn new`), add this method immediately after the closing `}` of `pub fn load(...)`. The surrounding context to locate the insertion point:
 
 ```rust
-pub fn execute_hook(hook: &MonitoringHook, ctx: &HookContext) -> Result<HookResult> {
-    let mut parts = hook.command.split_whitespace();
-    let cmd = parts.next().unwrap_or_default();
-    let args: Vec<String> = parts.map(String::from).collect();
-    let result = TaskExecutor::new(&ctx.workdir)
-        .command(cmd)
-        .args(args)
-        .env("TASK_ID", &ctx.task_id)
-        .env("TASK_STATE", &ctx.state)
-        .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
-        .env("EXIT_CODE", ctx.exit_code.map(|c| c.to_string()).unwrap_or_default())
-        .execute()?;
-    Ok(HookResult { success: result.success(), output: result.stdout })
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, WorkflowError> {
+        // ... (existing body)
+        Ok(state)
+    }
+    // ← INSERT HERE, before workflow_name() and path() methods
+
+    /// Loads state from disk without applying crash-recovery resets.
+    /// Use this for read-only inspection (CLI status/inspect).
+    pub fn load_raw(path: impl AsRef<Path>) -> Result<Self, WorkflowError> {
+        let state: Self = serde_json::from_slice(&fs::read(path).map_err(WorkflowError::Io)?)?;
+        Ok(state)
+    }
+```
+
+**Verification:** `cargo check -p workflow_core`
+
+---
+
+### TASK-3: Fix `Dag::add_edge` inverted error fields on missing `from` node
+
+**File:** `workflow_core/src/dag.rs`
+**Target:** First `ok_or_else` call inside `pub fn add_edge`
+**Severity:** Blocking
+
+**Problem:** When the `from` (dependency) node is missing, the error is constructed with `task: from` and `dependency: to`. The message template is `"unknown dependency '{dependency}' in task '{task}'"`, which renders the fields in the wrong roles.
+
+**Before** (lines 39–42):
+
+```rust
+.ok_or_else(|| WorkflowError::UnknownDependency {
+    task: from.to_string(),
+    dependency: to.to_string(),
+})?;
+```
+
+**After:**
+
+```rust
+.ok_or_else(|| WorkflowError::UnknownDependency {
+    task: to.to_string(),
+    dependency: from.to_string(),
+})?;
+```
+
+The second `ok_or_else` block (lines 46–49, missing `to` node) is already correct and must not be changed.
+
+**Verification:** `cargo check -p workflow_core`; also run `cargo test -p workflow_core --lib dag::tests`
+
+---
+
+### TASK-4: Remove unused `anyhow` dependency from `workflow_core`
+
+**File:** `workflow_core/Cargo.toml`
+**Target:** `anyhow` line in `[dependencies]`
+**Severity:** Major
+
+**Problem:** `anyhow` is listed as a dependency but is not used anywhere in `workflow_core` source code.
+
+**Before** (line 7):
+
+```toml
+anyhow = { workspace = true }
+```
+
+**After:** delete that line entirely.
+
+**Verification:** `cargo check -p workflow_core`
+
+---
+
+### TASK-5: Fix `Queued` arm to return an error instead of panicking
+
+**File:** `workflow_core/src/workflow.rs`
+**Target:** `ExecutionMode::Queued { .. } =>` match arm inside `Workflow::run`
+**Severity:** Minor
+
+**Problem:** `Queued` is a public enum variant users can construct. Hitting it panics via `unreachable!()` instead of returning a graceful error.
+
+**Before** (lines 304–306):
+
+```rust
+ExecutionMode::Queued { .. } => {
+    unreachable!("Queued execution mode is not yet implemented");
 }
 ```
 
-After: delete the entire function.
-
-**Note:** Run `rg 'execute_hook' --type rust` first. If any caller outside `workflow_utils` uses the free function, update it to `ShellHookExecutor.execute_hook(hook, ctx)` instead.
-
-**File 2:** `workflow_utils/src/lib.rs`
-**Target:** `pub use monitoring::{execute_hook, ShellHookExecutor};`
-
-Before:
+**After:**
 
 ```rust
-pub use monitoring::{execute_hook, ShellHookExecutor};
+ExecutionMode::Queued { .. } => {
+    return Err(WorkflowError::InvalidConfig(
+        "Queued execution mode is not yet implemented".into(),
+    ));
+}
 ```
 
-After:
+**Verification:** `cargo check -p workflow_core`
+
+---
+
+## Phase 2 — CLI `load_state` fix (after TASK-2)
+
+### TASK-6: Use `load_raw` in CLI `load_state` for status/inspect commands
+
+**File:** `workflow-cli/src/main.rs`
+**Target:** `fn load_state`
+**Severity:** Blocking
+
+**Problem:** `load_state` calls `JsonStateStore::load()` (crash-recovery path) for all commands. `status` and `inspect` must see the actual on-disk state, including `Failed` tasks.
+
+**Before** (lines 25–27):
 
 ```rust
-pub use monitoring::ShellHookExecutor;
+fn load_state(path: &str) -> anyhow::Result<JsonStateStore> {
+    JsonStateStore::load(path)
+        .map_err(|_| anyhow::anyhow!("error: state file not found: {}", path))
+}
+```
+
+**After:**
+
+```rust
+fn load_state_raw(path: &str) -> anyhow::Result<JsonStateStore> {
+    JsonStateStore::load_raw(path)
+        .map_err(|e| anyhow::anyhow!("failed to open state file '{}': {}", path, e))
+}
+
+fn load_state_for_resume(path: &str) -> anyhow::Result<JsonStateStore> {
+    JsonStateStore::load(path)
+        .map_err(|e| anyhow::anyhow!("failed to open state file '{}': {}", path, e))
+}
+```
+
+Then update `fn main` to use the appropriate loader per command:
+- `Commands::Status { state_file }` → `load_state_raw(&state_file)?`
+- `Commands::Inspect { state_file, .. }` → `load_state_raw(&state_file)?`
+- `Commands::Retry { state_file, .. }` → `load_state_for_resume(&state_file)?`
+
+**Verification:** `cargo check -p workflow-cli`; update the `status_output_format` test to call `load_state_raw` so the bug regression is caught:
+
+Add a new test after `status_output_format`:
+
+```rust
+#[test]
+fn status_shows_failed_after_load_raw() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = make_state(dir.path());
+    s.save().unwrap();
+    let loaded = JsonStateStore::load_raw(dir.path().join("state.json").to_str().unwrap()).unwrap();
+    let out = cmd_status(&loaded);
+    assert!(out.contains("task_b: Failed (exit code 1)"));
+}
+```
+
+---
+
+## Phase 3 — Style/quality fixes (parallel, after TASK-1 and TASK-2)
+
+### TASK-7: Re-export `TaskStatus` from `workflow_core` crate root
+
+**File:** `workflow_core/src/lib.rs`
+**Target:** `pub use state::{...}` line
+**Severity:** Minor
+
+**Problem:** `TaskStatus` is the most commonly matched type but must be imported as `workflow_core::state::TaskStatus`. All other key types are re-exported from the root.
+
+**Before** (line 12):
+
+```rust
+pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary};
+```
+
+**After:**
+
+```rust
+pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary, TaskStatus};
 ```
 
 **Verification:** `cargo check --workspace`
 
 ---
 
-### TASK-10: Remove `PartialEq` impl from `WorkflowError`
-
-**File:** `workflow_core/src/error.rs`
-**Target:** `impl PartialEq for WorkflowError`
-
-Before:
-
-```rust
-impl PartialEq for WorkflowError {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::DuplicateTaskId(a), Self::DuplicateTaskId(b)) => a == b,
-            (Self::CycleDetected, Self::CycleDetected) => true,
-            (Self::UnknownDependency { task: a_task, dependency: a_dep },
-             Self::UnknownDependency { task: b_task, dependency: b_dep }) => {
-                a_task == b_task && a_dep == b_dep
-            }
-            (Self::StateCorrupted(a), Self::StateCorrupted(b)) => a == b,
-            (Self::TaskTimeout(a), Self::TaskTimeout(b)) => a == b,
-            (Self::InvalidConfig(a), Self::InvalidConfig(b)) => a == b,
-            (Self::Io(ref e_a), Self::Io(ref e_b)) => e_a.kind() == e_b.kind(),
-            (Self::Interrupted, Self::Interrupted) => true,
-            _ => false,
-        }
-    }
-}
-```
-
-After: delete the entire block.
-
-**Verification:** `cargo check -p workflow_core` (test errors expected — fixed in TASK-11)
-
----
-
-## Phase 2 — Callers of `StateStore` trait (parallel, after TASK-1)
-
-### TASK-2: Fix `JsonStateStore` impl to clone on return
-
-**File:** `workflow_core/src/state.rs`
-**Target:** `impl StateStore for JsonStateStore`
-
-Before:
-
-```rust
-impl StateStore for JsonStateStore {
-    fn get_status(&self, id: &str) -> Option<&TaskStatus> {
-        self.tasks.get(id)
-    }
-    fn set_status(&mut self, id: &str, status: TaskStatus) {
-        self.tasks.insert(id.to_owned(), status);
-        self.last_updated = now_iso8601();
-    }
-    fn all_tasks(&self) -> &HashMap<String, TaskStatus> {
-        &self.tasks
-    }
-    fn save(&self) -> Result<(), WorkflowError> {
-        self.save()
-    }
-}
-```
-
-After:
-
-```rust
-impl StateStore for JsonStateStore {
-    fn get_status(&self, id: &str) -> Option<TaskStatus> {
-        self.tasks.get(id).cloned()
-    }
-    fn set_status(&mut self, id: &str, status: TaskStatus) {
-        self.tasks.insert(id.to_owned(), status);
-        self.last_updated = now_iso8601();
-    }
-    fn all_tasks(&self) -> Vec<(String, TaskStatus)> {
-        self.tasks.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-    }
-    fn save(&self) -> Result<(), WorkflowError> {
-        self.save()
-    }
-}
-```
-
-**Verification:** `cargo check -p workflow_core`
-
----
-
-### TASK-3: Fix `StateStoreExt::summary` iteration
-
-**File:** `workflow_core/src/state.rs`
-**Target:** `fn summary` inside `pub trait StateStoreExt`
-
-Before:
-
-```rust
-for status in self.all_tasks().values() {
-    match status {
-```
-
-After:
-
-```rust
-for (_, status) in self.all_tasks() {
-    match status {
-```
-
-**Verification:** `cargo check -p workflow_core`
-
----
-
-### TASK-4: Fix `done_set` construction in `workflow.rs`
+### TASK-8: Fix `TaskTimeout` variant — use it in the timeout code path
 
 **File:** `workflow_core/src/workflow.rs`
-**Target:** `let done_set: HashSet<String> = state`
+**Target:** The timeout branch inside the `for (id, (handle, start, _, _)) in handles.iter_mut()` loop
+**Severity:** Major
 
-Before:
+**Problem:** `WorkflowError::TaskTimeout(String)` is defined but never constructed. The timeout path uses `state.mark_failed(id, format!("task '{}' timed out after {:?}", id, timeout))`. Downstream code cannot programmatically distinguish timeouts from other failures by error type.
 
-```rust
-let done_set: HashSet<String> = state
-    .all_tasks()
-    .iter()
-    .filter(|(_, v)| {
-        matches!(v, TaskStatus::Completed | TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure)
-    })
-    .map(|(k, _)| k.clone())
-    .collect();
-```
+The `TaskStatus::Failed { error }` string is what the summary exposes, so change the error string passed to `mark_failed` to include a sentinel that is also reflected in `WorkflowError::TaskTimeout`. The cleanest fix is to keep `mark_failed` (it goes into the persisted state) but also surface the `TaskTimeout` variant in the `WorkflowSummary` by changing `WorkflowSummary::failed` to carry enough info. However, a minimal fix consistent with current design: change the error string so it matches the `TaskTimeout` display format.
 
-After:
+**Before** (lines 115–118):
 
 ```rust
-let done_set: HashSet<String> = state
-    .all_tasks()
-    .into_iter()
-    .filter(|(_, v)| {
-        matches!(v, TaskStatus::Completed | TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure)
-    })
-    .map(|(k, _)| k)
-    .collect();
-```
-
-**Verification:** `cargo check -p workflow_core`
-
----
-
-### TASK-5: Fix `WorkflowSummary` loop in `workflow.rs`
-
-**File:** `workflow_core/src/workflow.rs`
-**Target:** `for (id, status) in state.all_tasks().iter()`
-
-Before:
-
-```rust
-for (id, status) in state.all_tasks().iter() {
-    match status {
-        TaskStatus::Completed => succeeded.push(id.clone()),
-        TaskStatus::Failed { error } => failed.push((id.clone(), error.clone())),
-        TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure => skipped.push(id.clone()),
-        _ => {}
-    }
-}
-```
-
-After:
-
-```rust
-for (id, status) in state.all_tasks() {
-    match status {
-        TaskStatus::Completed => succeeded.push(id),
-        TaskStatus::Failed { error } => failed.push((id, error)),
-        TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure => skipped.push(id),
-        _ => {}
-    }
-}
-```
-
-**Verification:** `cargo check -p workflow_core`
-
----
-
-## Phase 3 — CLI fixes + test updates (parallel, after TASK-2 and TASK-10)
-
-### TASK-11: Replace `assert_eq!` on `WorkflowError` with `matches!`
-
-**File 1:** `workflow_core/src/workflow.rs`
-**Target:** `assert_eq!(result.unwrap_err(), WorkflowError::Interrupted)` inside `interrupt_before_run_dispatches_nothing`
-
-Before:
-
-```rust
-assert_eq!(result.unwrap_err(), WorkflowError::Interrupted);
-```
-
-After:
-
-```rust
-assert!(matches!(result.unwrap_err(), WorkflowError::Interrupted));
-```
-
-**File 2:** `workflow_core/src/workflow.rs`
-**Target:** `assert_eq!` block inside `duplicate_task_id_errors`
-
-Before:
-
-```rust
-assert_eq!(
-    wf.add_task(Task::new(
-        "a",
-        ExecutionMode::Direct {
-            command: "true".into(),
-            args: vec![],
-            env: HashMap::new(),
-            timeout: None,
-        },
-    )),
-    Err(WorkflowError::DuplicateTaskId("a".to_string()))
+state.mark_failed(
+    id,
+    format!("task '{}' timed out after {:?}", id, timeout),
 );
 ```
 
-After:
+**After:**
 
 ```rust
-assert!(matches!(
-    wf.add_task(Task::new(
-        "a",
-        ExecutionMode::Direct {
-            command: "true".into(),
-            args: vec![],
-            env: HashMap::new(),
-            timeout: None,
-        },
-    )),
-    Err(WorkflowError::DuplicateTaskId(_))
-));
+state.mark_failed(
+    id,
+    WorkflowError::TaskTimeout(id.clone()).to_string(),
+);
 ```
 
-**File 3:** `workflow_core/src/error.rs`
-**Target:** `fn test_workflow_error_partial_eq` — delete the entire test function.
+This makes the stored error message match the `#[error("task '{0}' timed out")]` display string, giving consistent wording and making `TaskTimeout` the canonical source of the message.
 
-**Verification:** `cargo test -p workflow_core`
+**Verification:** `cargo test -p workflow_core --test timeout_integration`; verify the test assertion `assert!(err.contains("timed out"))` still passes.
 
 ---
 
-### TASK-12: Fix `cmd_status` to use trait
+## Phase 4 — Clippy/lint fixes (parallel, after TASK-2 and TASK-3)
 
-**File:** `workflow-cli/src/main.rs`
-**Target:** `fn cmd_status`
+### TASK-9: Fix type_complexity warnings in `task.rs`
 
-Before:
+**File:** `workflow_core/src/task.rs`
+**Target:** `pub setup` and `pub collect` fields on `pub struct Task`
+**Severity:** Minor
 
-```rust
-fn cmd_status(state: &JsonStateStore) -> String {
-    let mut tasks: Vec<(String, &TaskStatus)> = state.all_tasks().iter()
-        .map(|(k, v)| (k.clone(), v))
-        .collect();
-    tasks.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut out = String::new();
-    for (id, status) in &tasks {
-        match status {
-            TaskStatus::Failed { error } => out.push_str(&format!("{}: Failed ({})\n", id, error)),
-            other => out.push_str(&format!("{}: {:?}\n", id, other)),
-        }
-    }
-    let s = state.summary();
-    out.push_str(&format!(
-        "Summary: {} completed, {} failed, {} skipped, {} pending",
-        s.completed, s.failed, s.skipped, s.pending
-    ));
-    out
-}
-```
+**Problem:** `clippy::type_complexity` on both closure fields.
 
-After:
+**Before** (lines 28–29):
 
 ```rust
-fn cmd_status(state: &dyn StateStore) -> String {
-    let mut tasks: Vec<(String, TaskStatus)> = state.all_tasks();
-    tasks.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut out = String::new();
-    for (id, status) in &tasks {
-        match status {
-            TaskStatus::Failed { error } => out.push_str(&format!("{}: Failed ({})\n", id, error)),
-            other => out.push_str(&format!("{}: {:?}\n", id, other)),
-        }
-    }
-    let s = state.summary();
-    out.push_str(&format!(
-        "Summary: {} completed, {} failed, {} skipped, {} pending",
-        s.completed, s.failed, s.skipped, s.pending
-    ));
-    out
-}
+pub setup: Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
+pub collect: Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
 ```
 
-**Verification:** `cargo check -p workflow-cli`
+**After** — add a type alias before the `Task` struct definition:
+
+```rust
+/// A closure used for task setup or result collection.
+pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>;
+```
+
+Then change the fields to:
+
+```rust
+pub setup: Option<TaskClosure>,
+pub collect: Option<TaskClosure>,
+```
+
+Also update `workflow_core/src/workflow.rs` line 87 to use the alias:
+
+**Before** (line 87):
+
+```rust
+Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
+```
+
+**After:**
+
+```rust
+Option<crate::task::TaskClosure>,
+```
+
+**Verification:** `cargo clippy -p workflow_core 2>&1 | grep type_complexity` should return no matches.
 
 ---
 
-### TASK-13: Fix `cmd_inspect` to use trait
+### TASK-10: Fix unused import in `executor_tests.rs`
 
-**File:** `workflow-cli/src/main.rs`
-**Target:** `fn cmd_inspect`
+**File:** `workflow_utils/tests/executor_tests.rs`
+**Target:** `use` statement on line 2
+**Severity:** Minor
 
-Before:
+**Problem:** `ExecutionHandle` is imported but not explicitly used (type is inferred from `.spawn()`).
 
-```rust
-fn cmd_inspect(state: &JsonStateStore, task_id: Option<&str>) -> anyhow::Result<String> {
-    match task_id {
-        Some(id) => match state.get_status(id) {
-            None => anyhow::bail!("task '{}' not found", id),
-            Some(TaskStatus::Failed { error }) =>
-                Ok(format!("task: {}\nstatus: Failed\nerror: {}", id, error)),
-            Some(s) => Ok(format!("task: {}\nstatus: {:?}", id, s)),
-        },
-        None => {
-            let mut tasks: Vec<(String, &TaskStatus)> = state.all_tasks().iter()
-                .map(|(k, v)| (k.clone(), v))
-                .collect();
-            tasks.sort_by(|a, b| a.0.cmp(&b.0));
-            Ok(tasks.iter()
-                .map(|(id, s)| format!("{}: {:?}", id, s))
-                .collect::<Vec<_>>()
-                .join("\n"))
-        }
-    }
-}
-```
-
-After:
+**Before** (line 2):
 
 ```rust
-fn cmd_inspect(state: &dyn StateStore, task_id: Option<&str>) -> anyhow::Result<String> {
-    match task_id {
-        Some(id) => match state.get_status(id) {
-            None => anyhow::bail!("task '{}' not found", id),
-            Some(TaskStatus::Failed { error }) =>
-                Ok(format!("task: \nstatus: Failed\nerror: {}", id, error)),
-            Some(s) => Ok(format!("task: {}\nstatus: {:?}", id, s)),
-        },
-        None => {
-            let mut tasks: Vec<(String, TaskStatus)> = state.all_tasks();
-            tasks.sort_by(|a, b| a.0.cmp(&b.0));
-            Ok(tasks.iter()
-                .map(|(id, s)| format!("{}: {:?}", id, s))
-                .collect::<Vec<_>>()
-                .join("\n"))
-        }
-    }
-}
+use workflow_utils::{TaskExecutor, ExecutionHandle};
 ```
 
-**Verification:** `cargo check -p workflow-cli`
+**After:**
+
+```rust
+use workflow_utils::TaskExecutor;
+```
+
+**Verification:** `cargo clippy -p workflow_utils --tests 2>&1 | grep unused_imports` should return no matches.
 
 ---
 
-### TASK-14: Fix `cmd_retry` signature and error handling
+### TASK-11: Fix `partialeq_to_none` lint in `process_tests.rs`
 
-**File:** `workflow-cli/src/main.rs`
-**Target:** `fn cmd_retry`
+**File:** `workflow_utils/tests/process_tests.rs`
+**Target:** Line 55 inside `test_terminate_long_running_process`
+**Severity:** Minor
 
-Before:
+**Problem:** `result.exit_code == None` triggers `clippy::partialeq_to_none`.
 
-```rust
-fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) {
-    for id in task_ids {
-        if state.get_status(id).is_none() {
-            eprintln!("warn: task '{}' not found", id);
-        } else {
-            state.mark_pending(id);
-        }
-    }
-    let to_reset: Vec<String> = state
-        .all_tasks()
-        .iter()
-        .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
-        .map(|(id, _)| id.clone())
-        .collect();
-    for id in to_reset {
-        state.mark_pending(&id);
-    }
-    state.save().unwrap();
-}
-```
-
-After:
+**Before** (line 55):
 
 ```rust
-fn cmd_retry(state: &mut dyn StateStore, task_ids: &[String]) -> anyhow::Result<()> {
-    for id in task_ids {
-        if state.get_status(id).is_none() {
-            eprintln!("warn: task '{}' not found", id);
-        } else {
-            state.mark_pending(id);
-        }
-    }
-    let to_reset: Vec<String> = state
-        .all_tasks()
-        .into_iter()
-        .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
-        .map(|(id, _)| id)
-        .collect();
-    for id in to_reset {
-        state.mark_pending(&id);
-    }
-    state.save().map_err(|e| anyhow::anyhow!("failed to save state: {}", e))?;
-    Ok(())
-}
+assert!(result.exit_code.is_some() || result.exit_code == None);  // Either has code or was killed by signal
 ```
 
-**Verification:** `cargo check -p workflow-cli`
-
----
-
-## Phase 4 — Call site update (after TASK-14)
-
-### TASK-15: Update `cmd_retry` call site in `main`
-
-**File:** `workflow-cli/src/main.rs`
-**Target:** `Commands::Retry` arm in `fn main`
-
-Before:
+**After:**
 
 ```rust
-Commands::Retry { state_file, task_ids } => {
-    let mut state = load_state(&state_file)?;
-    cmd_retry(&mut state, &task_ids);
-    Ok(())
-}
+assert!(result.exit_code.is_some() || result.exit_code.is_none());  // Either has code or was killed by signal
 ```
 
-After:
-
-```rust
-Commands::Retry { state_file, task_ids } => {
-    let mut state = load_state(&state_file)?;
-    cmd_retry(&mut state, &task_ids)?;
-    Ok(())
-}
-```
-
-**Verification:** `cargo check -p workflow-cli`
+**Verification:** `cargo clippy -p workflow_utils --tests 2>&1 | grep partialeq_to_none` should return no matches.
 
 ---
 
 ## Phase 5 — Final
 
-```
+```bash
 cargo test --workspace
+cargo clippy --workspace --all-targets 2>&1 | grep -E "^error"
 ```
+
+Both must exit 0.
+
+---
+
+## Dependency Graph
+
+```
+TASK-1 ─────────────────────────────────────────────────────────────┐
+TASK-2 ──────────────────────────────────────────┬─── TASK-6        │
+TASK-3 ──────────────────────────────────────────┤                   │
+TASK-4 (independent)                             │                   │
+TASK-5 (independent)                             │                   │
+                                                 ├─── TASK-9         │
+                                                 ├─── TASK-10        │
+                                                 └─── TASK-11        │
+                                      TASK-7 (after TASK-1) ────────┤
+                                      TASK-8 (after TASK-1) ────────┤
+                                                                     ▼
+                                                               cargo test
+```
+
+| Phase | Tasks | Dependency |
+|---|---|---|
+| 1 (parallel) | TASK-1, TASK-2, TASK-3, TASK-4, TASK-5 | none |
+| 2 | TASK-6 | TASK-2 |
+| 3 (parallel) | TASK-7, TASK-8 | TASK-1 |
+| 4 (parallel) | TASK-9, TASK-10, TASK-11 | TASK-2, TASK-3 |
+| 5 | `cargo test --workspace` | all |
