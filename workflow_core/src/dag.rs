@@ -45,7 +45,7 @@ impl Dag {
             .get(to)
             .ok_or_else(|| WorkflowError::UnknownDependency {
                 task: to.to_string(),
-                dependency: from.to_string(),
+                dependency: to.to_string(),
             })?;
         let eid = self.graph.add_edge(f, t, ());
         if algo::toposort(&self.graph, None).is_err() {
@@ -125,9 +125,21 @@ mod tests {
     fn unknown_dep_errors() {
         let mut dag = Dag::new();
         dag.add_node("b".to_owned()).unwrap();
+        // from="missing" is absent — first lookup fails.
+        // Expected: task="b" (the dependent), dependency="missing" (the unknown dep).
         assert!(matches!(
             dag.add_edge("missing", "b").unwrap_err(),
-            WorkflowError::UnknownDependency { task: _, dependency: _ }
+            WorkflowError::UnknownDependency { ref task, ref dependency }
+            if task == "b" && dependency == "missing"
+        ));
+        // to="missing" is absent — second lookup fails.
+        // After the Step 1 fix, both fields equal "missing" (the missing node's id).
+        // This is distinguishable from the first case (where task="b", dependency="missing").
+        dag.add_node("a".to_owned()).unwrap();
+        assert!(matches!(
+            dag.add_edge("a", "missing").unwrap_err(),
+            WorkflowError::UnknownDependency { ref task, ref dependency }
+            if task == "missing" && dependency == "missing"
         ));
     }
 

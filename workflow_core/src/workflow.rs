@@ -11,6 +11,7 @@ pub(crate) type TaskHandle = (
     Instant,
     Vec<crate::monitoring::MonitoringHook>,
     Option<TaskClosure>,
+    std::path::PathBuf,
 );
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -63,12 +64,21 @@ impl Workflow {
     }
 
     /// Runs the workflow with dependency injection for state, runner, and hook executor.
+    ///
+    /// # Panics (debug only)
+    /// Asserts that the workflow has tasks. Tasks are consumed from the `Workflow` on dispatch;
+    /// calling `run()` twice on the same instance will silently process no tasks on the second call.
+    /// Construct a new `Workflow` to re-run.
     pub fn run(
         &mut self,
         state: &mut dyn StateStore,
         runner: Arc<dyn ProcessRunner>,
         hook_executor: Arc<dyn HookExecutor>,
     ) -> Result<WorkflowSummary, WorkflowError> {
+        debug_assert!(
+            !self.tasks.is_empty(),
+            "run() called on a Workflow with no tasks — tasks are consumed on dispatch"
+        );
         signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
         signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
 
@@ -94,7 +104,7 @@ impl Workflow {
                 for id in handles.keys() {
                     state.set_status(id, TaskStatus::Pending);
                 }
-                for (_, (handle, _start, _monitors, _collect_fn)) in handles.iter_mut() {
+                for (_, (handle, _start, _monitors, _collect_fn, _workdir)) in handles.iter_mut() {
                     handle.terminate().ok();
                 }
                 state.save()?;
@@ -103,7 +113,7 @@ impl Workflow {
 
             // Poll finished tasks
             let mut finished: Vec<String> = Vec::new();
-            for (id, (handle, start, _monitors, _collect_fn)) in handles.iter_mut() {
+            for (id, (handle, start, _monitors, _collect_fn, _workdir)) in handles.iter_mut() {
                 // Timeout check first
                 if let Some(&timeout) = task_timeouts.get(id) {
                     if start.elapsed() >= timeout {
@@ -124,7 +134,7 @@ impl Workflow {
 
             // Remove and process finished tasks
             for id in finished {
-                if let Some((mut handle, start, monitors, collect_fn)) = handles.remove(&id) {
+                if let Some((mut handle, start, monitors, collect_fn, workdir)) = handles.remove(&id) {
                     // Skip wait() if already marked failed (e.g., timed out)
                     if matches!(state.get_status(&id), Some(TaskStatus::Failed { .. })) {
                         continue;
@@ -138,7 +148,7 @@ impl Workflow {
                             Some(0) => {
                                 state.mark_completed(&id);
                                 if let Some(ref collect) = collect_fn {
-                                    if let Err(e) = collect(std::path::Path::new(".")) {
+                                    if let Err(e) = collect(&workdir) {
                                         tracing::warn!(
                                             "Collect closure for task '{}' failed: {}",
                                             id,
@@ -164,7 +174,7 @@ impl Workflow {
                     // Fire OnComplete/OnFailure hooks
                     let ctx = crate::monitoring::HookContext {
                         task_id: id.clone(),
-                        workdir: std::path::PathBuf::from("."),
+                        workdir,
                         state: final_state.to_string(),
                         exit_code,
                     };
@@ -295,7 +305,7 @@ impl Workflow {
                                     }
                                 }
 
-                                handles.insert(id.clone(), (handle, Instant::now(), monitors, task.collect));
+                                handles.insert(id.clone(), (handle, Instant::now(), monitors, task.collect, task.workdir.clone()));
                             }
                             ExecutionMode::Queued { .. } => {
                                 return Err(WorkflowError::InvalidConfig(

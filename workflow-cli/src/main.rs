@@ -32,12 +32,12 @@ fn load_state_for_resume(path: &str) -> anyhow::Result<JsonStateStore> {
         .map_err(|e| anyhow::anyhow!("failed to open state file '{}': {}", path, e))
 }
 
-fn cmd_status(state: &JsonStateStore) -> String {
+fn cmd_status(state: &dyn StateStore) -> String {
     let mut tasks: Vec<(String, TaskStatus)> = state.all_tasks();
     tasks.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out = String::new();
     for (id, status) in &tasks {
-        match status.clone() {
+        match status {
             TaskStatus::Failed { error } => out.push_str(&format!("{}: Failed ({})\n", id, error)),
             other => out.push_str(&format!("{}: {:?}\n", id, other)),
         }
@@ -77,6 +77,9 @@ fn cmd_retry(state: &mut dyn StateStore, task_ids: &[String]) -> anyhow::Result<
             state.mark_pending(id);
         }
     }
+    // Reset all dependency-failure-skipped tasks globally (not just those downstream
+    // of `task_ids`). Intentional for v0.1 simplicity — a graph-aware retry would
+    // require DAG access that the CLI does not have.
     let to_reset: Vec<String> = state
         .all_tasks()
         .into_iter()
@@ -105,10 +108,9 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Inspect { state_file, task_id } => {
             let state = load_state_raw(&state_file)?;
-            match cmd_inspect(&state, task_id.as_deref()) {
-                Ok(out) => { println!("{}", out); Ok(()) }
-                Err(e) => { eprintln!("{}", e); std::process::exit(1); }
-            }
+            let out = cmd_inspect(&state, task_id.as_deref())?;
+            println!("{}", out);
+            Ok(())
         }
     }
 }
@@ -151,7 +153,7 @@ mod tests {
     #[test]
     fn status_shows_failed_after_load_raw() {
         let dir = tempfile::tempdir().unwrap();
-        let mut s = make_state(dir.path());
+        let s = make_state(dir.path());
         s.save().unwrap();
         let loaded = JsonStateStore::load_raw(dir.path().join("state.json").to_str().unwrap()).unwrap();
         let out = cmd_status(&loaded);

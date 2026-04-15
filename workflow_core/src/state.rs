@@ -135,7 +135,7 @@ impl JsonStateStore {
     }
 
     /// Saves state atomically using temp file + rename pattern.
-    pub fn save(&self) -> Result<(), WorkflowError> {
+    fn persist(&self) -> Result<(), WorkflowError> {
         let temp_path = self.path.with_extension("tmp");
         let json = serde_json::to_vec_pretty(self)
             .map_err(|e| WorkflowError::StateCorrupted(e.to_string()))?;
@@ -193,7 +193,7 @@ impl StateStore for JsonStateStore {
     }
 
     fn save(&self) -> Result<(), WorkflowError> {
-        self.save()
+        self.persist()
     }
 }
 
@@ -203,9 +203,6 @@ impl JsonStateStore {
         self.tasks.clone()
     }
 }
-
-/// Alias for backward compatibility with existing code.
-pub type WorkflowState = JsonStateStore;
 
 fn now_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -340,12 +337,6 @@ mod tests {
         assert_eq!(s.all_task_statuses().len(), 2);
     }
 
-    #[test]
-    fn alias_workflow_state() {
-        let mut s: WorkflowState = JsonStateStore::new("alias", PathBuf::from("/tmp"));
-        s.mark_completed("x");
-        assert!(s.is_completed("x"));
-    }
 
     #[test]
     fn save_load_roundtrip() {

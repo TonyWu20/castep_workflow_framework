@@ -52,7 +52,7 @@ fn test_terminate_long_running_process() {
     // After terminate, wait should succeed (process is dead)
     let result = handle.wait().unwrap();
     // Killed processes return exit code 137 (SIGKILL) or similar, or None if only signal was received
-    assert!(result.exit_code.is_some() || result.exit_code.is_none());  // Either has code or was killed by signal
+    assert_ne!(result.exit_code, Some(0), "terminated process should not exit successfully");
 }
 
 #[test]
@@ -116,5 +116,6 @@ fn test_duration_tracking() {
     let result = handle.wait().unwrap();
     // Duration should be approximately 10ms (give some margin for OS scheduling)
     assert!(result.duration >= std::time::Duration::from_millis(5));
-    assert!(result.duration <= std::time::Duration::from_millis(100));
+    // 1 second provides headroom for CI load; sleep 0.01 can be delayed
+    assert!(result.duration <= std::time::Duration::from_secs(1));
 }

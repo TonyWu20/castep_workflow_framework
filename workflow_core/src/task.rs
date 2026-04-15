@@ -2,11 +2,11 @@ use crate::error::WorkflowError;
 use crate::monitoring::MonitoringHook;
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// A closure used for task setup or result collection.
 pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 #[derive(Clone)]
 pub enum ExecutionMode {

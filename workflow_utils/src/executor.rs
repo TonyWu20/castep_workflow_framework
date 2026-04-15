@@ -98,11 +98,6 @@ impl ExecutionHandle {
     }
 }
 
-// ============================================================================
-// TASK-7: SystemProcessRunner and SystemProcessHandle
-// Implements ProcessRunner trait for workflow engine integration
-// ============================================================================
-
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Instant;
@@ -173,7 +168,3 @@ impl ProcessHandle for SystemProcessHandle {
         })
     }
 }
-
-// ============================================================================
-// End TASK-7 implementations
-// =============================================================================
