@@ -1,5 +1,5 @@
 use std::time::Duration;
-use workflow_utils::{TaskExecutor, ExecutionHandle};
+use workflow_utils::TaskExecutor;
 
 #[test]
 fn test_executor_basic() {

@@ -2,6 +2,9 @@ use crate::error::WorkflowError;
 use crate::monitoring::MonitoringHook;
 
 use std::collections::HashMap;
+
+/// A closure used for task setup or result collection.
+pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -25,8 +28,8 @@ pub struct Task {
     pub dependencies: Vec<String>,
     pub workdir: PathBuf,
     pub mode: ExecutionMode,
-    pub setup: Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
-    pub collect: Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
+    pub setup: Option<TaskClosure>,
+    pub collect: Option<TaskClosure>,
     pub monitors: Vec<MonitoringHook>,
 }
 

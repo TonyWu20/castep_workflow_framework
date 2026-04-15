@@ -2,10 +2,17 @@ use crate::dag::Dag;
 use crate::error::WorkflowError;
 use crate::process::{ProcessHandle, ProcessRunner};
 use crate::state::{StateStore, StateStoreExt, TaskStatus};
-use crate::task::{ExecutionMode, Task};
+use crate::task::{ExecutionMode, Task, TaskClosure};
 use crate::HookExecutor;
+
+/// A handle to a running task with metadata.
+pub(crate) type TaskHandle = (
+    Box<dyn ProcessHandle>,
+    Instant,
+    Vec<crate::monitoring::MonitoringHook>,
+    Option<TaskClosure>,
+);
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -62,11 +69,8 @@ impl Workflow {
         runner: Arc<dyn ProcessRunner>,
         hook_executor: Arc<dyn HookExecutor>,
     ) -> Result<WorkflowSummary, WorkflowError> {
-        static SIGNAL_INIT: std::sync::Once = std::sync::Once::new();
-        SIGNAL_INIT.call_once(|| {
-            signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
-            signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
-        });
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
+        signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
 
         let dag = self.build_dag()?;
 
@@ -78,15 +82,7 @@ impl Workflow {
         }
         state.save()?;
 
-        let mut handles: HashMap<
-            String,
-            (
-                Box<dyn ProcessHandle>,
-                Instant,
-                Vec<crate::monitoring::MonitoringHook>,
-                Option<Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>>,
-            ),
-        > = HashMap::new();
+        let mut handles: HashMap<String, TaskHandle> = HashMap::new();
         let workflow_start = Instant::now();
 
         // Task timeout tracking
@@ -98,7 +94,7 @@ impl Workflow {
                 for id in handles.keys() {
                     state.set_status(id, TaskStatus::Pending);
                 }
-                for (_, (handle, _, _, _)) in handles.iter_mut() {
+                for (_, (handle, _start, _monitors, _collect_fn)) in handles.iter_mut() {
                     handle.terminate().ok();
                 }
                 state.save()?;
@@ -107,14 +103,14 @@ impl Workflow {
 
             // Poll finished tasks
             let mut finished: Vec<String> = Vec::new();
-            for (id, (handle, start, _, _)) in handles.iter_mut() {
+            for (id, (handle, start, _monitors, _collect_fn)) in handles.iter_mut() {
                 // Timeout check first
                 if let Some(&timeout) = task_timeouts.get(id) {
                     if start.elapsed() >= timeout {
                         handle.terminate().ok();
                         state.mark_failed(
                             id,
-                            format!("task '{}' timed out after {:?}", id, timeout),
+                            WorkflowError::TaskTimeout(id.clone()).to_string(),
                         );
                         state.save()?;
                         finished.push(id.clone());
@@ -302,7 +298,9 @@ impl Workflow {
                                 handles.insert(id.clone(), (handle, Instant::now(), monitors, task.collect));
                             }
                             ExecutionMode::Queued { .. } => {
-                                unreachable!("Queued execution mode is not yet implemented");
+                                return Err(WorkflowError::InvalidConfig(
+                                    "Queued execution mode is not yet implemented".into(),
+                                ));
                             }
                         }
                     }

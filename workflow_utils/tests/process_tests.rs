@@ -52,7 +52,7 @@ fn test_terminate_long_running_process() {
     // After terminate, wait should succeed (process is dead)
     let result = handle.wait().unwrap();
     // Killed processes return exit code 137 (SIGKILL) or similar, or None if only signal was received
-    assert!(result.exit_code.is_some() || result.exit_code == None);  // Either has code or was killed by signal
+    assert!(result.exit_code.is_some() || result.exit_code.is_none());  // Either has code or was killed by signal
 }
 
 #[test]

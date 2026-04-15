@@ -160,6 +160,13 @@ impl JsonStateStore {
         Ok(state)
     }
 
+    /// Loads state from disk without applying crash-recovery resets.
+    /// Use this for read-only inspection (CLI status/inspect).
+    pub fn load_raw(path: impl AsRef<Path>) -> Result<Self, WorkflowError> {
+        let state: Self = serde_json::from_slice(&fs::read(path).map_err(WorkflowError::Io)?)?;
+        Ok(state)
+    }
+
     /// Returns the workflow name.
     pub fn workflow_name(&self) -> &str {
         &self.workflow_name

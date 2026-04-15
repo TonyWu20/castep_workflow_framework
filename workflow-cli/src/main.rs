@@ -22,9 +22,14 @@ enum Commands {
     },
 }
 
-fn load_state(path: &str) -> anyhow::Result<JsonStateStore> {
+fn load_state_raw(path: &str) -> anyhow::Result<JsonStateStore> {
+    JsonStateStore::load_raw(path)
+        .map_err(|e| anyhow::anyhow!("failed to open state file '{}': {}", path, e))
+}
+
+fn load_state_for_resume(path: &str) -> anyhow::Result<JsonStateStore> {
     JsonStateStore::load(path)
-        .map_err(|_| anyhow::anyhow!("error: state file not found: {}", path))
+        .map_err(|e| anyhow::anyhow!("failed to open state file '{}': {}", path, e))
 }
 
 fn cmd_status(state: &JsonStateStore) -> String {
@@ -89,17 +94,17 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Status { state_file } => {
-            let state = load_state(&state_file)?;
+            let state = load_state_raw(&state_file)?;
             println!("{}", cmd_status(&state));
             Ok(())
         }
         Commands::Retry { state_file, task_ids } => {
-            let mut state = load_state(&state_file)?;
+            let mut state = load_state_for_resume(&state_file)?;
             cmd_retry(&mut state, &task_ids)?;
             Ok(())
         }
         Commands::Inspect { state_file, task_id } => {
-            let state = load_state(&state_file)?;
+            let state = load_state_raw(&state_file)?;
             match cmd_inspect(&state, task_id.as_deref()) {
                 Ok(out) => { println!("{}", out); Ok(()) }
                 Err(e) => { eprintln!("{}", e); std::process::exit(1); }
@@ -141,6 +146,16 @@ mod tests {
         assert!(out.contains("task_a: Completed"));
         assert!(out.contains("task_b: Failed (exit code 1)"));
         assert!(out.contains("Summary: 1 completed, 1 failed, 1 skipped, 0 pending"));
+    }
+
+    #[test]
+    fn status_shows_failed_after_load_raw() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = make_state(dir.path());
+        s.save().unwrap();
+        let loaded = JsonStateStore::load_raw(dir.path().join("state.json").to_str().unwrap()).unwrap();
+        let out = cmd_status(&loaded);
+        assert!(out.contains("task_b: Failed (exit code 1)"));
     }
 
     #[test]

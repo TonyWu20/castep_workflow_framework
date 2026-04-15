@@ -37,8 +37,8 @@ impl Dag {
             .node_map
             .get(from)
             .ok_or_else(|| WorkflowError::UnknownDependency {
-                task: from.to_string(),
-                dependency: to.to_string(),
+                task: to.to_string(),
+                dependency: from.to_string(),
             })?;
         let &t = self
             .node_map
