@@ -15,6 +15,4 @@
   3. **Validation**: `LSP diagnostics` to check for errors immediately after edits
   4. **Refactoring**: `LSP rename` for symbol renames, `LSP references` to find all usages
 
-## MCP tool usage
-
-- Read [`pare-cargo`](./docs/pare-cargo.md) when met errors in using `pare-cargo` MCP tools.
+- Always pass corresponding `subagent_type` to `Agent` tool when prompted to call subagents.
