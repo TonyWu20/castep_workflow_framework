@@ -24,7 +24,10 @@ fn resume_skips_completed_reruns_failed() {
     let mut wf1 = Workflow::new("integration").with_max_parallel(4).unwrap();
     wf1.add_task(
         Task::new("a", direct("true"))
-            .setup(move |_| { a_runs_c.fetch_add(1, Ordering::SeqCst); Ok(()) })
+            .setup(move |_| -> Result<(), std::convert::Infallible> {
+                a_runs_c.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
     ).unwrap();
     wf1.add_task(Task::new("b", direct("false")).depends_on("a")).unwrap();
     wf1.add_task(Task::new("c", direct("true")).depends_on("b")).unwrap();

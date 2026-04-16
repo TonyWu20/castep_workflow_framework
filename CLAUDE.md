@@ -16,3 +16,4 @@
   4. **Refactoring**: `LSP rename` for symbol renames, `LSP references` to find all usages
 
 - Always pass corresponding `subagent_type` to `Agent` tool when prompted to call subagents.
+- Always use space instead of tab in writing and editing code files.

@@ -1,4 +1,3 @@
-use crate::error::WorkflowError;
 use crate::monitoring::MonitoringHook;
 
 use std::collections::HashMap;
@@ -6,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// A closure used for task setup or result collection.
-pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>;
+pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + 'static>;
 
 #[derive(Clone)]
 pub enum ExecutionMode {
@@ -59,19 +58,25 @@ impl Task {
         self
     }
 
-    pub fn setup<F>(mut self, f: F) -> Self
+    pub fn setup<F, E>(mut self, f: F) -> Self
     where
-        F: Fn(&Path) -> Result<(), WorkflowError> + Send + Sync + 'static,
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static,
     {
-        self.setup = Some(Box::new(f));
+        self.setup = Some(Box::new(move |path| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            f(path).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        }));
         self
     }
 
-    pub fn collect<F>(mut self, f: F) -> Self
+    pub fn collect<F, E>(mut self, f: F) -> Self
     where
-        F: Fn(&Path) -> Result<(), WorkflowError> + Send + Sync + 'static,
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static,
     {
-        self.collect = Some(Box::new(f));
+        self.collect = Some(Box::new(move |path| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            f(path).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        }));
         self
     }
 

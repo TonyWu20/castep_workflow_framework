@@ -513,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn single_task_completes() -> Result<(), Box<dyn std::error::Error>> {
+    fn single_task_completes() -> Result<(), WorkflowError> {
         let dir = tempfile::tempdir().unwrap();
 
         let mut wf = Workflow::new("wf_single").with_max_parallel(4)?;
@@ -541,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn chain_respects_order() -> Result<(), Box<dyn std::error::Error>> {
+    fn chain_respects_order() -> Result<(), WorkflowError> {
         let dir = tempfile::tempdir().unwrap();
         let log_file = dir.path().join("log.txt");
         let log_for_a = log_file.clone();
@@ -559,14 +559,14 @@ mod tests {
                     timeout: None,
                 },
             )
-            .setup(move |_| {
-                let mut f = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&log_for_a)?;
-                writeln!(f, "a")?;
-                Ok(())
-            }),
+.setup(move |_| -> Result<(), std::io::Error> {
+      let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_for_a)?;
+      writeln!(f, "a")?;
+      Ok(())
+    }),
         )
         .unwrap();
 
@@ -581,8 +581,10 @@ mod tests {
                 },
             )
             .depends_on("a")
-            .setup(move |_| {
-                let mut f = std::fs::OpenOptions::new().append(true).open(&log_for_b)?;
+            .setup(move |_| -> Result<(), std::io::Error> {
+                let mut f = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&log_for_b)?;
                 writeln!(f, "b")?;
                 Ok(())
             }),
@@ -602,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_task_skips_dependent() -> Result<(), Box<dyn std::error::Error>> {
+    fn failed_task_skips_dependent() -> Result<(), WorkflowError> {
         let dir = tempfile::tempdir().unwrap();
 
         let mut wf = Workflow::new("wf_skip").with_max_parallel(4)?;
@@ -652,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_returns_topo_order() -> Result<(), Box<dyn std::error::Error>> {
+    fn dry_run_returns_topo_order() -> Result<(), WorkflowError> {
         let mut wf = Workflow::new("wf_dry");
 
         wf.add_task(Task::new(
@@ -688,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_task_id_errors() -> Result<(), Box<dyn std::error::Error>> {
+    fn duplicate_task_id_errors() -> Result<(), WorkflowError> {
         let mut wf = Workflow::new("wf_dup");
 
         wf.add_task(Task::new(
@@ -718,7 +720,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_dependency_add() -> Result<(), Box<dyn std::error::Error>> {
+    fn valid_dependency_add() -> Result<(), WorkflowError> {
         let mut wf = Workflow::new("wf_dep");
 
         wf.add_task(Task::new(
@@ -762,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn resume_loads_existing_state() -> Result<(), Box<dyn std::error::Error>> {
+    fn resume_loads_existing_state() -> Result<(), WorkflowError> {
         let dir = tempfile::tempdir().unwrap();
         let state_path = dir.path().join(".wf_resume.workflow.json");
 
@@ -810,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn interrupt_before_run_dispatches_nothing() -> Result<(), Box<dyn std::error::Error>> {
+    fn interrupt_before_run_dispatches_nothing() -> Result<(), WorkflowError> {
         let dir = tempfile::tempdir().unwrap();
         let mut wf = Workflow::new("wf_interrupt").with_max_parallel(4)?;
         wf.add_task(Task::new(
@@ -838,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn interrupt_mid_run_stops_dispatch() -> Result<(), Box<dyn std::error::Error>> {
+    fn interrupt_mid_run_stops_dispatch() -> Result<(), WorkflowError> {
         let dir = tempfile::tempdir().unwrap();
         let mut wf = Workflow::new("wf_interrupt2").with_max_parallel(4)?;
         let flag = Arc::new(AtomicBool::new(false));
@@ -853,7 +855,7 @@ mod tests {
                     timeout: None,
                 },
             )
-            .setup(move |_| {
+            .setup(move |_| -> Result<(), std::io::Error> {
                 flag_clone.store(true, Ordering::SeqCst);
                 Ok(())
             }),
