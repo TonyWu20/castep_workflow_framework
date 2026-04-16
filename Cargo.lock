@@ -1341,7 +1341,6 @@ dependencies = [
 name = "workflow_utils"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "serde",
  "tempfile",
  "workflow_core",

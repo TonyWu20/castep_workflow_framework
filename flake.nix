@@ -71,6 +71,14 @@
                   claude
                 '';
               }
+              {
+                name = "claude-fox";
+                command = ''
+                  ANTHROPIC_BASE_URL=$FOXCODE_BASE_URL \
+                  ANTHROPIC_AUTH_TOKEN=$FOXCODE_TOKEN \
+                  claude
+                '';
+              }
             ];
           };
         }

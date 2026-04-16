@@ -1,3 +1,11 @@
 # https://numtide.github.io/devshell
 [[commands]]
 package = "hello"
+
+[[commands]]
+name = "claude-fox"
+command = """
+set ANTHROPIC_BASE_URL $FOXCODE_BASE_URL
+set ANTHROPIC_AUTH_TOKEN $FOXCODE_TOKEN
+claude
+"""
