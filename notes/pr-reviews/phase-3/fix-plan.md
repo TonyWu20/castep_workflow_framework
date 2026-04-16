@@ -1,30 +1,20 @@
-# Phase 3 Fix Plan — v8 (2026-04-16)
+# Phase 3 Fix Plan — v9 (2026-04-16)
 
-This plan addresses 1 issue found in the v8 review: `workflow_core/Cargo.toml` still declares `thiserror` and `time` as direct pinned versions instead of consuming the workspace entries added in v7. Single task, no dependencies.
+No issues found. PR is approved for merge to `main`.
 
----
+## PR Review: `phase-3` → `main`
 
-### TASK-1: Replace pinned `thiserror` and `time` with workspace references in `workflow_core`
+**Rating:** Approve
 
-**File:** `workflow_core/Cargo.toml`
+**Summary:** This diff completes the dependency hygiene work for Phase 3 — `anyhow` is removed from `workflow_utils`, and `thiserror`/`time` are promoted to workspace-level dependencies with `workflow_core` consuming them via `{ workspace = true }`. The changes are minimal, correct, and consistent with the project's architectural rules. Build passes cleanly.
 
-**Before:**
-```toml
-thiserror = "1"
-time = { version = "0.3", features = ["formatting"] }
-```
+**Axis Scores:**
 
-**After:**
-```toml
-thiserror = { workspace = true }
-time = { workspace = true }
-```
+- Plan & Spec: Pass — removes `anyhow` from lib crate and promotes shared deps to workspace root as intended
+- Architecture: Pass — `anyhow` now absent from all lib crates; workspace dep management is consistent
+- Rust Style: Pass — Cargo.toml changes are minimal and non-speculative; no version drift introduced
+- Test Coverage: Pass (noted) — dependency-only changes require no new tests; a full `cargo test` run before merge is recommended as a final gate
 
-**Note:** The `features = ["formatting"]` annotation is dropped because the root `Cargo.toml` workspace entry already declares `time = { version = "0.3", features = ["formatting"] }` — the feature is inherited automatically.
+## Fix Document for Author
 
-**Verification:**
-```
-cargo check -p workflow_core
-```
-
-**Dependencies:** None. Self-contained.
+No issues found.
