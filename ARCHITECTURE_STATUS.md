@@ -85,6 +85,7 @@ Parser Libraries: castep-cell-io, etc.
 2. **Utilities Only**: Layer 2 provides generic utilities, not software-specific abstractions
 3. **Closure-Based**: Tasks contain execution closures with full control
 4. **Rust-First**: Users write Rust code, not TOML configuration
+5. **No `anyhow` in lib crates**: `workflow_core` and `workflow_utils` use `WorkflowError` directly; `anyhow` is permitted only in binary/example crates (Layer 3)
 
 ## Migration Notes
 

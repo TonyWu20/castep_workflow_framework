@@ -800,7 +800,7 @@ castep_workflow_framework/
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-anyhow = "1.0"
+thiserror = "1"
 petgraph = "0.8"
 tracing = "0.1"
 workflow_utils = { path = "../workflow_utils" }
@@ -809,11 +809,13 @@ workflow_utils = { path = "../workflow_utils" }
 default-logging = ["dep:tracing-subscriber"]
 ```
 
+Note: `anyhow` is **not** a dependency of `workflow_core` or `workflow_utils` — both are library crates and use `WorkflowError` directly.
+
 ### workflow_utils
 
 ```toml
 [dependencies]
-anyhow = "1.0"
+workflow_core = { path = "../workflow_core" }
 nix = { version = "0.29", features = ["process", "signal"] }
 ```
 
@@ -824,7 +826,7 @@ nix = { version = "0.29", features = ["process", "signal"] }
 workflow_core = { path = "../../workflow_core" }
 workflow_utils = { path = "../../workflow_utils" }
 castep-cell-io = { path = "../../../castep-cell-io/castep_cell_io" }
-anyhow = "1.0"
+anyhow = "1.0"  # anyhow is fine in binary/example crates (Layer 3)
 ```
 
 ## Advantages of This Design
