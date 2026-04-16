@@ -31,7 +31,7 @@ fn resume_skips_completed_reruns_failed() {
 
     let mut state1 = JsonStateStore::new("integration", state_path.clone());
     let summary1 = wf1.run(&mut state1, runner(), executor()).unwrap();
-    assert!(summary1.failed.iter().any(|(id, _)| id == "b"));
+    assert!(summary1.failed.iter().any(|f| f.id == "b"));
     assert!(summary1.skipped.contains(&"c".to_string()));
 
     // Verify state after Run 1 (B=Failed, C=SkippedDueToDependencyFailure)

@@ -376,7 +376,7 @@ impl Workflow {
         for (id, status) in state.all_tasks() {
             match status {
                 TaskStatus::Completed => succeeded.push(id),
-                TaskStatus::Failed { error } => failed.push((id, error)),
+                TaskStatus::Failed { error } => failed.push(FailedTask { id, error }),
                 TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure => {
                     skipped.push(id)
                 }
@@ -406,11 +406,18 @@ impl Workflow {
     }
 }
 
+/// A task that failed during workflow execution.
+#[derive(Debug, Clone)]
+pub struct FailedTask {
+    pub id: String,
+    pub error: String,
+}
+
 /// Summary of workflow execution results.
 #[derive(Debug, Clone)]
 pub struct WorkflowSummary {
     pub succeeded: Vec<String>,
-    pub failed: Vec<(String, String)>, // (task_id, error_message)
+    pub failed: Vec<FailedTask>,
     pub skipped: Vec<String>,
     pub duration: Duration,
 }

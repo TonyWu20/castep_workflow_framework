@@ -3,8 +3,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Instant;
 
+// Re-exported so consumers that only depend on `workflow_utils` can access
+// the core process/error types without a direct `workflow_core` dependency.
 pub use workflow_core::WorkflowError;
-pub use workflow_core::{ProcessRunner, ProcessHandle, ProcessResult};
+pub use workflow_core::{ProcessHandle, ProcessResult, ProcessRunner};
 
 pub struct TaskExecutor {
     workdir: PathBuf,

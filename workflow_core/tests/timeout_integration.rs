@@ -38,7 +38,7 @@ fn timeout_task_fails_and_dependent_skips() {
                          Arc::new(ShellHookExecutor) as Arc<dyn HookExecutor>).unwrap();
 
     assert!(wall_start.elapsed() < Duration::from_secs(1));
-    let (_, err) = summary.failed.iter().find(|(id, _)| id == "sleeper").expect("sleeper should fail");
-    assert!(err.contains("timed out"), "error was: {}", err);
+    let f = summary.failed.iter().find(|f| f.id == "sleeper").expect("sleeper should fail");
+    assert!(f.error.contains("timed out"), "error was: {}", f.error);
     assert!(summary.skipped.contains(&"dependent".to_string()));
 }

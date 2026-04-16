@@ -11,8 +11,11 @@ pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, Monitor
 pub use process::{ProcessHandle, ProcessResult, ProcessRunner};
 pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary, TaskStatus};
 pub use task::{ExecutionMode, Task, TaskClosure};
-pub use workflow::{Workflow, WorkflowSummary};
+pub use workflow::{FailedTask, Workflow, WorkflowSummary};
 
+// Returns Box<dyn Error> rather than WorkflowError because tracing_subscriber's
+// SetGlobalDefaultError is not convertible to any WorkflowError variant without
+// introducing a logging-specific variant that doesn't belong in the domain error type.
 /// Initialize default tracing subscriber with env-based filtering.
 /// Call once at start of main(). Controlled via RUST_LOG env var.
 /// Returns error if already initialized (safe, won't panic).
