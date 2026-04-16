@@ -34,9 +34,7 @@ fn main() -> Result<()> {
         )
         .workdir(workdir.clone())
         .setup(move |workdir| {
-            let io_err = |e: anyhow::Error| WorkflowError::Io(std::io::Error::other(e.to_string()));
-
-            create_dir(workdir.to_str().unwrap()).map_err(io_err)?;
+            create_dir(workdir.to_str().unwrap())?;
 
             let mut cell_doc: CellDocument =
                 parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;

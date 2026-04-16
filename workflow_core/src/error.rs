@@ -21,6 +21,12 @@ pub enum WorkflowError {
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
 
+    #[error("I/O error on '{path}': {source}")]
+    IoWithPath {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
