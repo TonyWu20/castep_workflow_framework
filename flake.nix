@@ -45,19 +45,19 @@
                   CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
                   ANTHROPIC_DEFAULT_OPUS_MODEL=Qwopus3.5-9B-6bit \
                   ANTHROPIC_DEFAULT_SONNET_MODEL=Qwopus3.5-9B-6bit \
-                  ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwen3.5-2B-oQ4 \
-                  claude --model Qwopus3.5-9B-6bit
+                  ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwopus3.5-9B-6bit \
+                  claude --model sonnet
                 '';
               }
               {
-                name = "claude-local-bypass";
+                name = "claude-local-qwopus-full";
                 command = ''
                   ANTHROPIC_BASE_URL=http://localhost:8000 \
                   CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
                   ANTHROPIC_DEFAULT_OPUS_MODEL=Qwopus3.5-9B-6bit \
                   ANTHROPIC_DEFAULT_SONNET_MODEL=Qwopus3.5-9B-6bit \
                   ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwopus3.5-9B-6bit \
-                  claude --model Qwopus3.5-9B-6bit --dangerously-skip-permissions
+                  claude --model Qwopus3.5-9B-6bit
                 '';
               }
               {
@@ -65,10 +65,18 @@
                 command = ''
                   ANTHROPIC_BASE_URL=http://localhost:8000 \
                   CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
-                  ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.5-9B-oQ4 \
-                  ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.5-9B-oQ4 \
-                  ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.5-9B-oQ4 \
-                  claude --model qwen3.5-9B-oQ4
+                  ANTHROPIC_DEFAULT_OPUS_MODEL=Qwen3.5-35B-A3B-UD-Q2_K_XL-mlx \
+                  ANTHROPIC_DEFAULT_SONNET_MODEL=Qwen3.5-35B-A3B-UD-Q2_K_XL-mlx \
+                  ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwen3.5-35B-A3B-UD-Q2_K_XL-mlx \
+                  claude
+                '';
+              }
+              {
+                name = "claude-fox";
+                command = ''
+                  ANTHROPIC_BASE_URL=$FOXCODE_BASE_URL \
+                  ANTHROPIC_AUTH_TOKEN=$FOXCODE_TOKEN \
+                  claude
                 '';
               }
             ];

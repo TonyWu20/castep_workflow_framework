@@ -4,17 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = { workspace = true }
 serde = { workspace = true }
 petgraph = { workspace = true }
-bon = { workspace = true }
 serde_json = { workspace = true }
-workflow_utils = { path = "../workflow_utils" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
+thiserror = "1"
+time = { version = "0.3", features = ["formatting"] }
+signal-hook = { workspace = true }
 
 [features]
 default-logging = ["dep:tracing-subscriber"]
 
 [dev-dependencies]
 tempfile = "3"
+workflow_utils = { path = "../workflow_utils" }

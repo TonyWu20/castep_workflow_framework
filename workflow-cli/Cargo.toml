@@ -1,0 +1,16 @@
+[package]
+name = "workflow-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "workflow-cli"
+path = "src/main.rs"
+
+[dependencies]
+workflow_core = { path = "../workflow_core" }
+clap = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.27.0"

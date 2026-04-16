@@ -1,53 +1,69 @@
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use crate::executor::TaskExecutor;
+use workflow_core::{HookContext, HookExecutor, HookResult, MonitoringHook};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MonitoringHook {
-    pub name: String,
-    pub command: String,
-    pub trigger: HookTrigger,
-}
+/// A concrete implementation of `HookExecutor` that executes hooks via shell commands.
+#[derive(Debug)]
+pub struct ShellHookExecutor;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum HookTrigger {
-    OnStart,
-    OnComplete,
-    OnFailure,
-    Periodic { interval_secs: u64 },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookContext {
-    pub task_id: String,
-    pub workdir: PathBuf,
-    pub state: String,
-    pub exit_code: Option<i32>,
-}
-
-pub struct HookResult {
-    pub success: bool,
-    pub output: String,
-}
-
-impl MonitoringHook {
-    pub fn new(name: impl Into<String>, command: impl Into<String>, trigger: HookTrigger) -> Self {
-        Self { name: name.into(), command: command.into(), trigger }
-    }
-
-    pub fn execute(&self, context: &HookContext) -> Result<HookResult> {
-        let mut parts = self.command.split_whitespace();
+impl HookExecutor for ShellHookExecutor {
+    fn execute_hook(
+        &self,
+        hook: &MonitoringHook,
+        ctx: &HookContext,
+    ) -> Result<HookResult, workflow_core::WorkflowError> {
+        let mut parts = hook.command.split_whitespace();
         let cmd = parts.next().unwrap_or_default();
         let args: Vec<String> = parts.map(String::from).collect();
-        let result = TaskExecutor::new(&context.workdir)
+        let result = TaskExecutor::new(&ctx.workdir)
             .command(cmd)
             .args(args)
-            .env("TASK_ID", &context.task_id)
-            .env("TASK_STATE", &context.state)
-            .env("WORKDIR", context.workdir.to_string_lossy().as_ref())
-            .env("EXIT_CODE", context.exit_code.map(|c| c.to_string()).unwrap_or_default())
-            .execute()?;
-        Ok(HookResult { success: result.success(), output: result.stdout })
+            .env("TASK_ID", &ctx.task_id)
+            .env("TASK_STATE", &ctx.state)
+            .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
+            .env(
+                "EXIT_CODE",
+                ctx.exit_code.map(|c| c.to_string()).unwrap_or_default(),
+            )
+            .execute()
+            .map_err(|e| workflow_core::WorkflowError::Io(std::io::Error::other(e.to_string())))?;
+        Ok(HookResult {
+            success: result.success(),
+            output: result.stdout,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use workflow_core::HookTrigger;
+
+    #[test]
+    fn test_shell_hook_executor_success() {
+        let executor = ShellHookExecutor;
+        let hook = MonitoringHook::new("test", "echo hello", HookTrigger::OnComplete);
+        let ctx = HookContext {
+            task_id: "task1".to_string(),
+            workdir: std::path::PathBuf::from("/tmp"),
+            state: "Completed".to_string(),
+            exit_code: Some(0),
+        };
+        let result = executor.execute_hook(&hook, &ctx).unwrap();
+        assert!(result.success);
+        assert!(result.output.contains("hello"));
+    }
+
+    #[test]
+    fn test_shell_hook_executor_with_args() {
+        let executor = ShellHookExecutor;
+        let hook = MonitoringHook::new("test", "echo arg1 arg2", HookTrigger::OnComplete);
+        let ctx = HookContext {
+            task_id: "task1".to_string(),
+            workdir: std::path::PathBuf::from("/tmp"),
+            state: "Completed".to_string(),
+            exit_code: Some(0),
+        };
+        let result = executor.execute_hook(&hook, &ctx).unwrap();
+        assert!(result.success);
     }
 }

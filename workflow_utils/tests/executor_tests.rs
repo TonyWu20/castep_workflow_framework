@@ -37,7 +37,7 @@ fn test_executor_with_env() {
 
 #[test]
 fn test_executor_spawn_and_terminate() {
-    let handle = TaskExecutor::new("/tmp")
+    let mut handle = TaskExecutor::new("/tmp")
         .command("sleep")
         .arg("60")
         .spawn()
@@ -47,3 +47,15 @@ fn test_executor_spawn_and_terminate() {
     std::thread::sleep(Duration::from_millis(200));
     assert!(!handle.is_running());
 }
+
+#[test]
+fn test_execution_handle_pid() {
+    let handle = TaskExecutor::new("/tmp")
+        .command("echo")
+        .arg("hello")
+        .spawn()
+        .unwrap();
+    let pid = handle.pid();
+    assert!(pid > 0);
+}
+

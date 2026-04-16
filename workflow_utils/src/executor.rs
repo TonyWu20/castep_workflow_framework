@@ -1,9 +1,12 @@
-use anyhow::{Context, Result};
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::Instant;
+
+// Re-exported so consumers that only depend on `workflow_utils` can access
+// the core process/error types without a direct `workflow_core` dependency.
+pub use workflow_core::WorkflowError;
+pub use workflow_core::{ProcessHandle, ProcessResult, ProcessRunner};
 
 pub struct TaskExecutor {
     workdir: PathBuf,
@@ -42,14 +45,14 @@ impl TaskExecutor {
         self
     }
 
-    pub fn execute(&self) -> Result<ExecutionResult> {
+    pub fn execute(&self) -> Result<ExecutionResult, WorkflowError> {
         let start = std::time::Instant::now();
         let output = std::process::Command::new(&self.command)
             .args(&self.args)
             .envs(&self.env)
             .current_dir(&self.workdir)
             .output()
-            .with_context(|| format!("failed to execute: {}", self.command))?;
+            .map_err(WorkflowError::Io)?;
         Ok(ExecutionResult {
             exit_code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -58,15 +61,14 @@ impl TaskExecutor {
         })
     }
 
-    pub fn spawn(&self) -> Result<ExecutionHandle> {
+    pub fn spawn(&self) -> Result<ExecutionHandle, WorkflowError> {
         let child = std::process::Command::new(&self.command)
             .args(&self.args)
             .envs(&self.env)
             .current_dir(&self.workdir)
             .spawn()
-            .with_context(|| format!("failed to spawn: {}", self.command))?;
-        let pid = child.id() as i32;
-        Ok(ExecutionHandle { pid, child })
+            .map_err(WorkflowError::Io)?;
+        Ok(ExecutionHandle { child })
     }
 }
 
@@ -74,7 +76,7 @@ pub struct ExecutionResult {
     pub exit_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
-    pub duration: Duration,
+    pub duration: std::time::Duration,
 }
 
 impl ExecutionResult {
@@ -84,27 +86,84 @@ impl ExecutionResult {
 }
 
 pub struct ExecutionHandle {
-    pid: i32,
-    // Held to prevent the child process from being orphaned on drop
-    #[allow(dead_code)]
     child: std::process::Child,
 }
 
 impl ExecutionHandle {
     pub fn pid(&self) -> i32 {
-        self.pid
+        self.child.id() as i32
     }
 
-    pub fn is_running(&self) -> bool {
-        use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-        matches!(
-            waitpid(Pid::from_raw(self.pid), Some(WaitPidFlag::WNOHANG)),
-            Ok(WaitStatus::StillAlive)
-        )
+    pub fn is_running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
     }
 
-    pub fn terminate(&self) -> Result<()> {
-        kill(Pid::from_raw(self.pid), Signal::SIGTERM)
-            .with_context(|| format!("failed to terminate pid {}", self.pid))
+    pub fn terminate(&mut self) -> Result<(), WorkflowError> {
+        self.child.kill().map_err(WorkflowError::Io)
+    }
+}
+
+/// Concrete implementation of the ProcessRunner trait for system processes.
+/// Wraps `std::process::Child` with output capture and timing.
+pub struct SystemProcessRunner;
+
+impl ProcessRunner for SystemProcessRunner {
+    fn spawn(
+        &self,
+        workdir: &Path,
+        command: &str,
+        args: &[String],
+        env: &HashMap<String, String>,
+    ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
+        let child = Command::new(command)
+            .args(args)
+            .envs(env)
+            .current_dir(workdir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(WorkflowError::Io)?;
+
+        Ok(Box::new(SystemProcessHandle {
+            child: Some(child),
+            start: Instant::now(),
+        }))
+    }
+}
+
+/// Handle to a running system process.
+/// Uses `Option<Child>` to allow consuming the child once via `wait()`.
+pub struct SystemProcessHandle {
+    child: Option<Child>,
+    start: Instant,
+}
+
+impl ProcessHandle for SystemProcessHandle {
+    fn is_running(&mut self) -> bool {
+        match &mut self.child {
+            Some(child) => matches!(child.try_wait(), Ok(None)),
+            None => false,  // Already waited/terminated
+        }
+    }
+
+    fn terminate(&mut self) -> Result<(), WorkflowError> {
+        match &mut self.child {
+            Some(child) => child.kill().map_err(WorkflowError::Io),
+            None => Ok(()),  // Idempotent: already terminated/waited
+        }
+    }
+
+    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
+        let child = self.child.take()
+            .ok_or_else(|| WorkflowError::InvalidConfig("wait() called twice".into()))?;
+
+        let output = child.wait_with_output().map_err(WorkflowError::Io)?;
+
+        Ok(ProcessResult {
+            exit_code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            duration: self.start.elapsed(),
+        })
     }
 }

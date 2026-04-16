@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use crate::error::WorkflowError;
 use petgraph::algo;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::{HashMap, HashSet};
@@ -22,9 +22,9 @@ impl Dag {
         }
     }
 
-    pub fn add_node(&mut self, id: String) -> Result<()> {
+    pub fn add_node(&mut self, id: String) -> Result<(), WorkflowError> {
         if self.node_map.contains_key(&id) {
-            bail!("duplicate task id: {id}");
+            return Err(WorkflowError::DuplicateTaskId(id));
         }
         let ni = self.graph.add_node(id.clone());
         self.node_map.insert(id, ni);
@@ -32,19 +32,25 @@ impl Dag {
     }
 
     /// Edge: from (dep) → to (dependent). Errors if node missing or cycle created.
-    pub fn add_edge(&mut self, from: &str, to: &str) -> Result<()> {
+    pub fn add_edge(&mut self, from: &str, to: &str) -> Result<(), WorkflowError> {
         let &f = self
             .node_map
             .get(from)
-            .ok_or_else(|| anyhow::anyhow!("unknown task: {from}"))?;
+            .ok_or_else(|| WorkflowError::UnknownDependency {
+                task: to.to_string(),
+                dependency: from.to_string(),
+            })?;
         let &t = self
             .node_map
             .get(to)
-            .ok_or_else(|| anyhow::anyhow!("unknown task: {to}"))?;
+            .ok_or_else(|| WorkflowError::UnknownDependency {
+                task: to.to_string(),
+                dependency: to.to_string(),
+            })?;
         let eid = self.graph.add_edge(f, t, ());
         if algo::toposort(&self.graph, None).is_err() {
             self.graph.remove_edge(eid);
-            bail!("adding edge {from}→{to} would create a cycle");
+            return Err(WorkflowError::CycleDetected);
         }
         Ok(())
     }
@@ -92,6 +98,7 @@ impl Dag {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::WorkflowError;
 
     fn make_dag(nodes: &[&str], edges: &[(&str, &str)]) -> Dag {
         let mut dag = Dag::new();
@@ -118,13 +125,28 @@ mod tests {
     fn unknown_dep_errors() {
         let mut dag = Dag::new();
         dag.add_node("b".to_owned()).unwrap();
-        assert!(dag.add_edge("missing", "b").is_err());
+        // from="missing" is absent — first lookup fails.
+        // Expected: task="b" (the dependent), dependency="missing" (the unknown dep).
+        assert!(matches!(
+            dag.add_edge("missing", "b").unwrap_err(),
+            WorkflowError::UnknownDependency { ref task, ref dependency }
+            if task == "b" && dependency == "missing"
+        ));
+        // to="missing" is absent — second lookup fails.
+        // After the Step 1 fix, both fields equal "missing" (the missing node's id).
+        // This is distinguishable from the first case (where task="b", dependency="missing").
+        dag.add_node("a".to_owned()).unwrap();
+        assert!(matches!(
+            dag.add_edge("a", "missing").unwrap_err(),
+            WorkflowError::UnknownDependency { ref task, ref dependency }
+            if task == "missing" && dependency == "missing"
+        ));
     }
 
     #[test]
     fn cycle_detection() {
         let mut dag = make_dag(&["a", "b"], &[("a", "b")]);
-        assert!(dag.add_edge("b", "a").is_err());
+        assert!(matches!(dag.add_edge("b", "a").unwrap_err(), WorkflowError::CycleDetected));
     }
 
     #[test]
@@ -133,5 +155,15 @@ mod tests {
         let completed: HashSet<String> = ["a".to_owned()].into();
         let ready = dag.ready_tasks(&completed);
         assert_eq!(ready, vec!["b"]);
+    }
+
+    #[test]
+    fn duplicate_node_errors() {
+        let mut dag = Dag::new();
+        dag.add_node("x".to_owned()).unwrap();
+        assert!(matches!(
+            dag.add_node("x".to_owned()).unwrap_err(),
+            WorkflowError::DuplicateTaskId(_)
+        ));
     }
 }
