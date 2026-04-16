@@ -20,7 +20,35 @@ pub enum TaskStatus {
     SkippedDueToDependencyFailure,
 }
 
-/// Trait defining the state management interface for workflows.
+/// State management interface for workflow execution.
+///
+/// This trait defines the contract for persisting and retrieving task status during
+/// live workflow runs. Implementations handle runtime mutation of task states as
+/// the workflow progresses, ensuring durability through periodic saves.
+///
+/// Crash Recovery and Resume:
+/// The `JsonStateStore` implementation provides automatic crash recovery semantics.
+/// When loading via `JsonStateStore::load`, any tasks marked as `Running`, `Failed`, or
+/// `SkippedDueToDependencyFailure` are automatically reset to `Pending`. This ensures
+/// that incomplete or failed runs can be safely resumed without stale state blocking
+/// progress. Note that `Skipped` and `SkippedDueToDependencyFailure` (when not in
+/// a failed context) are preserved as-is.
+///
+/// Read-Only Inspection:
+/// For read-only status inspection (e.g., CLI display, `workflow inspect` commands),
+/// use `JsonStateStore::load_raw`. Unlike `load`, this method does not apply crash
+/// recovery resets and returns the state exactly as persisted to disk.
+///
+/// Workflow Summary:
+/// The `summary` method on `StateStoreExt` aggregates all task statuses into a
+/// concise overview (pending, running, completed, failed, skipped counts) suitable
+/// for progress reporting and export.
+///
+/// Persistence Semantics:
+/// The `load` and `load_raw` methods described above are specific to the
+/// `JsonStateStore` implementation, not part of this trait. For details on how
+/// state is persisted to disk (atomic writes via temp file + rename) and crash
+/// recovery behavior, see the `JsonStateStore` documentation.
 pub trait StateStore: Send + Sync {
     /// Returns the current status of a task.
     fn get_status(&self, id: &str) -> Option<TaskStatus>;

@@ -55,6 +55,18 @@ impl Workflow {
         Ok(self)
     }
 
+    /// Returns a reference to the interrupt handle for testing signal injection.
+    ///
+    /// This method provides an `Arc<AtomicBool>` that can be used in tests to
+    /// simulate system signals (SIGINT/SIGTERM) before workflow execution begins.
+    ///
+    /// # Note
+    /// This is the intended signal-injection point for testing, not a general-purpose
+    /// pause mechanism. Users should not call this method outside of test code.
+    pub fn interrupt_handle(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.interrupt)
+    }
+
     pub fn add_task(&mut self, task: Task) -> Result<(), WorkflowError> {
         if self.tasks.contains_key(&task.id) {
             return Err(WorkflowError::DuplicateTaskId(task.id.clone()));
