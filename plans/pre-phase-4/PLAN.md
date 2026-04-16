@@ -104,19 +104,43 @@ Gate checklist:
 ---
 
 ### TASK-6: Widen TaskClosure error type
-**File:** `workflow_core/src/task.rs`
+**Files:** `workflow_core/src/task.rs`, `workflow_core/src/workflow.rs`, `workflow_core/tests/integration.rs`, `workflow_core/tests/hubbard_u_sweep.rs`
 **Depends on:** TASK-5
 **Parallel with:** TASK-7, TASK-10
 
-Before editing: use `LSP references` on `TaskClosure` to find all usages. Confirm no call site constructs a `TaskClosure` directly (bypassing the builder methods) — this is a breaking public API change for any such caller.
+**Status note:** `TaskClosure` alias and builder generics are already implemented. The remaining work is updating call sites to use concrete error types.
 
-Change `TaskClosure` alias to use `Box<dyn std::error::Error + Send + Sync>` as the error type.
+Before editing: use `LSP references` on `TaskClosure` to find all usages. Confirm which call sites construct a `TaskClosure` directly (bypassing the builder methods).
 
-Update `setup` and `collect` builder methods to be generic over `F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static` where `E: std::error::Error + Send + Sync + 'static`. Both builders wrap the user closure in an outer closure that maps the error via boxing.
+**Already done:**
+- `TaskClosure` alias uses `Box<dyn std::error::Error + Send + Sync>` as the error type.
+- `setup` and `collect` builder methods are generic over `F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static` where `E: std::error::Error + Send + Sync + 'static`. Both builders wrap the user closure in an outer closure that maps the error via boxing.
 
-Existing call sites in `workflow.rs` that call `e.to_string()` on the closure error compile unchanged — `to_string()` works on any `dyn Error`. Existing closures returning `Result<(), WorkflowError>` continue to compile because `WorkflowError: Error + Send + Sync + 'static`.
+**Remaining work — update call sites to remove `Box<dyn ...>` annotations:**
 
-Acceptance: existing `.setup(move |_| Ok(()))` callers compile unchanged; `cargo test -p workflow_core` passes; LSP diagnostics on `task.rs` and `workflow.rs` show no new errors.
+Root cause: `()` does not implement `std::error::Error`, so infallible closures cannot infer `E`, forcing a turbofish. Fix by using concrete error types or `std::convert::Infallible`.
+
+`workflow_core/tests/integration.rs` — infallible closures:
+```rust
+// before
+.setup(move |_| { ...; Ok::<_, Box<dyn std::error::Error + Send + Sync>>(()) })
+// after
+.setup(move |_| -> Result<(), std::convert::Infallible> { ...; Ok(()) })
+```
+
+`workflow_core/tests/hubbard_u_sweep.rs` — closures returning `WorkflowError`:
+```rust
+// before
+.setup(move |_| -> Result<(), Box<dyn std::error::Error + Send + Sync>> { ...; Ok::<_, Box<dyn std::error::Error + Send + Sync>>(()) })
+// after
+.setup(move |_| -> Result<(), WorkflowError> { ...; Ok(()) })
+```
+
+`workflow_core/src/workflow.rs` — closures with `std::io::Error` paths: use `-> Result<(), std::io::Error>` and drop manual `Box::from` wrapping; `?` works directly.
+
+`workflow_core/src/workflow.rs` — infallible closures: use `-> Result<(), std::convert::Infallible>`.
+
+Acceptance: `cargo test -p workflow_core` passes; no `Box<dyn std::error::Error + Send + Sync>` annotations remain in closure return types; LSP diagnostics on `task.rs`, `workflow.rs`, and test files show no errors.
 
 ---
 
