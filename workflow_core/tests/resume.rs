@@ -1,10 +1,15 @@
+mod common;
+
 use std::collections::HashMap;
 use std::sync::Arc;
+use workflow_core::task::ExecutionMode;
 use tempfile::tempdir;
 use workflow_core::{
-    ExecutionMode, JsonStateStore, StateStoreExt, Task, Workflow,
+    JsonStateStore, StateStoreExt, Task, Workflow,
     state::{StateStore, TaskStatus},
 };
+
+use common::direct;
 
 #[test]
 fn test_resume_skips_completed_reruns_interrupted() {
@@ -25,16 +30,7 @@ fn test_resume_skips_completed_reruns_interrupted() {
     let mut wf = Workflow::new("test_resume");
 
     // Task a: already Completed in state, will not be dispatched.
-    wf.add_task(Task::new(
-        "a",
-        ExecutionMode::Direct {
-            command: "true".into(),
-            args: vec![],
-            env: HashMap::new(),
-            timeout: None,
-        },
-    ))
-    .unwrap();
+    wf.add_task(Task::new("a", direct("true"))).unwrap();
 
     // Task b: was interrupted (Running -> Pending on load), will run and succeed.
     wf.add_task(

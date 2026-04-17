@@ -1,17 +1,17 @@
-use std::collections::HashMap;
+mod common;
+
 use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 use workflow_core::HookExecutor;
 use workflow_core::process::ProcessRunner;
 use workflow_core::state::{JsonStateStore, StateStore, TaskStatus};
-use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::task::Task;
 use workflow_core::workflow::Workflow;
 use workflow_utils::{ShellHookExecutor, SystemProcessRunner};
 
 fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner) }
 fn executor() -> Arc<dyn HookExecutor> { Arc::new(ShellHookExecutor) }
-fn direct(cmd: &str) -> ExecutionMode {
-    ExecutionMode::Direct { command: cmd.into(), args: vec![], env: HashMap::new(), timeout: None }
-}
+
+use common::direct;
 
 #[test]
 fn resume_skips_completed_reruns_failed() {

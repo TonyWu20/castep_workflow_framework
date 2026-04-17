@@ -17,3 +17,5 @@
 
 - Always pass corresponding `subagent_type` to `Agent` tool when prompted to call subagents.
 - Always use space instead of tab in writing and editing code files.
+- Always launch `implementation-executor (agent)` when running skills
+  `implementation-executor` and `fix`
