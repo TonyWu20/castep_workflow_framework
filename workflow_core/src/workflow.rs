@@ -144,124 +144,16 @@ impl Workflow {
                 return Err(WorkflowError::Interrupted);
             }
 
-            // Poll finished tasks
-            let mut finished: Vec<String> = Vec::new();
-            for (id, t) in handles.iter_mut() {
-                // Timeout check first
-                if let Some(&timeout) = task_timeouts.get(id) {
-                    if t.started_at.elapsed() >= timeout {
-                        t.handle.terminate().ok();
-                        state.mark_failed(
-                            id,
-                            WorkflowError::TaskTimeout(id.clone()).to_string(),
-                        );
-                        state.save()?;
-                        finished.push(id.clone());
-                        continue;
-                    }
-                }
-                if !t.handle.is_running() {
-                    finished.push(id.clone());
-                }
-            }
+            let finished = poll_finished(&mut handles, &task_timeouts, state)?;
 
             // Remove and process finished tasks
             for id in finished {
-                if let Some(mut t) = handles.remove(&id) {
-                    // Skip wait() if already marked failed (e.g., timed out)
-                    if matches!(state.get_status(&id), Some(TaskStatus::Failed { .. })) {
-                        continue;
-                    }
-
-                    // Execute the process and handle result
-                    let (final_state, exit_code) = if let Ok(process_result) = t.handle.wait() {
-                        match process_result.exit_code {
-                            Some(0) => {
-                                state.mark_completed(&id);
-                                if let Some(ref collect) = t.collect {
-                                    if let Err(e) = collect(&t.workdir) {
-                                        tracing::warn!(
-                                            "Collect closure for task '{}' failed: {}",
-                                            id,
-                                            e
-                                        );
-                                    }
-                                }
-                                ("completed", process_result.exit_code)
-                            }
-                            _ => {
-                                state.mark_failed(
-                                    &id,
-                                    format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
-                                );
-                                ("failed", process_result.exit_code)
-                            }
-                        }
-                    } else {
-                        state.mark_failed(&id, "process terminated".to_string());
-                        ("failed", None)
-                    };
-
-                    // Fire OnComplete/OnFailure hooks
-                    let ctx = crate::monitoring::HookContext {
-                        task_id: id.clone(),
-                        workdir: t.workdir,
-                        state: final_state.to_string(),
-                        exit_code,
-                    };
-                    for hook in &t.monitors {
-                        let should_fire = matches!(
-                            (&hook.trigger, final_state),
-                            (crate::monitoring::HookTrigger::OnComplete, "completed")
-                                | (crate::monitoring::HookTrigger::OnFailure, "failed")
-                        );
-                        if should_fire {
-                            if let Err(e) = hook_executor.execute_hook(hook, &ctx) {
-                                tracing::warn!(
-                                    "Hook '{}' for task '{}' failed: {}",
-                                    hook.name,
-                                    id,
-                                    e
-                                );
-                            }
-                        }
-                    }
-                    state.save()?;
+                if let Some(t) = handles.remove(&id) {
+                    process_finished(&id, t, state, hook_executor.as_ref())?;
                 }
             }
 
-            // Skip propagation logic
-            let mut changed = true;
-            while changed {
-                changed = false;
-                let to_skip: Vec<String> = dag
-                    .task_ids()
-                    .filter(|id| matches!(state.get_status(id), Some(TaskStatus::Pending)))
-                    .filter(|id| {
-                        self.tasks
-                            .get(*id)
-                            .map(|t| {
-                                t.dependencies.iter().any(|dep| {
-                                    matches!(
-                                        state.get_status(dep.as_str()),
-                                        Some(TaskStatus::Failed { .. })
-                                            | Some(TaskStatus::Skipped)
-                                            | Some(TaskStatus::SkippedDueToDependencyFailure)
-                                    )
-                                })
-                            })
-                            .unwrap_or(false)
-                    })
-                    .cloned()
-                    .collect();
-                if !to_skip.is_empty() {
-                    changed = true;
-                    for id in to_skip.iter() {
-                        state.mark_skipped_due_to_dep_failure(id);
-                    }
-                }
-            }
-            state.save()?;
+            propagate_skips(&dag, state, &self.tasks)?;
 
             // Dispatch ready tasks
             let done_set: HashSet<String> = state
@@ -296,65 +188,46 @@ impl Workflow {
                             }
                         }
 
-                        // Spawn process via runner
-                        match &task.mode {
-                            ExecutionMode::Direct {
-                                command,
-                                args,
-                                env,
-                                timeout,
-                            } => {
-                                // Register timeout if specified
-                                if let Some(d) = timeout {
-                                    task_timeouts.insert(id.to_string(), *d);
-                                }
+                        let ExecutionMode::Direct {
+                            command,
+                            args,
+                            env,
+                            timeout,
+                        } = &task.mode else {
+                            unreachable!("non-Direct tasks rejected by upfront validation");
+                        };
 
-                                let monitors = task.monitors.clone();
-                                let task_workdir = task.workdir.clone();
-                                let handle = match runner.spawn(&task.workdir, command, args, env) {
-                                    Ok(h) => h,
-                                    Err(e) => {
-                                        state.mark_failed(&id, e.to_string());
-                                        state.save()?;
-                                        continue;
-                                    }
-                                };
-
-                                // Fire OnStart hooks
-                                let ctx = crate::monitoring::HookContext {
-                                    task_id: id.clone(),
-                                    workdir: task_workdir,
-                                    state: "running".to_string(),
-                                    exit_code: None,
-                                };
-                                for hook in &monitors {
-                                    if matches!(
-                                        hook.trigger,
-                                        crate::monitoring::HookTrigger::OnStart
-                                    ) {
-                                        if let Err(e) = hook_executor.execute_hook(hook, &ctx) {
-                                            tracing::warn!(
-                                                "OnStart hook '{}' for task '{}' failed: {}",
-                                                hook.name,
-                                                id,
-                                                e
-                                            );
-                                        }
-                                    }
-                                }
-
-                                handles.insert(id.to_string(), InFlightTask {
-                                    handle,
-                                    started_at: Instant::now(),
-                                    monitors,
-                                    collect: task.collect,
-                                    workdir: task.workdir,
-                                });
-                            }
-                            &ExecutionMode::Queued { .. } => {
-                                unreachable!("Queued tasks rejected by upfront validation");
-                            }
+                        if let Some(d) = timeout {
+                            task_timeouts.insert(id.to_string(), *d);
                         }
+
+                        let monitors = task.monitors.clone();
+                        let task_workdir = task.workdir.clone();
+                        let handle = match runner.spawn(&task.workdir, command, args, env) {
+                            Ok(h) => h,
+                            Err(e) => {
+                                state.mark_failed(&id, e.to_string());
+                                state.save()?;
+                                continue;
+                            }
+                        };
+
+                        fire_hooks(
+                            &monitors,
+                            task_workdir,
+                            "running",
+                            None,
+                            &id,
+                            hook_executor.as_ref(),
+                        );
+
+                        handles.insert(id.to_string(), InFlightTask {
+                            handle,
+                            started_at: Instant::now(),
+                            monitors,
+                            collect: task.collect,
+                            workdir: task.workdir,
+                        });
                     }
                 }
             }
@@ -377,28 +250,7 @@ impl Workflow {
             std::thread::sleep(Duration::from_millis(50));
         }
 
-        // Build WorkflowSummary
-        let mut succeeded = Vec::new();
-        let mut failed = Vec::new();
-        let mut skipped = Vec::new();
-
-        for (id, status) in state.all_tasks() {
-            match status {
-                TaskStatus::Completed => succeeded.push(id),
-                TaskStatus::Failed { error } => failed.push(FailedTask { id, error }),
-                TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure => {
-                    skipped.push(id)
-                }
-                _ => {}
-            }
-        }
-
-        Ok(WorkflowSummary {
-            succeeded,
-            failed,
-            skipped,
-            duration: workflow_start.elapsed(),
-        })
+        Ok(build_summary(state, workflow_start))
     }
 
     fn build_dag(&self) -> Result<Dag, WorkflowError> {
@@ -413,6 +265,195 @@ impl Workflow {
         }
         Ok(dag)
     }
+}
+
+/// Fires monitoring hooks that match the given trigger conditions.
+///
+/// Logs warnings for individual hook failures but does not propagate them.
+fn fire_hooks(
+    monitors: &[crate::monitoring::MonitoringHook],
+    workdir: std::path::PathBuf,
+    final_state: &str,
+    exit_code: Option<i32>,
+    task_id: &str,
+    hook_executor: &dyn HookExecutor,
+) {
+    let ctx = crate::monitoring::HookContext {
+        task_id: task_id.to_string(),
+        workdir,
+        state: final_state.to_string(),
+        exit_code,
+    };
+    for hook in monitors {
+        let should_fire = matches!((&hook.trigger, final_state), (
+            crate::monitoring::HookTrigger::OnStart,
+            "running"
+        ) | (crate::monitoring::HookTrigger::OnComplete, "completed")
+            | (crate::monitoring::HookTrigger::OnFailure, "failed"));
+        if should_fire {
+            if let Err(e) = hook_executor.execute_hook(hook, &ctx) {
+                tracing::warn!(
+                    "Hook '{}' for task '{}' failed: {}",
+                    hook.name,
+                    task_id,
+                    e
+                );
+            }
+        }
+    }
+}
+
+/// Processes a single finished task: waits for exit, updates state, runs collect, fires hooks.
+///
+/// If the task is already marked as Failed (e.g., timed out), returns immediately without calling `wait()`.
+fn process_finished(
+    id: &str,
+    mut t: InFlightTask,
+    state: &mut dyn StateStore,
+    hook_executor: &dyn HookExecutor,
+) -> Result<(), WorkflowError> {
+    // Guard: skip wait() if already marked failed (e.g., timed out)
+    if matches!(state.get_status(id), Some(TaskStatus::Failed { .. })) {
+        return Ok(());
+    }
+
+    let (final_state, exit_code) = if let Ok(process_result) = t.handle.wait() {
+        match process_result.exit_code {
+            Some(0) => {
+                state.mark_completed(id);
+                if let Some(ref collect) = t.collect {
+                    if let Err(e) = collect(&t.workdir) {
+                        tracing::warn!(
+                            "Collect closure for task '{}' failed: {}",
+                            id,
+                            e
+                        );
+                    }
+                }
+                ("completed", process_result.exit_code)
+            }
+            _ => {
+                state.mark_failed(
+                    id,
+                    format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
+                );
+                ("failed", process_result.exit_code)
+            }
+        }
+    } else {
+        state.mark_failed(id, "process terminated".to_string());
+        ("failed", None)
+    };
+
+    fire_hooks(
+        &t.monitors,
+        t.workdir,
+        final_state,
+        exit_code,
+        id,
+        hook_executor,
+    );
+    state.save()?;
+
+    Ok(())
+}
+
+/// Propagates skip status to tasks whose dependencies have failed or been skipped.
+///
+/// Runs a fixpoint loop: repeatedly finds Pending tasks with failed/skipped
+/// dependencies and marks them SkippedDueToDependencyFailure until stable.
+fn propagate_skips(
+    dag: &Dag,
+    state: &mut dyn StateStore,
+    tasks: &HashMap<String, Task>,
+) -> Result<(), WorkflowError> {
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let to_skip: Vec<String> = dag
+            .task_ids()
+            .filter(|id| matches!(state.get_status(id), Some(TaskStatus::Pending)))
+            .filter(|id| {
+                tasks
+                    .get(*id)
+                    .map(|t| {
+                        t.dependencies.iter().any(|dep| {
+                            matches!(
+                                state.get_status(dep.as_str()),
+                                Some(TaskStatus::Failed { .. })
+                                    | Some(TaskStatus::Skipped)
+                                    | Some(TaskStatus::SkippedDueToDependencyFailure)
+                            )
+                        })
+                    })
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+        if !to_skip.is_empty() {
+            changed = true;
+            for id in to_skip.iter() {
+                state.mark_skipped_due_to_dep_failure(id);
+            }
+        }
+    }
+    state.save()?;
+    Ok(())
+}
+
+/// Builds the workflow execution summary from final task states.
+fn build_summary(state: &dyn StateStore, workflow_start: Instant) -> WorkflowSummary {
+    let mut succeeded = Vec::new();
+    let mut failed = Vec::new();
+    let mut skipped = Vec::new();
+
+    for (id, status) in state.all_tasks() {
+        match status {
+            TaskStatus::Completed => succeeded.push(id),
+            TaskStatus::Failed { error } => failed.push(FailedTask { id, error }),
+            TaskStatus::Skipped | TaskStatus::SkippedDueToDependencyFailure => {
+                skipped.push(id)
+            }
+            _ => {}
+        }
+    }
+
+    WorkflowSummary {
+        succeeded,
+        failed,
+        skipped,
+        duration: workflow_start.elapsed(),
+    }
+}
+
+/// Polls in-flight task handles for completion or timeout.
+///
+/// Returns the IDs of tasks that have finished (either naturally or via timeout).
+/// Timed-out tasks are terminated and marked failed before being returned.
+fn poll_finished(
+    handles: &mut HashMap<String, InFlightTask>,
+    task_timeouts: &HashMap<String, Duration>,
+    state: &mut dyn StateStore,
+) -> Result<Vec<String>, WorkflowError> {
+    let mut finished: Vec<String> = Vec::new();
+    for (id, t) in handles.iter_mut() {
+        if let Some(&timeout) = task_timeouts.get(id) {
+            if t.started_at.elapsed() >= timeout {
+                t.handle.terminate().ok();
+                state.mark_failed(
+                    id,
+                    WorkflowError::TaskTimeout(id.clone()).to_string(),
+                );
+                state.save()?;
+                finished.push(id.clone());
+                continue;
+            }
+        }
+        if !t.handle.is_running() {
+            finished.push(id.clone());
+        }
+    }
+    Ok(finished)
 }
 
 /// A task that failed during workflow execution.
@@ -752,6 +793,43 @@ mod tests {
     fn builder_with_custom_max_parallel() {
         let wf = Workflow::new("test").with_max_parallel(4).unwrap();
         assert_eq!(wf.max_parallel, 4);
+    }
+
+    #[test]
+    fn three_task_chain_skip_propagation() -> Result<(), WorkflowError> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut wf = Workflow::new("wf_chain_skip").with_max_parallel(4)?;
+
+        wf.add_task(Task::new("a", ExecutionMode::Direct {
+            command: "false".into(),
+            args: vec![],
+            env: HashMap::new(),
+            timeout: None,
+        })).unwrap();
+        wf.add_task(Task::new("b", ExecutionMode::Direct {
+            command: "true".into(),
+            args: vec![],
+            env: HashMap::new(),
+            timeout: None,
+        }).depends_on("a")).unwrap();
+        wf.add_task(Task::new("c", ExecutionMode::Direct {
+            command: "true".into(),
+            args: vec![],
+            env: HashMap::new(),
+            timeout: None,
+        }).depends_on("b")).unwrap();
+
+        let runner: Arc<dyn ProcessRunner> = Arc::new(StubRunner);
+        let executor: Arc<dyn HookExecutor> = Arc::new(StubHookExecutor);
+        let state_path = dir.path().join(".wf_chain_skip.workflow.json");
+        let mut state = Box::new(JsonStateStore::new("wf_chain_skip", state_path));
+
+        wf.run(state.as_mut(), runner, executor)?;
+
+        assert!(matches!(state.get_status("a"), Some(TaskStatus::Failed { .. })));
+        assert!(matches!(state.get_status("b"), Some(TaskStatus::SkippedDueToDependencyFailure)));
+        assert!(matches!(state.get_status("c"), Some(TaskStatus::SkippedDueToDependencyFailure)));
+        Ok(())
     }
 
     #[test]
