@@ -98,19 +98,14 @@ impl Workflow {
         signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
         signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
 
-        // Reject Queued tasks upfront — before any processes are spawned — so we never orphan handles.
+        // Reject Queued tasks and Periodic hooks upfront — before any processes are spawned —
+        // so we never orphan handles.
         for (id, task) in &self.tasks {
             if matches!(task.mode, ExecutionMode::Queued { .. }) {
                 return Err(WorkflowError::InvalidConfig(
                     format!("task '{}': Queued execution mode is not yet implemented", id)
                 ));
             }
-        }
-
-        let dag = self.build_dag()?;
-
-        // Reject Periodic hooks upfront — not yet implemented in the run loop.
-        for (id, task) in &self.tasks {
             for hook in &task.monitors {
                 if matches!(hook.trigger, crate::monitoring::HookTrigger::Periodic { .. }) {
                     return Err(WorkflowError::InvalidConfig(
@@ -119,6 +114,8 @@ impl Workflow {
                 }
             }
         }
+
+        let dag = self.build_dag()?;
 
         // Initialize state for all tasks
         for id in dag.task_ids() {
@@ -259,8 +256,8 @@ impl Workflow {
                     .collect();
                 if !to_skip.is_empty() {
                     changed = true;
-                    for id in to_skip {
-                        state.mark_skipped_due_to_dep_failure(&id);
+                    for id in to_skip.iter() {
+                        state.mark_skipped_due_to_dep_failure(id);
                     }
                 }
             }
@@ -309,7 +306,7 @@ impl Workflow {
                             } => {
                                 // Register timeout if specified
                                 if let Some(d) = timeout {
-                                    task_timeouts.insert(id.clone(), *d);
+                                    task_timeouts.insert(id.to_string(), *d);
                                 }
 
                                 let monitors = task.monitors.clone();
@@ -346,7 +343,7 @@ impl Workflow {
                                     }
                                 }
 
-                                handles.insert(id.clone(), InFlightTask {
+                                handles.insert(id.to_string(), InFlightTask {
                                     handle,
                                     started_at: Instant::now(),
                                     monitors,
@@ -354,7 +351,7 @@ impl Workflow {
                                     workdir: task.workdir,
                                 });
                             }
-                            ExecutionMode::Queued { .. } => {
+                            &ExecutionMode::Queued { .. } => {
                                 unreachable!("Queued tasks rejected by upfront validation");
                             }
                         }
