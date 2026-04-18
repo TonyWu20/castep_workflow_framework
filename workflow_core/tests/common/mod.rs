@@ -79,3 +79,13 @@ pub fn direct(cmd: &str) -> ExecutionMode {
         timeout: None,
     }
 }
+
+#[allow(dead_code)]
+pub fn direct_with_args(cmd: &str, args: &[&str]) -> ExecutionMode {
+    ExecutionMode::Direct {
+        command: cmd.into(),
+        args: args.iter().map(|a| a.to_string()).collect(),
+        env: HashMap::new(),
+        timeout: None,
+    }
+}

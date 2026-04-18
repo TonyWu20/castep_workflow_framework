@@ -4,7 +4,7 @@ use workflow_core::{HookExecutor, process::ProcessRunner, state::{JsonStateStore
 use workflow_utils::{ShellHookExecutor, SystemProcessRunner};
 
 mod common;
-use common::{RecordingExecutor, direct};
+use common::{RecordingExecutor, direct, direct_with_args};
 
 fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner::new()) }
 
@@ -139,7 +139,7 @@ fn periodic_hook_fires_during_long_task() {
 
     let mut wf = Workflow::new("periodic_test").with_max_parallel(4).unwrap();
     wf.add_task(
-        Task::new("long_task", direct("sleep 8"))
+        Task::new("long_task", direct_with_args("sleep", &["8"]))
             .monitors(vec![periodic_hook])
     ).unwrap();
 
