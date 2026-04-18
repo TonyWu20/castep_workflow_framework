@@ -585,14 +585,14 @@ mod tests {
                     timeout: None,
                 },
             )
-.setup(move |_| -> Result<(), std::io::Error> {
-      let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_for_a)?;
-      writeln!(f, "a")?;
-      Ok(())
-    }),
+            .setup(move |_| -> Result<(), std::io::Error> {
+                let mut f = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_for_a)?;
+                writeln!(f, "a")?;
+                Ok(())
+            }),
         )
         .unwrap();
 
