@@ -1,0 +1,11 @@
+{
+  "task_id": "TASK-7",
+  "task_description": "Implement `QueuedSubmitter` trait for `QueuedRunner`",
+  "plan_path": "/Users/tony/programming/castep_workflow_framework/plans/phase-4/PHASE4_IMPLEMENTATION_PLAN.md",
+  "plan_slug": "phase4-implementation-plan",
+  "acceptance_commands": [
+    "cargo check --workspace"
+  ],
+  "acceptance_prose": [],
+  "timestamp": "2026-04-18T22:13:43Z"
+}

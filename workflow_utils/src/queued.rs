@@ -69,7 +69,10 @@ impl QueuedRunner {
         }
     }
 
-    pub fn submit(
+}
+
+impl workflow_core::process::QueuedSubmitter for QueuedRunner {
+    fn submit(
         &self,
         workdir: &Path,
         task_id: &str,
