@@ -355,6 +355,7 @@ fn propagate_skips(
     state: &mut dyn StateStore,
     tasks: &HashMap<String, Task>,
 ) -> Result<(), WorkflowError> {
+    let mut any_skipped = false;
     let mut changed = true;
     while changed {
         changed = false;
@@ -380,12 +381,15 @@ fn propagate_skips(
             .collect();
         if !to_skip.is_empty() {
             changed = true;
+            any_skipped = true;
             for id in to_skip.iter() {
                 state.mark_skipped_due_to_dep_failure(id);
             }
         }
     }
-    state.save()?;
+    if any_skipped {
+        state.save()?;
+    }
     Ok(())
 }
 

@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use workflow_core::{HookContext, HookExecutor, HookResult, MonitoringHook, WorkflowError};
 use workflow_core::task::ExecutionMode;
 
+#[allow(dead_code)]
 /// A test executor that records all hook invocations.
 ///
 /// Stores calls as `(hook_name, task_id)` pairs in a shared `Arc<Mutex<Vec<_>>>`.
@@ -23,6 +24,7 @@ impl Clone for RecordingExecutor {
 
 impl RecordingExecutor {
     /// Creates a new `RecordingExecutor` with an empty call log.
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
@@ -32,6 +34,7 @@ impl RecordingExecutor {
     /// Returns a reference to the recorded calls.
     ///
     /// Each entry is `(hook_name, task_id)` in the order they were executed.
+    #[allow(dead_code)]
     pub fn calls(&self) -> Vec<(String, String)> {
         self.calls
             .lock()
@@ -58,6 +61,7 @@ impl HookExecutor for RecordingExecutor {
     }
 }
 
+#[allow(dead_code)]
 /// Creates an `ExecutionMode::Direct` executor for test tasks.
 ///
 /// This is a convenience builder that returns an `ExecutionMode` with:

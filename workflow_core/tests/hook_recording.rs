@@ -1,16 +1,12 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use workflow_core::{HookExecutor, process::ProcessRunner, state::{JsonStateStore, StateStore, TaskStatus}, task::ExecutionMode, Workflow, Task};
+use workflow_core::{HookExecutor, process::ProcessRunner, state::{JsonStateStore, StateStore, TaskStatus}, Workflow, Task};
 use workflow_utils::{ShellHookExecutor, SystemProcessRunner};
 
 mod common;
-use common::RecordingExecutor;
+use common::{RecordingExecutor, direct};
 
 fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner) }
-fn direct(cmd: &str) -> ExecutionMode {
-    ExecutionMode::Direct { command: cmd.into(), args: vec![], env: HashMap::new(), timeout: None }
-}
 
 #[test]
 fn setup_failure_skips_dependent() {
@@ -22,7 +18,7 @@ fn setup_failure_skips_dependent() {
     // Task "a" setup returns error → task status becomes Failed
     wf.add_task(
         Task::new("a", direct("true"))
-            .setup(|_| -> Result<(), std::io::Error> { Err(std::io::Error::new(std::io::ErrorKind::Other, "setup failed")) })
+            .setup(|_| -> Result<(), std::io::Error> { Err(std::io::Error::other("setup failed")) })
     ).unwrap();
 
     // Task "b" depends on "a"
@@ -54,7 +50,7 @@ fn collect_failure_does_not_fail_task() {
 
     wf.add_task(
         Task::new("a", direct("true"))
-            .collect(|_| -> Result<(), std::io::Error> { Err(std::io::Error::new(std::io::ErrorKind::Other, "collect failed")) })
+            .collect(|_| -> Result<(), std::io::Error> { Err(std::io::Error::other("collect failed")) })
     ).unwrap();
 
     let mut state = JsonStateStore::new("collect_failure", state_path.clone());

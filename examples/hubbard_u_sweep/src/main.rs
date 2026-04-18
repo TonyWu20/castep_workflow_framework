@@ -33,7 +33,7 @@ fn main() -> Result<()> {
             },
         )
         .workdir(workdir.clone())
-        .setup(move |workdir| {
+        .setup(move |workdir| -> Result<(), WorkflowError> {
             create_dir(workdir.to_str().unwrap())?;
 
             let mut cell_doc: CellDocument =
