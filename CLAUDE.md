@@ -15,7 +15,10 @@
   3. **Validation**: `LSP diagnostics` to check for errors immediately after edits
   4. **Refactoring**: `LSP rename` for symbol renames, `LSP references` to find all usages
 
+- Always launch `implementation-executor (agent)` when running skills
+  `implementation-executor` and `fix`, specify `subagent_type` to `Agent` tool.
 - Always pass corresponding `subagent_type` to `Agent` tool when prompted to call subagents.
 - Always use space instead of tab in writing and editing code files.
-- Always launch `implementation-executor (agent)` when running skills
-  `implementation-executor` and `fix`
+- When subagent's job done, sometimes you receive stale error message. Verify
+  the job with given instructions for that task, never fully trust the subagent's
+  statement of completed or errors.'

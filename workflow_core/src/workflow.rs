@@ -63,6 +63,7 @@ impl Workflow {
     /// # Note
     /// This is the intended signal-injection point for testing, not a general-purpose
     /// pause mechanism. Users should not call this method outside of test code.
+    #[cfg(test)]
     pub fn interrupt_handle(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.interrupt)
     }

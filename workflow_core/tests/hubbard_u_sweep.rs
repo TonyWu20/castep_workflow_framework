@@ -35,8 +35,11 @@ fn test_hubbard_u_sweep_with_mock_castep() {
             Task::new(
                 &task_id,
                 ExecutionMode::Direct {
-                    command: "mock_castep".into(),
-                    args: vec!["ZnO".into()],
+                    command: "sh".into(),
+                    args: vec![
+                        bin_dir.join("mock_castep").to_string_lossy().into_owned(),
+                        "ZnO".into(),
+                    ],
                     env,
                     timeout: None,
                 },
