@@ -129,3 +129,27 @@ cargo test --workspace
 ```
 
 After Part 3: write a minimal integration test in `tests/` that constructs a `Queued` task with a mock `sbatch` script and verifies `QueuedRunner::spawn` parses a job ID correctly.
+
+---
+
+## Deferred from pre-phase-4 review
+
+These minor issues were identified during the `pre-phase-4` PR review (Approve rating) and deferred here because they align with Phase 4 work:
+
+### 1. Refactor `fire_hooks` stringly-typed state matching
+
+**File:** `workflow_core/src/workflow.rs` (fn `fire_hooks`), `workflow_core/src/monitoring.rs` (`HookContext`)
+
+`fire_hooks` accepts `final_state: &str` and matches against `"running"`, `"completed"`, `"failed"`. Root cause: `HookContext.state` is `String`. When adding `HookTrigger::Periodic` in Part 2, refactor `HookContext.state` to an enum (e.g., `TaskPhase { Running, Completed, Failed }`) and update `fire_hooks` to accept the enum.
+
+### 2. Change `fire_hooks` to take `&Path` instead of `PathBuf`
+
+**File:** `workflow_core/src/workflow.rs`
+
+`fire_hooks` takes `workdir: PathBuf` by value, forcing an unnecessary `.clone()` at the OnStart call site (line 193). Change to `workdir: &Path`; let `HookContext` construction do `workdir.to_path_buf()`. This is a one-line signature change — do it alongside any Part 2 touch of `fire_hooks`.
+
+### 3. Fix misleading comment in hook test
+
+**File:** `workflow_core/tests/hook_recording.rs`
+
+Line 103 says "Expected order: success OnStart, failure OnStart, success OnComplete, failure OnFailure" — implies cross-task ordering matters. Assertions are per-task filtered and safe, but comment is misleading. Change to: `// 4 hook calls total: 2 per task (cross-task order is non-deterministic)`
