@@ -31,7 +31,7 @@ fn timeout_task_fails_and_dependent_skips() {
 
     let mut state = JsonStateStore::new("wf_timeout", dir.path().join(".wf_timeout.workflow.json"));
     let wall_start = Instant::now();
-    let summary = wf.run(&mut state, Arc::new(SystemProcessRunner) as Arc<dyn ProcessRunner>,
+    let summary = wf.run(&mut state, Arc::new(SystemProcessRunner::new()) as Arc<dyn ProcessRunner>,
                          Arc::new(ShellHookExecutor) as Arc<dyn HookExecutor>).unwrap();
 
     assert!(wall_start.elapsed() < Duration::from_secs(1));
@@ -54,7 +54,7 @@ fn task_timeout_marks_failed() {
 
     let mut state = JsonStateStore::new("wf_timeout_single", dir.path().join(".wf_timeout_single.workflow.json"));
     let wall_start = Instant::now();
-    let summary = wf.run(&mut state, Arc::new(SystemProcessRunner) as Arc<dyn ProcessRunner>,
+    let summary = wf.run(&mut state, Arc::new(SystemProcessRunner::new()) as Arc<dyn ProcessRunner>,
                          Arc::new(ShellHookExecutor) as Arc<dyn HookExecutor>).unwrap();
 
     assert!(wall_start.elapsed() < Duration::from_secs(1));

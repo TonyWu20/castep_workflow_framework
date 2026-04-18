@@ -6,7 +6,7 @@ use workflow_core::{
     state::{StateStore, TaskStatus},
     ExecutionMode, JsonStateStore, Task, Workflow, WorkflowError,
 };
-use workflow_utils::{create_dir, write_file};
+use workflow_utils::{create_dir, SystemProcessRunner, write_file};
 
 #[test]
 fn test_hubbard_u_sweep_with_mock_castep() {
@@ -61,7 +61,7 @@ fn test_hubbard_u_sweep_with_mock_castep() {
         .unwrap();
     }
 
-    let runner = Arc::new(workflow_utils::SystemProcessRunner);
+    let runner = Arc::new(SystemProcessRunner::new());
     let executor = Arc::new(workflow_utils::ShellHookExecutor);
     let mut state = Box::new(JsonStateStore::new("hubbard_u", state_path.clone()));
 

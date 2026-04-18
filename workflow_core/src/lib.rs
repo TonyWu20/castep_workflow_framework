@@ -7,8 +7,8 @@ pub mod task;
 pub mod workflow;
 
 pub use error::WorkflowError;
-pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, MonitoringHook};
-pub use process::{ProcessHandle, ProcessResult, ProcessRunner};
+pub use monitoring::{HookContext, HookExecutor, HookResult, HookTrigger, MonitoringHook, TaskPhase};
+pub use process::{OutputLocation, ProcessHandle, ProcessResult, ProcessRunner};
 pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary, TaskStatus};
 pub use task::{ExecutionMode, Task, TaskClosure};
 pub use workflow::{FailedTask, Workflow, WorkflowSummary};

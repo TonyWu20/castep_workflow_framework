@@ -6,7 +6,7 @@ use workflow_utils::{ShellHookExecutor, SystemProcessRunner};
 mod common;
 use common::{RecordingExecutor, direct};
 
-fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner) }
+fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner::new()) }
 
 #[test]
 fn setup_failure_skips_dependent() {
@@ -100,7 +100,7 @@ fn hooks_fire_on_start_complete_failure() {
     // Verify success: OnStart + OnComplete fired for task "success"
     let calls = executor.calls();
 
-    // Expected order: success OnStart, failure OnStart, success OnComplete, failure OnFailure
+    // 4 hook calls total: 2 per task (cross-task order is non-deterministic)
     assert_eq!(calls.len(), 4);
 
     // Check success task hooks (OnStart + OnComplete)
@@ -122,4 +122,41 @@ fn hooks_fire_on_start_complete_failure() {
     // Verify workflow summary
     assert!(summary.succeeded.contains(&"success".to_string()));
     assert!(summary.failed.iter().any(|f| f.id == "failure"));
+}
+
+#[test]
+fn periodic_hook_fires_during_long_task() {
+    use workflow_core::{HookTrigger, MonitoringHook};
+
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join(".periodic.workflow.json");
+
+    let executor = RecordingExecutor::new();
+
+    let periodic_hook = MonitoringHook::new(
+        "periodic_check", "echo check", HookTrigger::Periodic { interval_secs: 1 }
+    );
+
+    let mut wf = Workflow::new("periodic_test").with_max_parallel(4).unwrap();
+    wf.add_task(
+        Task::new("long_task", direct("sleep 8"))
+            .monitors(vec![periodic_hook])
+    ).unwrap();
+
+    let mut state = JsonStateStore::new("periodic", state_path);
+    wf.run(&mut state, runner(), Arc::new(executor.clone()) as Arc<dyn HookExecutor>).unwrap();
+
+    let calls = executor.calls();
+    let periodic_calls: Vec<_> = calls.iter()
+        .filter(|(name, _)| name == "periodic_check")
+        .collect();
+
+    // sleep 8 with interval_secs=1 should fire at least once during the task execution.
+    // The main loop sleeps 50ms between iterations, so with an 8-second task we should
+    // have many loop iterations (at least 80), and the periodic check should trigger.
+    assert!(
+        !periodic_calls.is_empty(),
+        "periodic hook should fire at least once during an 8-second task (got {} calls)",
+        periodic_calls.len()
+    );
 }
