@@ -1,11 +1,12 @@
 {
-  "task_id": "TASK-7",
-  "task_description": "Implement `QueuedSubmitter` trait for `QueuedRunner`",
+  "task_id": "TASK-8",
+  "task_description": "Add `task_successors` to `JsonStateStore` and graph-aware `cmd_retry`",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/plans/phase-4/PHASE4_IMPLEMENTATION_PLAN.md",
   "plan_slug": "phase4-implementation-plan",
   "acceptance_commands": [
-    "cargo check --workspace"
+    "cargo check --workspace",
+    "cargo test --workspace"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-18T22:13:43Z"
+  "timestamp": "2026-04-18T22:32:53Z"
 }

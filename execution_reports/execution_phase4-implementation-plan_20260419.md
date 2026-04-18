@@ -11,3 +11,9 @@
 - **Validation output**:
   - `cargo check --workspace`: PASSED
 
+### TASK-8: Add `task_successors` to `JsonStateStore` and graph-aware `cmd_retry`
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+

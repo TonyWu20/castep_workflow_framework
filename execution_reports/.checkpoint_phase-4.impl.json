@@ -7,6 +7,7 @@
     "TASK-4",
     "TASK-5",
     "TASK-6",
+    "TASK-7",
     "TASK-9",
     "TASK-10",
     "TASK-11",
@@ -14,7 +15,6 @@
   "failed": [],
   "blocked": [],
   "pending": [
-    "TASK-7",
     "TASK-8",
     "TASK-12"
   ]
