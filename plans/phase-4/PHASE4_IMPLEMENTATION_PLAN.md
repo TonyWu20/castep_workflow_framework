@@ -1349,11 +1349,28 @@ Acceptance: `cargo test --test log_persistence` passes.
 
 ### TASK-11: Tests for periodic hook firing
 
-**Files:** `workflow_core/tests/hook_recording.rs` (append) or new file
+**Files:** `workflow_core/tests/hook_recording.rs` (append), `workflow_core/tests/common/mod.rs`
 **Depends on:** TASK-5
 **Parallel with:** TASK-10, TASK-12
 
-No before — new test code appended to existing file.
+**Bug fix**: The `direct()` helper passes its argument as the entire command name with no args. `direct("sleep 3")` looks for a binary literally named `"sleep 3"`, which doesn't exist. Add a `direct_with_args` helper.
+
+**Before** (`workflow_core/tests/common/mod.rs`, after `direct()` function):
+```rust
+// (no direct_with_args helper)
+```
+
+**After** (append after `direct()`):
+```rust
+pub fn direct_with_args(cmd: &str, args: &[&str]) -> ExecutionMode {
+    ExecutionMode::Direct {
+        command: cmd.into(),
+        args: args.iter().map(|a| a.to_string()).collect(),
+        env: HashMap::new(),
+        timeout: None,
+    }
+}
+```
 
 **After** (append to `hook_recording.rs`):
 ```rust
@@ -1372,7 +1389,7 @@ fn periodic_hook_fires_during_long_task() {
 
     let mut wf = Workflow::new("periodic_test").with_max_parallel(4).unwrap();
     wf.add_task(
-        Task::new("long_task", direct("sleep 3"))
+        Task::new("long_task", direct_with_args("sleep", &["3"]))
             .monitors(vec![periodic_hook])
     ).unwrap();
 
@@ -1392,7 +1409,7 @@ fn periodic_hook_fires_during_long_task() {
 }
 ```
 
-Acceptance: `cargo test --workspace` passes; periodic test specifically passes.
+Acceptance: `cargo test --workspace` passes; periodic test specifically passes. Run 3 times to confirm no flakiness.
 
 ---
 
