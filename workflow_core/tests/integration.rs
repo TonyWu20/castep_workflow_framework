@@ -1,17 +1,17 @@
-use std::collections::HashMap;
+mod common;
+
 use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 use workflow_core::HookExecutor;
 use workflow_core::process::ProcessRunner;
 use workflow_core::state::{JsonStateStore, StateStore, TaskStatus};
-use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::task::Task;
 use workflow_core::workflow::Workflow;
 use workflow_utils::{ShellHookExecutor, SystemProcessRunner};
 
 fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner) }
 fn executor() -> Arc<dyn HookExecutor> { Arc::new(ShellHookExecutor) }
-fn direct(cmd: &str) -> ExecutionMode {
-    ExecutionMode::Direct { command: cmd.into(), args: vec![], env: HashMap::new(), timeout: None }
-}
+
+use common::direct;
 
 #[test]
 fn resume_skips_completed_reruns_failed() {
@@ -24,7 +24,10 @@ fn resume_skips_completed_reruns_failed() {
     let mut wf1 = Workflow::new("integration").with_max_parallel(4).unwrap();
     wf1.add_task(
         Task::new("a", direct("true"))
-            .setup(move |_| { a_runs_c.fetch_add(1, Ordering::SeqCst); Ok(()) })
+            .setup(move |_| -> Result<(), std::convert::Infallible> {
+                a_runs_c.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
     ).unwrap();
     wf1.add_task(Task::new("b", direct("false")).depends_on("a")).unwrap();
     wf1.add_task(Task::new("c", direct("true")).depends_on("b")).unwrap();

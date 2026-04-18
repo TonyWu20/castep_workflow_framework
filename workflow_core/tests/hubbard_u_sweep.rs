@@ -35,29 +35,28 @@ fn test_hubbard_u_sweep_with_mock_castep() {
             Task::new(
                 &task_id,
                 ExecutionMode::Direct {
-                    command: "mock_castep".into(),
-                    args: vec!["ZnO".into()],
+                    command: "sh".into(),
+                    args: vec![
+                        bin_dir.join("mock_castep").to_string_lossy().into_owned(),
+                        "ZnO".into(),
+                    ],
                     env,
                     timeout: None,
                 },
             )
             .workdir(abs_workdir.clone())
-            .setup(move |_| {
-                create_dir(&workdir_for_setup).map_err(|e| {
-                    WorkflowError::Io(std::io::Error::other(e.to_string()))
-                })?;
+            .setup(move |_| -> Result<(), WorkflowError> {
+                create_dir(&workdir_for_setup)?;
                 write_file(
                     workdir_for_setup.join("ZnO.cell"),
                     "%BLOCK LATTICE_CART\n  3.25 0.0 0.0\n  0.0 3.25 0.0\n  0.0 0.0 5.21\n%ENDBLOCK LATTICE_CART\n",
-                )
-                .map_err(|e| WorkflowError::Io(std::io::Error::other(e.to_string())))?;
+                )?;
                 write_file(
                     workdir_for_setup.join("ZnO.param"),
                     "task : SinglePoint\n",
-                )
-                .map_err(|e| WorkflowError::Io(std::io::Error::other(e.to_string())))?;
+                )?;
                 Ok(())
-            }),
+            })
         )
         .unwrap();
     }
