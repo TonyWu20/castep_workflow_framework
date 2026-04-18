@@ -1,90 +1,207 @@
-# Pre-Phase-4 Fix Plan v3
+# Fix Plan: `pre-phase-4` v4
 
 **Branch:** `pre-phase-4`
-**Review source:** `notes/pr-reviews/pre-phase-4/review.md`
 **Date:** 2026-04-18
 
 ---
 
 ## Summary
 
-Two issues found in v3 review: `TaskClosure` type alias dropped `Send + Sync` bounds (public API regression), and a test closure has broken indentation.
+Four issues from v4 review: one blocking compilation error (E0283 in hubbard_u_sweep example), three minor (dead_code warnings, duplicated test helper, unconditional disk write).
 
 ---
 
 ## Parallel Groups
 
-- **Group A (parallel):** TASK-1, TASK-2 — fully independent, different files.
+- **Group A (parallel):** TASK-1, TASK-2, TASK-3, TASK-4 — all fully independent.
 
 ---
 
-### TASK-1: Add `Send + Sync` bounds to `TaskClosure` type alias
+### TASK-1: Add return type annotation to setup closure in hubbard_u_sweep
 
-**File:** `workflow_core/src/task.rs`
+**File:** `examples/hubbard_u_sweep/src/main.rs`
 **Severity:** Blocking
 
-**Context:** The old `TaskClosure` was `Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>`. During the error-type widening, `+ Send + Sync` was dropped from the outer trait object, leaving only `+ 'static`. The builder methods still enforce `F: Send + Sync`, but the alias itself no longer guarantees it.
+**Context:** The `setup()` method is now generic over `<F, E>` where `E: std::error::Error + Send + Sync + 'static`. The closure uses `?` with mixed error types (`WorkflowError` and I/O errors) so the compiler cannot infer `E`.
 
-**Before** (line 8, the `TaskClosure` type alias):
+**Before:**
 ```rust
-pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + 'static>;
+        .setup(move |workdir| {
 ```
 
 **After:**
 ```rust
-pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static>;
+        .setup(move |workdir| -> Result<(), WorkflowError> {
 ```
 
 **Verification:**
 ```bash
-cd /Users/tony/programming/castep_workflow_framework && cargo check -p workflow_core && cargo test -p workflow_core
+cargo check -p hubbard_u_sweep
 ```
 
 **Depends on:** None
-**Enables:** None
 
 ---
 
-### TASK-2: Fix indentation of `.setup()` closure in `chain_respects_order` test
+### TASK-2: Suppress dead_code warnings in test helper module
 
-**File:** `workflow_core/src/workflow.rs`
+**File:** `workflow_core/tests/common/mod.rs`
 **Severity:** Minor
 
-**Context:** The `.setup()` closure for task "a" in the `chain_respects_order` test has broken indentation (starts at column 0 instead of 12-space indent). The "b" task's `.setup()` is correctly indented.
+**Context:** `RecordingExecutor` and `direct()` trigger dead_code warnings because each test binary compiles `common` independently. Note: `#![allow(dead_code)]` is invalid in non-crate-root modules, so use item-level `#[allow(dead_code)]`.
 
-**Before** (in `chain_respects_order` test, the `.setup()` call for task "a"):
+**Edit A — Before:**
 ```rust
-            )
-.setup(move |_| -> Result<(), std::io::Error> {
-      let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_for_a)?;
-      writeln!(f, "a")?;
-      Ok(())
-    }),
+pub struct RecordingExecutor {
 ```
 
 **After:**
 ```rust
-            )
-            .setup(move |_| -> Result<(), std::io::Error> {
-                let mut f = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&log_for_a)?;
-                writeln!(f, "a")?;
-                Ok(())
-            }),
+#[allow(dead_code)]
+pub struct RecordingExecutor {
+```
+
+**Edit B — Before:**
+```rust
+pub fn direct(cmd: &str) -> ExecutionMode {
+```
+
+**After:**
+```rust
+#[allow(dead_code)]
+pub fn direct(cmd: &str) -> ExecutionMode {
 ```
 
 **Verification:**
 ```bash
-cd /Users/tony/programming/castep_workflow_framework && cargo test -p workflow_core chain_respects_order
+cargo test -p workflow_core 2>&1 | grep dead_code
+```
+(Should produce no output.)
+
+**Depends on:** None
+
+---
+
+### TASK-3: Remove duplicated `direct()` helper from hook_recording.rs
+
+**File:** `workflow_core/tests/hook_recording.rs`
+**Severity:** Minor
+
+**Context:** Lines 11-13 define a local `direct()` identical to `common::direct()`. Removing it also makes `HashMap` and `ExecutionMode` imports unused.
+
+**Edit 1 — Remove unused imports. Before:**
+```rust
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use workflow_core::{HookExecutor, process::ProcessRunner, state::{JsonStateStore, StateStore, TaskStatus}, task::ExecutionMode, Workflow, Task};
+```
+
+**After:**
+```rust
+use std::sync::Arc;
+
+use workflow_core::{HookExecutor, process::ProcessRunner, state::{JsonStateStore, StateStore, TaskStatus}, Workflow, Task};
+```
+
+**Edit 2 — Import `direct` from common. Before:**
+```rust
+use common::RecordingExecutor;
+```
+
+**After:**
+```rust
+use common::{RecordingExecutor, direct};
+```
+
+**Edit 3 — Remove local `direct()`. Before:**
+```rust
+fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner) }
+fn direct(cmd: &str) -> ExecutionMode {
+    ExecutionMode::Direct { command: cmd.into(), args: vec![], env: HashMap::new(), timeout: None }
+}
+```
+
+**After:**
+```rust
+fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner) }
+```
+
+**Verification:**
+```bash
+cargo test -p workflow_core
 ```
 
 **Depends on:** None
-**Enables:** None
+
+---
+
+### TASK-4: Guard `state.save()` in `propagate_skips` with a dirty flag
+
+**File:** `workflow_core/src/workflow.rs`
+**Function:** `propagate_skips`
+**Severity:** Minor
+
+**Context:** `propagate_skips()` calls `state.save()` every time, even when no tasks were skipped. Since the main loop calls this every 50ms, it causes unnecessary disk writes.
+
+**Edit A — Add `any_skipped` flag. Before:**
+```rust
+) -> Result<(), WorkflowError> {
+    let mut changed = true;
+    while changed {
+```
+
+**After:**
+```rust
+) -> Result<(), WorkflowError> {
+    let mut any_skipped = false;
+    let mut changed = true;
+    while changed {
+```
+
+**Edit B — Set flag when skipping. Before:**
+```rust
+        if !to_skip.is_empty() {
+            changed = true;
+            for id in to_skip.iter() {
+                state.mark_skipped_due_to_dep_failure(id);
+            }
+        }
+```
+
+**After:**
+```rust
+        if !to_skip.is_empty() {
+            changed = true;
+            any_skipped = true;
+            for id in to_skip.iter() {
+                state.mark_skipped_due_to_dep_failure(id);
+            }
+        }
+```
+
+**Edit C — Guard save (last `state.save()` in `propagate_skips`). Before:**
+```rust
+    state.save()?;
+    Ok(())
+}
+```
+
+**After:**
+```rust
+    if any_skipped {
+        state.save()?;
+    }
+    Ok(())
+}
+```
+
+**Verification:**
+```bash
+cargo test -p workflow_core
+```
+
+**Depends on:** None
 
 ---
 
@@ -94,18 +211,20 @@ cd /Users/tony/programming/castep_workflow_framework && cargo test -p workflow_c
 graph TD
   TASK-1
   TASK-2
+  TASK-3
+  TASK-4
 ```
 
-Both tasks are fully independent — different files.
+All four tasks are fully independent — no edges.
 
 ## Execution Phases
 
 | Phase | Tasks | Notes |
 |-------|-------|-------|
-| Phase 1 (parallel) | TASK-1, TASK-2 | Fully independent |
+| Phase 1 (parallel) | TASK-1, TASK-2, TASK-3, TASK-4 | All independent |
 
 ## Final Verification
 
 ```bash
-cd /Users/tony/programming/castep_workflow_framework && cargo check --workspace && cargo clippy --workspace -- -D warnings && cargo test --workspace
+cargo check --workspace --all-targets && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```

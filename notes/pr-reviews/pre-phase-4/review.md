@@ -1,33 +1,44 @@
-## PR Review: `pre-phase-4` → `main`
+## PR Review: `pre-phase-4` → `main` (v4)
 
 **Rating:** Request Changes
 
-**Summary:** Excellent preparatory work: the `run()` extraction into five free functions is clean and well-motivated, TaskClosure ergonomics are improved, and new test coverage (timeout, setup/collect failure, hook firing, chain-skip propagation) fills real gaps. Two issues remain: `TaskClosure` lost its `Send + Sync` bounds during the widening, and one test closure has broken indentation.
+**Summary:** Solid pre-phase-4 cleanup. The `run()` decomposition into 5 helper functions (`fire_hooks`, `process_finished`, `propagate_skips`, `build_summary`, `poll_finished`) significantly improves readability. The `TaskClosure` widening to accept generic error types is the right ergonomic call. Test coverage is meaningfully improved with `RecordingExecutor` and new integration tests. One blocking compilation error in the example and three minor cleanup items remain.
 
 **Axis Scores:**
 
-- Plan & Spec: Pass — All 12 pre-phase-4 tasks implemented: dependency hygiene, signal isolation test, StateStore docs, TaskClosure widening, run() extraction, test fixtures
-- Architecture: Pass — Crate boundaries respected, no anyhow in libs, free functions avoid borrow conflicts, DAG-centric design preserved
-- Rust Style: Partial — TaskClosure type alias dropped Send+Sync (public API regression); one test has severely misaligned indentation
-- Test Coverage: Pass — Good new coverage: timeout, setup/collect failure, hook lifecycle, chain-skip propagation, resume; per-task hook ordering assertions are sound
+- Plan & Spec: Pass — All changes are appropriate pre-phase-4 cleanup (dep normalization, TaskClosure ergonomics, run() decomposition, dead code removal, new tests)
+- Architecture: Pass — DAG-centric design preserved, extracted helpers are free functions, crate boundaries respected
+- Rust Style: Partial — Blocking compilation error in example, duplicated test helper, unconditional disk writes in hot loop
+- Test Coverage: Pass — Meaningful new integration tests for setup failure, collect failure, hook firing, timeout, 3-task skip propagation
 
 ---
 
 ## Fix Document for Author
 
-### Issue 1: `TaskClosure` type alias missing `Send + Sync` bounds
+### Issue 1: E0283 compilation error in hubbard_u_sweep example
 
-**File:** `workflow_core/src/task.rs`
+**File:** `examples/hubbard_u_sweep/src/main.rs`
 **Severity:** Blocking
-**Problem:** The old type was `Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>`. The new type is `Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + 'static>` — the `+ Send + Sync` on the outer `dyn Fn` trait object was dropped. The builder methods (`setup`, `collect`) still enforce `F: Send + Sync + 'static`, so currently-compiled code works, but the type alias itself no longer guarantees `Send + Sync`. Anyone constructing a `TaskClosure` directly (bypassing the builder) could create a non-Send+Sync closure, and if `Task` is later required to be `Send` (e.g., moved into a thread pool), compilation will fail. This is a public API regression.
-**Fix:** Add `+ Send + Sync` back to the type alias:
-```rust
-pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static>;
-```
+**Problem:** The `setup()` method is now generic over `<F, E>` where `E: std::error::Error + Send + Sync + 'static`. The closure uses `?` with mixed error types (`WorkflowError` and I/O errors) so the compiler cannot infer the concrete `E`. This is the only workspace compilation error.
+**Fix:** Add explicit return type annotation: `.setup(move |workdir| -> Result<(), WorkflowError> {`
 
-### Issue 2: Misaligned `.setup()` closure in `chain_respects_order` test
+### Issue 2: dead_code warnings in shared test helper module
+
+**File:** `workflow_core/tests/common/mod.rs`
+**Severity:** Minor
+**Problem:** `RecordingExecutor` and `direct()` trigger dead_code warnings because each integration test binary compiles `common` independently and not every test file uses all items.
+**Fix:** Add `#[allow(dead_code)]` on `RecordingExecutor` struct and `direct()` fn. (Note: `#![allow(dead_code)]` is invalid in non-crate-root modules.)
+
+### Issue 3: Duplicated `direct()` helper in hook_recording.rs
+
+**File:** `workflow_core/tests/hook_recording.rs`
+**Severity:** Minor
+**Problem:** Local `direct()` function is identical to `common::direct()`. The file already imports from `common`. Removing the local copy also makes `HashMap` and `ExecutionMode` imports unused.
+**Fix:** Remove local `fn direct()`, remove `HashMap` and `task::ExecutionMode` from imports, add `use common::direct;`.
+
+### Issue 4: `propagate_skips` writes to disk unconditionally on every poll cycle
 
 **File:** `workflow_core/src/workflow.rs`
 **Severity:** Minor
-**Problem:** The `.setup(move |_| -> Result<(), std::io::Error> { ... })` closure for task "a" in the `chain_respects_order` test starts at column 0 and uses inconsistent 6-space/4-space indentation, while the identical pattern for task "b" is correctly indented. This appears to be a merge/rebase artifact.
-**Fix:** Re-indent the closure to match the "b" task's `.setup()` style (12-space indent for `.setup(`, 16-space for body).
+**Problem:** `propagate_skips()` calls `state.save()` regardless of whether any tasks were actually skipped. Since the main loop calls this every 50ms, it causes unnecessary disk writes.
+**Fix:** Track an `any_skipped` flag; only call `state.save()` when true.
