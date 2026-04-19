@@ -139,7 +139,7 @@ fn periodic_hook_fires_during_long_task() {
 
     let mut wf = Workflow::new("periodic_test").with_max_parallel(4).unwrap();
     wf.add_task(
-        Task::new("long_task", direct_with_args("sleep", &["8"]))
+        Task::new("long_task", direct_with_args("sleep", &["2"]))
             .monitors(vec![periodic_hook])
     ).unwrap();
 
