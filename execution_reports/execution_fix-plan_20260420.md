@@ -42,3 +42,8 @@
 - **Validation output**:
   - `cargo check --workspace`: PASSED
 
+### TASK-6: Replace `pub use queued::*` with explicit re-exports
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+

@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-5",
-  "task_description": "Update `Queued` match arm in `workflow.rs` for unit variant",
+  "task_id": "TASK-6",
+  "task_description": "Replace `pub use queued::*` with explicit re-exports",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
     "cargo check --workspace"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-19T16:12:52Z"
+  "timestamp": "2026-04-19T16:14:17Z"
 }
