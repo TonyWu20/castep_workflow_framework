@@ -15,14 +15,10 @@ pub enum ExecutionMode {
         env: HashMap<String, String>,
         timeout: Option<Duration>,
     },
-    /// Not yet implemented. Constructing a task with this mode will cause
-    /// `Workflow::run()` to return `Err(WorkflowError::InvalidConfig)`.
-    /// Reserved for future HPC queue integration (SLURM/PBS).
-    Queued {
-        submit_cmd: String,
-        poll_cmd: String,
-        cancel_cmd: String,
-    },
+    /// Queued execution via an HPC scheduler (SLURM/PBS).
+    /// The actual submit/poll/cancel commands are owned by the `QueuedSubmitter`
+    /// implementation set via `Workflow::with_queued_submitter()`.
+    Queued,
 }
 
 pub struct Task {

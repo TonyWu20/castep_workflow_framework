@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-3",
-  "task_description": "Remove `.clone()` on `TaskPhase` in `fire_hooks`",
+  "task_id": "TASK-4",
+  "task_description": "Simplify `ExecutionMode::Queued` to unit-like variant",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo check -p workflow_core"
+    "cargo check --workspace"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-19T16:09:57Z"
+  "timestamp": "2026-04-19T16:11:31Z"
 }
