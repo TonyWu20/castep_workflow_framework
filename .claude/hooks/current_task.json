@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-7",
-  "task_description": "Remove dead `workdir` field from `QueuedProcessHandle`",
+  "task_id": "TASK-8",
+  "task_description": "Add `#[derive(Default)]` to `SystemProcessRunner`",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
     "cargo check -p workflow_utils"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-19T16:15:48Z"
+  "timestamp": "2026-04-19T16:17:17Z"
 }

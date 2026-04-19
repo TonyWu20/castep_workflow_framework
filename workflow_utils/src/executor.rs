@@ -106,6 +106,7 @@ impl ExecutionHandle {
 
 /// Concrete implementation of the ProcessRunner trait for system processes.
 /// Wraps `std::process::Child` with output capture and timing.
+#[derive(Default)]
 pub struct SystemProcessRunner {
     log_dir: Option<PathBuf>,
 }
