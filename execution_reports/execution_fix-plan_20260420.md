@@ -16,3 +16,8 @@
 - **Validation output**:
   - `cargo check -p workflow_core`: PASSED
 
+### TASK-3: Remove `.clone()` on `TaskPhase` in `fire_hooks`
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+

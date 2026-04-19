@@ -317,12 +317,12 @@ fn fire_hooks(
     let ctx = crate::monitoring::HookContext {
         task_id: task_id.to_string(),
         workdir: workdir.to_path_buf(),
-        phase: phase.clone(),
+        phase,
         exit_code,
     };
     for hook in monitors {
         let should_fire = matches!(
-            (&hook.trigger, phase.clone()),
+            (&hook.trigger, phase),
             (crate::monitoring::HookTrigger::OnStart, crate::monitoring::TaskPhase::Running)
                 | (crate::monitoring::HookTrigger::OnComplete, crate::monitoring::TaskPhase::Completed)
                 | (crate::monitoring::HookTrigger::OnFailure, crate::monitoring::TaskPhase::Failed)
