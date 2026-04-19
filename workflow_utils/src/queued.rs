@@ -118,7 +118,6 @@ pub struct QueuedProcessHandle {
     job_id: String,
     poll_cmd: String,
     cancel_cmd: String,
-    workdir: PathBuf,
     stdout_path: PathBuf,
     stderr_path: PathBuf,
     last_poll: Instant,
