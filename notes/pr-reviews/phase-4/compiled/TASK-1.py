@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""TASK-1: Remove duplicated dead code in `process_finished`"""
+import base64, json, subprocess, sys
+
+TASK_ID = "TASK-1"
+STEPS = json.loads('[{"before_b64": "ICAgIGxldCAoZmluYWxfc3RhdGUsIGV4aXRfY29kZSkgPSBpZiBsZXQgT2socHJvY2Vzc19yZXN1bHQpID0gdC5oYW5kbGUud2FpdCgpIHsKICAgICAgICBtYXRjaCBwcm9jZXNzX3Jlc3VsdC5leGl0X2NvZGUgewogICAgICAgICAgICBTb21lKDApID0+IHsKICAgICAgICAgICAgICAgIHN0YXRlLm1hcmtfY29tcGxldGVkKGlkKTsKICAgICAgICAgICAgICAgIGlmIGxldCBTb21lKHJlZiBjb2xsZWN0KSA9IHQuY29sbGVjdCB7CiAgICAgICAgICAgICAgICAgICAgaWYgbGV0IEVycihlKSA9IGNvbGxlY3QoJnQud29ya2RpcikgewogICAgICAgICAgICAgICAgICAgICAgICB0cmFjaW5nOjp3YXJuISgKICAgICAgICAgICAgICAgICAgICAgICAgICAgICJDb2xsZWN0IGNsb3N1cmUgZm9yIHRhc2sgJ3t9JyBmYWlsZWQ6IHt9IiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGlkLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgZQogICAgICAgICAgICAgICAgICAgICAgICApOwogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICgiY29tcGxldGVkIiwgcHJvY2Vzc19yZXN1bHQuZXhpdF9jb2RlKQogICAgICAgICAgICB9CiAgICAgICAgICAgIF8gPT4gewogICAgICAgICAgICAgICAgc3RhdGUubWFya19mYWlsZWQoCiAgICAgICAgICAgICAgICAgICAgaWQsCiAgICAgICAgICAgICAgICAgICAgZm9ybWF0ISgiZXhpdCBjb2RlIHt9IiwgcHJvY2Vzc19yZXN1bHQuZXhpdF9jb2RlLnVud3JhcF9vcigtMSkpLAogICAgICAgICAgICAgICAgKTsKICAgICAgICAgICAgICAgICgiZmFpbGVkIiwgcHJvY2Vzc19yZXN1bHQuZXhpdF9jb2RlKQogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfSBlbHNlIHsKICAgICAgICBzdGF0ZS5tYXJrX2ZhaWxlZChpZCwgInByb2Nlc3MgdGVybWluYXRlZCIudG9fc3RyaW5nKCkpOwogICAgICAgICgiZmFpbGVkIiwgTm9uZSkKICAgIH07CgogICAgbGV0IGZpbmFsX3N0YXRlID0gaWYgZXhpdF9jb2RlID09IFNvbWUoMCkgewogICAgICAgIGNyYXRlOjptb25pdG9yaW5nOjpUYXNrUGhhc2U6OkNvbXBsZXRlZAogICAgfSBlbHNlIHsKICAgICAgICBjcmF0ZTo6bW9uaXRvcmluZzo6VGFza1BoYXNlOjpGYWlsZWQKICAgIH07CgogICAgbGV0IHRhc2tfcGhhc2UgPSBpZiBleGl0X2NvZGUgPT0gU29tZSgwKSB7CiAgICAgICAgY3JhdGU6Om1vbml0b3Jpbmc6OlRhc2tQaGFzZTo6Q29tcGxldGVkCiAgICB9IGVsc2UgewogICAgICAgIGNyYXRlOjptb25pdG9yaW5nOjpUYXNrUGhhc2U6OkZhaWxlZAogICAgfTsKCiAgICBmaXJlX2hvb2tzKAogICAgICAgICZ0Lm1vbml0b3JzLAogICAgICAgICZ0LndvcmtkaXIsCiAgICAgICAgdGFza19waGFzZSwKICAgICAgICBleGl0X2NvZGUsCiAgICAgICAgaWQsCiAgICAgICAgaG9va19leGVjdXRvciwKICAgICk7", "after_b64": "ICAgIGxldCBleGl0X2NvZGUgPSBpZiBsZXQgT2socHJvY2Vzc19yZXN1bHQpID0gdC5oYW5kbGUud2FpdCgpIHsKICAgICAgICBtYXRjaCBwcm9jZXNzX3Jlc3VsdC5leGl0X2NvZGUgewogICAgICAgICAgICBTb21lKDApID0+IHsKICAgICAgICAgICAgICAgIHN0YXRlLm1hcmtfY29tcGxldGVkKGlkKTsKICAgICAgICAgICAgICAgIGlmIGxldCBTb21lKHJlZiBjb2xsZWN0KSA9IHQuY29sbGVjdCB7CiAgICAgICAgICAgICAgICAgICAgaWYgbGV0IEVycihlKSA9IGNvbGxlY3QoJnQud29ya2RpcikgewogICAgICAgICAgICAgICAgICAgICAgICB0cmFjaW5nOjp3YXJuISgKICAgICAgICAgICAgICAgICAgICAgICAgICAgICJDb2xsZWN0IGNsb3N1cmUgZm9yIHRhc2sgJ3t9JyBmYWlsZWQ6IHt9IiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGlkLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgZQogICAgICAgICAgICAgICAgICAgICAgICApOwogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIHByb2Nlc3NfcmVzdWx0LmV4aXRfY29kZQogICAgICAgICAgICB9CiAgICAgICAgICAgIF8gPT4gewogICAgICAgICAgICAgICAgc3RhdGUubWFya19mYWlsZWQoCiAgICAgICAgICAgICAgICAgICAgaWQsCiAgICAgICAgICAgICAgICAgICAgZm9ybWF0ISgiZXhpdCBjb2RlIHt9IiwgcHJvY2Vzc19yZXN1bHQuZXhpdF9jb2RlLnVud3JhcF9vcigtMSkpLAogICAgICAgICAgICAgICAgKTsKICAgICAgICAgICAgICAgIHByb2Nlc3NfcmVzdWx0LmV4aXRfY29kZQogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfSBlbHNlIHsKICAgICAgICBzdGF0ZS5tYXJrX2ZhaWxlZChpZCwgInByb2Nlc3MgdGVybWluYXRlZCIudG9fc3RyaW5nKCkpOwogICAgICAgIE5vbmUKICAgIH07CgogICAgbGV0IHRhc2tfcGhhc2UgPSBpZiBleGl0X2NvZGUgPT0gU29tZSgwKSB7CiAgICAgICAgY3JhdGU6Om1vbml0b3Jpbmc6OlRhc2tQaGFzZTo6Q29tcGxldGVkCiAgICB9IGVsc2UgewogICAgICAgIGNyYXRlOjptb25pdG9yaW5nOjpUYXNrUGhhc2U6OkZhaWxlZAogICAgfTsKCiAgICBmaXJlX2hvb2tzKAogICAgICAgICZ0Lm1vbml0b3JzLAogICAgICAgICZ0LndvcmtkaXIsCiAgICAgICAgdGFza19waGFzZSwKICAgICAgICBleGl0X2NvZGUsCiAgICAgICAgaWQsCiAgICAgICAgaG9va19leGVjdXRvciwKICAgICk7", "target": "workflow_core/src/workflow.rs", "index": 0}]')
+
+for step in STEPS:
+    before = base64.b64decode(step["before_b64"]).decode()
+    after = base64.b64decode(step["after_b64"]).decode()
+    target = step["target"]
+    idx = step["index"]
+
+    content = open(target).read()
+    if before not in content:
+        print(f"FAILED {TASK_ID} change {idx}: pattern not found in {target}", file=sys.stderr)
+        print(f"Expected (first 200 chars): {repr(before[:200])}", file=sys.stderr)
+        sys.exit(1)
+
+    result = subprocess.run(
+        ["sd", "-F", "-A", "-n", "1", before, after, target],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"FAILED {TASK_ID} change {idx}: sd error: {result.stderr}", file=sys.stderr)
+        sys.exit(result.returncode)
+
+    new_content = open(target).read()
+    if after and after not in new_content:
+        print(f"FAILED {TASK_ID} change {idx}: replacement not found after apply", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"OK {TASK_ID} change {idx}: applied to {target}")
+
+print(f"OK {TASK_ID}: all changes applied")

@@ -354,7 +354,7 @@ fn process_finished(
         return Ok(());
     }
 
-    let (final_state, exit_code) = if let Ok(process_result) = t.handle.wait() {
+    let exit_code = if let Ok(process_result) = t.handle.wait() {
         match process_result.exit_code {
             Some(0) => {
                 state.mark_completed(id);
@@ -367,25 +367,19 @@ fn process_finished(
                         );
                     }
                 }
-                ("completed", process_result.exit_code)
+                process_result.exit_code
             }
             _ => {
                 state.mark_failed(
                     id,
                     format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
                 );
-                ("failed", process_result.exit_code)
+                process_result.exit_code
             }
         }
     } else {
         state.mark_failed(id, "process terminated".to_string());
-        ("failed", None)
-    };
-
-    let final_state = if exit_code == Some(0) {
-        crate::monitoring::TaskPhase::Completed
-    } else {
-        crate::monitoring::TaskPhase::Failed
+        None
     };
 
     let task_phase = if exit_code == Some(0) {
