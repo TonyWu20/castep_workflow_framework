@@ -220,7 +220,7 @@ impl Workflow {
                                     }
                                 }
                             }
-                            ExecutionMode::Queued { submit_cmd, poll_cmd, cancel_cmd } => {
+                            ExecutionMode::Queued => {
                                 let qs = match self.queued_submitter.as_ref() {
                                     Some(qs) => qs,
                                     None => {

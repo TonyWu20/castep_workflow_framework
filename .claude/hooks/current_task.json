@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-4",
-  "task_description": "Simplify `ExecutionMode::Queued` to unit-like variant",
+  "task_id": "TASK-5",
+  "task_description": "Update `Queued` match arm in `workflow.rs` for unit variant",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
     "cargo check --workspace"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-19T16:11:31Z"
+  "timestamp": "2026-04-19T16:12:52Z"
 }

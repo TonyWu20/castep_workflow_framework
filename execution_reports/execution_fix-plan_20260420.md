@@ -37,3 +37,8 @@
     error: could not compile `workflow_core` (lib) due to 1 previous error
     ```
 
+### TASK-5: Update `Queued` match arm in `workflow.rs` for unit variant
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+
