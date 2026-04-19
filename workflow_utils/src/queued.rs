@@ -103,7 +103,6 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
             job_id,
             poll_cmd: self.build_poll_cmd(),
             cancel_cmd: self.build_cancel_cmd(),
-            workdir: workdir.to_path_buf(),
             stdout_path,
             stderr_path,
             last_poll: Instant::now(),

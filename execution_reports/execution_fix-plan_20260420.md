@@ -47,3 +47,20 @@
 - **Validation output**:
   - `cargo check --workspace`: PASSED
 
+### TASK-7: Remove dead `workdir` field from `QueuedProcessHandle`
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: FAILED (exit 101)
+    ```
+    Checking workflow_core v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_core)
+        Checking workflow_utils v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_utils)
+    error[E0063]: missing field `workdir` in initializer of `QueuedProcessHandle`
+       --> workflow_utils/src/queued.rs:102:21
+        |
+    102 |         Ok(Box::new(QueuedProcessHandle {
+        |                     ^^^^^^^^^^^^^^^^^^^ missing `workdir`
+    
+    For more information about this error, try `rustc --explain E0063`.
+    error: could not compile `workflow_utils` (lib) due to 1 previous error
+    ```
+
