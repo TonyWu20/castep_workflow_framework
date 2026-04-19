@@ -50,7 +50,7 @@ pub enum HookTrigger {
 }
 
 /// The phase of a task in the workflow.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskPhase {
     /// Task is currently running.
     Running,

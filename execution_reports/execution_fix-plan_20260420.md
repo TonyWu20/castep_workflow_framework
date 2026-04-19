@@ -11,3 +11,8 @@
 - **Validation output**:
   - `cargo check -p workflow_core`: PASSED
 
+### TASK-2: Add `Copy, PartialEq, Eq` derives to `TaskPhase`
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+
