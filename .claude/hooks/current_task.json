@@ -1,12 +1,11 @@
 {
-  "task_id": "TASK-8",
-  "task_description": "Add `task_successors` to `JsonStateStore` and graph-aware `cmd_retry`",
+  "task_id": "TASK-12",
+  "task_description": "Integration test for queued execution lifecycle",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/plans/phase-4/PHASE4_IMPLEMENTATION_PLAN.md",
   "plan_slug": "phase4-implementation-plan",
   "acceptance_commands": [
-    "cargo check --workspace",
-    "cargo test --workspace"
+    "cargo test -p workflow_utils --test queued_integration"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-18T22:32:53Z"
+  "timestamp": "2026-04-19T02:24:44Z"
 }

@@ -11,11 +11,11 @@
     "TASK-9",
     "TASK-10",
     "TASK-11",
+    "TASK-8"
   ],
-  "failed": [],
-  "blocked": [],
-  "pending": [
-    "TASK-8",
+  "failed": [
     "TASK-12"
-  ]
+  ],
+  "blocked": [],
+  "pending": []
 }
