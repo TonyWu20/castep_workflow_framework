@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-9",
-  "task_description": "Reduce periodic hook test sleep from 8s to 2s",
+  "task_id": "TASK-11",
+  "task_description": "Fix and commit TASK-12 integration test",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo test -p workflow_core --test hook_recording periodic_hook_fires_during_long_task"
+    "cargo test -p workflow_utils --test queued_integration"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-19T16:18:50Z"
+  "timestamp": "2026-04-19T16:22:08Z"
 }

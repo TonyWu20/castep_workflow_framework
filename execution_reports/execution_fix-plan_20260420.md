@@ -97,3 +97,19 @@
     error: could not compile `workflow_utils` (lib) due to 1 previous error
     ```
 
+### TASK-11: Fix and commit TASK-12 integration test
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo test -p workflow_utils --test queued_integration`: FAILED (exit 101)
+    ```
+    Compiling workflow_utils v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_utils)
+    error[E0063]: missing field `workdir` in initializer of `QueuedProcessHandle`
+       --> workflow_utils/src/queued.rs:102:21
+        |
+    102 |         Ok(Box::new(QueuedProcessHandle {
+        |                     ^^^^^^^^^^^^^^^^^^^ missing `workdir`
+    
+    For more information about this error, try `rustc --explain E0063`.
+    error: could not compile `workflow_utils` (lib) due to 1 previous error
+    ```
+
