@@ -5,13 +5,21 @@ use std::time::{Duration, Instant};
 use workflow_core::error::WorkflowError;
 use workflow_core::process::{OutputLocation, ProcessHandle, ProcessResult};
 
+/// The type of HPC job scheduler to target.
 #[derive(Debug, Clone, Copy)]
 pub enum SchedulerKind {
+    /// SLURM Workload Manager (`sbatch` / `squeue` / `scancel`).
     Slurm,
+    /// Portable Batch System (`qsub` / `qstat` / `qdel`).
     Pbs,
 }
 
+/// Submits and manages jobs via an HPC batch scheduler.
+///
+/// Implements [`QueuedSubmitter`](workflow_core::process::QueuedSubmitter) to
+/// integrate with the workflow engine's `Queued` execution mode.
 pub struct QueuedRunner {
+    /// Which scheduler dialect to use for command construction.
     pub scheduler: SchedulerKind,
 }
 

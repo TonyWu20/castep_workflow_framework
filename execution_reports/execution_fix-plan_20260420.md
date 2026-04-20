@@ -170,3 +170,9 @@
 - **Validation output**:
   - `cargo test -p workflow_utils -- tests::parse`: PASSED
 
+### TASK-6: Add doc comments to SchedulerKind and QueuedRunner public API
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo doc -p workflow_utils --no-deps`: PASSED
+  - `cargo check -p workflow_utils`: PASSED
+

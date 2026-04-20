@@ -1,11 +1,12 @@
 {
-  "task_id": "TASK-5",
-  "task_description": "Add unit tests for parse_job_id (SLURM and PBS)",
+  "task_id": "TASK-6",
+  "task_description": "Add doc comments to SchedulerKind and QueuedRunner public API",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo test -p workflow_utils -- tests::parse"
+    "cargo doc -p workflow_utils --no-deps",
+    "cargo check -p workflow_utils"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-20T03:00:39Z"
+  "timestamp": "2026-04-20T03:02:30Z"
 }
