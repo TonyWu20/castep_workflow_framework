@@ -19,9 +19,26 @@ pub trait ProcessRunner: Send + Sync {
     ) -> Result<Box<dyn ProcessHandle>, WorkflowError>;
 }
 
+/// A handle to a running (or finished) process, used to poll, wait, or terminate it.
+///
+/// Implementations must be `Send` so handles can be stored across thread boundaries.
 pub trait ProcessHandle: Send {
+    /// Returns `true` if the process is still running.
+    ///
+    /// Implementations may cache the result and only re-poll periodically.
     fn is_running(&mut self) -> bool;
+
+    /// Requests termination of the process.
+    ///
+    /// Best-effort: the process may already have exited.
     fn terminate(&mut self) -> Result<(), WorkflowError>;
+
+    /// Returns the process result once the process has finished.
+    ///
+    /// For queued (HPC) handles this may return immediately with `OnDisk` output
+    /// paths rather than captured output. Callers should ensure `is_running()`
+    /// has returned `false` before calling `wait()`, as behaviour when called
+    /// on a still-running process is implementation-defined.
     fn wait(&mut self) -> Result<ProcessResult, WorkflowError>;
 }
 

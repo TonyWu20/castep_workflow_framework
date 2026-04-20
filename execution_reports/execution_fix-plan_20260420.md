@@ -153,3 +153,9 @@
   - `cargo check -p workflow_utils`: PASSED
   - `cargo test -p workflow_utils --test queued_integration`: PASSED
 
+### TASK-3: Add doc comments to ProcessHandle trait
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo doc -p workflow_core --no-deps`: PASSED
+  - `cargo check -p workflow_core`: PASSED
+
