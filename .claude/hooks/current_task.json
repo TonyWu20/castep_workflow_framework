@@ -1,12 +1,12 @@
 {
-  "task_id": "TASK-1",
-  "task_description": "Remove unused ProcessHandle import in queued integration test",
+  "task_id": "TASK-2",
+  "task_description": "Eliminate shell injection in QueuedRunner::submit",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo clippy -p workflow_utils --tests -- -D unused_imports",
+    "cargo check -p workflow_utils",
     "cargo test -p workflow_utils --test queued_integration"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-20T00:49:29Z"
+  "timestamp": "2026-04-20T00:57:16Z"
 }

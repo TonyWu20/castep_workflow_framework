@@ -1,10 +1,10 @@
 {
   "plan": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "completed": [
-    "TASK-2",
     "TASK-3",
     "TASK-5",
-    "TASK-6"
+    "TASK-6",
+    "TASK-2"
   ],
   "failed": [
     "TASK-4",

@@ -20,21 +20,6 @@ impl QueuedRunner {
         Self { scheduler }
     }
 
-    fn build_submit_cmd(&self, script_path: &str, task_id: &str, log_dir: &Path) -> String {
-        let stdout_path = log_dir.join(format!("{}.stdout", task_id));
-        let stderr_path = log_dir.join(format!("{}.stderr", task_id));
-        match self.scheduler {
-            SchedulerKind::Slurm => format!(
-                "sbatch -o {} -e {} {}",
-                stdout_path.display(), stderr_path.display(), script_path
-            ),
-            SchedulerKind::Pbs => format!(
-                "qsub -o {} -e {} {}",
-                stdout_path.display(), stderr_path.display(), script_path
-            ),
-        }
-    }
-
     fn build_poll_cmd(&self) -> String {
         match self.scheduler {
             SchedulerKind::Slurm => "squeue -j {job_id} -h".into(),
@@ -78,14 +63,19 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
         task_id: &str,
         log_dir: &Path,
     ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
-        let submit_cmd = self.build_submit_cmd(
-            &workdir.join("job.sh").to_string_lossy(), task_id, log_dir
-        );
-        let output = Command::new("sh")
-            .args(["-c", &submit_cmd])
-            .current_dir(workdir)
-            .output()
-            .map_err(WorkflowError::Io)?;
+        let stdout_path = log_dir.join(format!("{}.stdout", task_id));
+        let stderr_path = log_dir.join(format!("{}.stderr", task_id));
+        let script_path = workdir.join("job.sh");
+
+        let output = match self.scheduler {
+            SchedulerKind::Slurm => Command::new("sbatch"),
+            SchedulerKind::Pbs => Command::new("qsub"),
+        }
+        .args(["-o", &stdout_path.to_string_lossy(), "-e", &stderr_path.to_string_lossy()])
+        .arg(&script_path)
+        .current_dir(workdir)
+        .output()
+        .map_err(WorkflowError::Io)?;
 
         if !output.status.success() {
             return Err(WorkflowError::QueueSubmitFailed(

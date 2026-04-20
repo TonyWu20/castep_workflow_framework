@@ -147,3 +147,9 @@
     error: test failed, to rerun pass `-p workflow_utils --test queued_integration`
     ```
 
+### TASK-2: Eliminate shell injection in QueuedRunner::submit
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+  - `cargo test -p workflow_utils --test queued_integration`: PASSED
+
