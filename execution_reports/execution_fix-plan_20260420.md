@@ -159,3 +159,9 @@
   - `cargo doc -p workflow_core --no-deps`: PASSED
   - `cargo check -p workflow_core`: PASSED
 
+### TASK-4: Default log_dir to task workdir instead of "."
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+  - `cargo test -p workflow_core`: PASSED
+

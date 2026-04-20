@@ -232,7 +232,7 @@ impl Workflow {
                                     }
                                 };
                                 let log_dir = self.log_dir.as_deref()
-                                    .unwrap_or_else(|| std::path::Path::new("."));
+                                    .unwrap_or(task.workdir.as_path());
                                 match qs.submit(&task.workdir, &id, log_dir) {
                                     Ok(h) => h,
                                     Err(e) => {

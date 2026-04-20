@@ -1,12 +1,12 @@
 {
-  "task_id": "TASK-3",
-  "task_description": "Add doc comments to ProcessHandle trait",
+  "task_id": "TASK-4",
+  "task_description": "Default log_dir to task workdir instead of \".\"",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo doc -p workflow_core --no-deps",
-    "cargo check -p workflow_core"
+    "cargo check -p workflow_core",
+    "cargo test -p workflow_core"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-20T01:00:12Z"
+  "timestamp": "2026-04-20T01:23:34Z"
 }
