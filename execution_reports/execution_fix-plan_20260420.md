@@ -113,3 +113,37 @@
     error: could not compile `workflow_utils` (lib) due to 1 previous error
     ```
 
+### TASK-1: Remove unused ProcessHandle import in queued integration test
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo clippy -p workflow_utils --tests -- -D unused_imports`: PASSED
+    ```
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s
+    ```
+  - `cargo test -p workflow_utils --test queued_integration`: FAILED (exit 101)
+    ```
+    running 4 tests
+    test queued_runner_implements_queued_submitter_pbs ... ok
+    test queued_runner_implements_queued_submitter_slurm ... ok
+    test submit_returns_err_when_sbatch_unavailable ... ok
+    test submit_with_mock_sbatch_returns_on_disk_handle ... FAILED
+    
+    failures:
+    
+    ---- submit_with_mock_sbatch_returns_on_disk_handle stdout ----
+    
+    thread 'submit_with_mock_sbatch_returns_on_disk_handle' (100707734) panicked at workflow_utils/tests/queued_integration.rs:96:10:
+    submit should succeed with mock sbatch: Io(Os { code: 2, kind: NotFound, message: "No such file or directory" })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+    
+    
+    failures:
+        submit_with_mock_sbatch_returns_on_disk_handle
+    
+    test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    
+        Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+         Running tests/queued_integration.rs (target/debug/deps/queued_integration-5f81789c2673a225)
+    error: test failed, to rerun pass `-p workflow_utils --test queued_integration`
+    ```
+

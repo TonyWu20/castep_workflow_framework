@@ -1,7 +1,6 @@
 {
   "plan": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "completed": [
-    "TASK-1",
     "TASK-2",
     "TASK-3",
     "TASK-5",
@@ -12,7 +11,8 @@
     "TASK-7",
     "TASK-8",
     "TASK-9",
-    "TASK-11"
+    "TASK-11",
+    "TASK-1"
   ],
   "blocked": []
 }

@@ -67,7 +67,7 @@ fn submit_returns_err_when_sbatch_unavailable() {
 #[test]
 fn submit_with_mock_sbatch_returns_on_disk_handle() {
     use std::os::unix::fs::PermissionsExt;
-    use workflow_core::process::{OutputLocation, ProcessHandle};
+    use workflow_core::process::OutputLocation;
 
     let dir = tempfile::tempdir().unwrap();
     let log_dir = dir.path().join("logs");

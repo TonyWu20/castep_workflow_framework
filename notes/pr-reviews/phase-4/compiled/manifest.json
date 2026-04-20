@@ -1,0 +1,96 @@
+{
+  "plan": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
+  "compiled_at": "2026-04-20T00:44:56.127513+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "script": "TASK-1.sh",
+      "runner": "TASK-1.py",
+      "file": "workflow_utils/tests/queued_integration.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Remove unused ProcessHandle import in queued integration test",
+      "acceptance": [
+        "cargo clippy -p workflow_utils --tests -- -D unused_imports",
+        "cargo test -p workflow_utils --test queued_integration"
+      ]
+    },
+    {
+      "id": "TASK-2",
+      "script": "TASK-2.sh",
+      "runner": "TASK-2.py",
+      "file": "workflow_utils/src/queued.rs",
+      "type": "replace",
+      "changes": 2,
+      "description": "Eliminate shell injection in QueuedRunner::submit",
+      "acceptance": [
+        "cargo check -p workflow_utils",
+        "cargo test -p workflow_utils --test queued_integration"
+      ]
+    },
+    {
+      "id": "TASK-3",
+      "script": "TASK-3.sh",
+      "runner": "TASK-3.py",
+      "file": "workflow_core/src/process.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add doc comments to ProcessHandle trait",
+      "acceptance": [
+        "cargo doc -p workflow_core --no-deps",
+        "cargo check -p workflow_core"
+      ]
+    },
+    {
+      "id": "TASK-4",
+      "script": "TASK-4.sh",
+      "runner": "TASK-4.py",
+      "file": "workflow_core/src/workflow.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Default log_dir to task workdir instead of \".\"",
+      "acceptance": [
+        "cargo check -p workflow_core",
+        "cargo test -p workflow_core"
+      ]
+    },
+    {
+      "id": "TASK-5",
+      "script": "TASK-5.sh",
+      "runner": "TASK-5.py",
+      "file": "workflow_utils/src/queued.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add unit tests for parse_job_id (SLURM and PBS)",
+      "acceptance": [
+        "cargo test -p workflow_utils -- tests::parse"
+      ]
+    },
+    {
+      "id": "TASK-6",
+      "script": "TASK-6.sh",
+      "runner": "TASK-6.py",
+      "file": "workflow_utils/src/queued.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add doc comments to SchedulerKind and QueuedRunner public API",
+      "acceptance": [
+        "cargo doc -p workflow_utils --no-deps",
+        "cargo check -p workflow_utils"
+      ]
+    },
+    {
+      "id": "TASK-7",
+      "script": "TASK-7.sh",
+      "runner": "TASK-7.py",
+      "file": "workflow_utils/Cargo.toml",
+      "type": "replace",
+      "changes": 4,
+      "description": "Add #[serial] to PATH-mutating queued integration tests",
+      "acceptance": [
+        "cargo test -p workflow_utils --test queued_integration"
+      ]
+    }
+  ],
+  "skipped": []
+}
