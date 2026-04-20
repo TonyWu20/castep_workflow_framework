@@ -104,6 +104,50 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_slurm_job_id_from_submit_output() {
+        let runner = QueuedRunner::new(SchedulerKind::Slurm);
+        let id = runner.parse_job_id("Submitted batch job 12345").unwrap();
+        assert_eq!(id, "12345");
+    }
+
+    #[test]
+    fn parse_slurm_job_id_single_word() {
+        let runner = QueuedRunner::new(SchedulerKind::Slurm);
+        let id = runner.parse_job_id("99999").unwrap();
+        assert_eq!(id, "99999");
+    }
+
+    #[test]
+    fn parse_slurm_job_id_empty_fails() {
+        let runner = QueuedRunner::new(SchedulerKind::Slurm);
+        assert!(runner.parse_job_id("").is_err());
+    }
+
+    #[test]
+    fn parse_pbs_job_id_typical() {
+        let runner = QueuedRunner::new(SchedulerKind::Pbs);
+        let id = runner.parse_job_id("1234.pbs-server\n").unwrap();
+        assert_eq!(id, "1234.pbs-server");
+    }
+
+    #[test]
+    fn parse_pbs_job_id_empty_fails() {
+        let runner = QueuedRunner::new(SchedulerKind::Pbs);
+        assert!(runner.parse_job_id("").is_err());
+    }
+
+    #[test]
+    fn parse_pbs_job_id_whitespace_only_fails() {
+        let runner = QueuedRunner::new(SchedulerKind::Pbs);
+        assert!(runner.parse_job_id("   \n  ").is_err());
+    }
+}
+
 pub struct QueuedProcessHandle {
     job_id: String,
     poll_cmd: String,

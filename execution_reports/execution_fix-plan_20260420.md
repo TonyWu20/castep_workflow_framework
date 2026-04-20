@@ -165,3 +165,8 @@
   - `cargo check -p workflow_core`: PASSED
   - `cargo test -p workflow_core`: PASSED
 
+### TASK-5: Add unit tests for parse_job_id (SLURM and PBS)
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p workflow_utils -- tests::parse`: PASSED
+

@@ -22,11 +22,13 @@ All tasks can run in parallel. TASK-2 is the highest-risk change, TASK-7 is Bloc
 **Type:** replace
 
 **Before:**
+
 ```rust
     use workflow_core::process::{OutputLocation, ProcessHandle};
 ```
 
 **After:**
+
 ```rust
     use workflow_core::process::OutputLocation;
 ```
@@ -43,6 +45,7 @@ All tasks can run in parallel. TASK-2 is the highest-risk change, TASK-7 is Bloc
 **Change 1:** Remove `build_submit_cmd` method.
 
 **Before:**
+
 ```rust
     fn build_submit_cmd(&self, script_path: &str, task_id: &str, log_dir: &Path) -> String {
         let stdout_path = log_dir.join(format!("{}.stdout", task_id));
@@ -63,6 +66,7 @@ All tasks can run in parallel. TASK-2 is the highest-risk change, TASK-7 is Bloc
 ```
 
 **After:**
+
 ```rust
     fn build_poll_cmd(&self) -> String {
 ```
@@ -70,6 +74,7 @@ All tasks can run in parallel. TASK-2 is the highest-risk change, TASK-7 is Bloc
 **Change 2:** Replace submit body to use direct Command invocation.
 
 **Before:**
+
 ```rust
         let submit_cmd = self.build_submit_cmd(
             &workdir.join("job.sh").to_string_lossy(), task_id, log_dir
@@ -82,6 +87,7 @@ All tasks can run in parallel. TASK-2 is the highest-risk change, TASK-7 is Bloc
 ```
 
 **After:**
+
 ```rust
         let stdout_path = log_dir.join(format!("{}.stdout", task_id));
         let stderr_path = log_dir.join(format!("{}.stderr", task_id));
@@ -108,6 +114,7 @@ All tasks can run in parallel. TASK-2 is the highest-risk change, TASK-7 is Bloc
 **Type:** replace
 
 **Before:**
+
 ```rust
 pub trait ProcessHandle: Send {
     fn is_running(&mut self) -> bool;
@@ -117,6 +124,7 @@ pub trait ProcessHandle: Send {
 ```
 
 **After:**
+
 ```rust
 /// A handle to a running (or finished) process, used to poll, wait, or terminate it.
 ///
@@ -152,12 +160,14 @@ pub trait ProcessHandle: Send {
 **Type:** replace
 
 **Before:**
+
 ```rust
                                 let log_dir = self.log_dir.as_deref()
                                     .unwrap_or_else(|| std::path::Path::new("."));
 ```
 
 **After:**
+
 ```rust
                                 let log_dir = self.log_dir.as_deref()
                                     .unwrap_or(task.workdir.as_path());
@@ -175,7 +185,10 @@ pub trait ProcessHandle: Send {
 Append a test module at the end of the file, after the closing `}` of `impl ProcessHandle for QueuedProcessHandle`.
 
 **Before:**
+
 ```rust
+            duration: self.started_at.elapsed(),
+        })
     }
 }
 ```
@@ -183,7 +196,10 @@ Append a test module at the end of the file, after the closing `}` of `impl Proc
 (This is the final `}` pair at end of file — the closing of `wait()` and of `impl ProcessHandle for QueuedProcessHandle`.)
 
 **After:**
+
 ```rust
+            duration: self.started_at.elapsed(),
+        })
     }
 }
 
@@ -242,6 +258,7 @@ mod tests {
 **Type:** replace
 
 **Before:**
+
 ```rust
 #[derive(Debug, Clone, Copy)]
 pub enum SchedulerKind {
@@ -255,6 +272,7 @@ pub struct QueuedRunner {
 ```
 
 **After:**
+
 ```rust
 /// The type of HPC job scheduler to target.
 #[derive(Debug, Clone, Copy)]
@@ -287,12 +305,14 @@ pub struct QueuedRunner {
 **Change 0:** Add `serial_test` dev-dependency to `workflow_utils/Cargo.toml`.
 
 **Before:**
+
 ```toml
 [dev-dependencies]
 tempfile = "3"
 ```
 
 **After:**
+
 ```toml
 [dev-dependencies]
 serial_test = "3"
@@ -302,12 +322,14 @@ tempfile = "3"
 **Change 1:** Add serial_test import at the top of the test file.
 
 **Before:**
+
 ```rust
 use workflow_core::process::QueuedSubmitter;
 use workflow_utils::{QueuedRunner, SchedulerKind};
 ```
 
 **After:**
+
 ```rust
 use serial_test::serial;
 use workflow_core::process::QueuedSubmitter;
@@ -317,12 +339,14 @@ use workflow_utils::{QueuedRunner, SchedulerKind};
 **Change 2:** Add `#[serial]` to `submit_returns_err_when_sbatch_unavailable`.
 
 **Before:**
+
 ```rust
 #[test]
 fn submit_returns_err_when_sbatch_unavailable() {
 ```
 
 **After:**
+
 ```rust
 #[test]
 #[serial]
@@ -332,12 +356,14 @@ fn submit_returns_err_when_sbatch_unavailable() {
 **Change 3:** Add `#[serial]` to `submit_with_mock_sbatch_returns_on_disk_handle`.
 
 **Before:**
+
 ```rust
 #[test]
 fn submit_with_mock_sbatch_returns_on_disk_handle() {
 ```
 
 **After:**
+
 ```rust
 #[test]
 #[serial]

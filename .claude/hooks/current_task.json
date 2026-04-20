@@ -1,12 +1,11 @@
 {
-  "task_id": "TASK-4",
-  "task_description": "Default log_dir to task workdir instead of \".\"",
+  "task_id": "TASK-5",
+  "task_description": "Add unit tests for parse_job_id (SLURM and PBS)",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo check -p workflow_core",
-    "cargo test -p workflow_core"
+    "cargo test -p workflow_utils -- tests::parse"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-20T01:23:34Z"
+  "timestamp": "2026-04-20T03:00:39Z"
 }
