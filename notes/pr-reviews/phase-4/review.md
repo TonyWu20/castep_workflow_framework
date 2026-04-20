@@ -2,92 +2,64 @@
 
 **Rating:** Request Changes
 
-**Summary:** Phase 4 lays solid groundwork for HPC queued execution — `OutputLocation`, `TaskPhase`, `QueuedSubmitter`, periodic hooks, and file-backed logging are well-layered. However, TASK-8 (graph-aware retry) code was never committed to source files despite checkpoint claiming completion, and TASK-12's integration test is untracked/failing. Code quality issues (dead variables, duplicated logic) need cleanup before merge.
+**Summary:** Phase 4 delivers all planned queued execution support with clean architecture. Prior round's 11 fix tasks all applied successfully. Two new issues surfaced: shell injection risk in `QueuedRunner::submit` and `wait()` semantics that rely on undocumented caller contract. Four minor items remain.
 
 **Cross-Round Patterns:** None
 
 **Axis Scores:**
 
-- Plan & Spec: Partial — TASK-8 code missing from source; TASK-12 untracked/failing
-- Architecture: Pass — Clean layering, QueuedSubmitter justified at I/O boundary, crate boundaries respected
-- Rust Style: Partial — Duplicated dead code in process_finished, missing Copy/Default derives, unused destructured fields
-- Test Coverage: Partial — Good new tests but PATH mutation is unsound, no Workflow-level queued integration test
+- Plan & Spec: Pass — All 7 deliverables implemented; graph-aware retry explicitly deferred
+- Architecture: Pass — QueuedSubmitter in core, impl in utils, crate boundaries respected
+- Rust Style: Partial — Shell injection surface in queued.rs, one clippy warning
+- Test Coverage: Partial — Happy/error paths tested; PBS parsing and is_running/terminate untested
 
 ## Fix Document for Author
 
-### Issue 1: TASK-8 code not in source files
-
-**File:** `workflow_core/src/state.rs`
-**Severity:** Blocking
-**Problem:** The `task_successors` field, `set_task_graph()` trait method, and graph-aware `cmd_retry` in `workflow-cli/src/main.rs` exist only in the plan document. Commit 4357370 only updated checkpoint/report files. The feature is entirely unimplemented.
-**Fix:** Implement TASK-8 as specified in `plans/phase-4/PHASE4_IMPLEMENTATION_PLAN.md` — add `task_successors` field to `JsonStateStore`, `set_task_graph()` to `StateStore` trait, `downstream_tasks()` BFS helper and graph-aware `cmd_retry` to `workflow-cli/src/main.rs`.
-
-### Issue 2: TASK-12 integration test untracked and failing
+### Issue 1: Unused import `ProcessHandle` in queued integration test
 
 **File:** `workflow_utils/tests/queued_integration.rs`
-**Severity:** Blocking
-**Problem:** The file is untracked (never committed). The execution report shows `submit_with_mock_sbatch_returns_on_disk_handle` panicking with `Io(Os { code: 2, kind: NotFound })`. Additionally, no test exercises `Workflow::run()` with a Queued task through the full dispatch loop.
-**Fix:** Commit the test file. Debug the mock sbatch test (likely the mock PATH isn't being inherited by the `sh -c` subprocess). Add a Workflow-level integration test that uses a mock `QueuedSubmitter` to verify the dispatch path in `workflow.rs:223-244`.
-
-### Issue 3: Duplicated dead code in `process_finished`
-
-**File:** `workflow_core/src/workflow.rs`
-**Severity:** Major
-**Problem:** Lines 357-395 compute three representations of the same completed/failed boolean: (1) `final_state: &str` at line 357 (shadowed, dead), (2) `final_state: TaskPhase` at line 385 (dead), (3) `task_phase: TaskPhase` at line 391 (used). Two are dead variables.
-**Fix:** Remove the string-based `final_state` binding (rename the let-binding at line 357 to just capture `exit_code`). Remove the duplicate `final_state` at line 385. Keep only `task_phase` computation at line 391.
-
-### Issue 4: `ExecutionMode::Queued` fields unused in dispatch
-
-**File:** `workflow_core/src/workflow.rs`
-**Severity:** Major
-**Problem:** At line 223, `ExecutionMode::Queued { submit_cmd, poll_cmd, cancel_cmd }` destructures three fields that are never read — dispatch delegates to `self.queued_submitter` which builds its own commands from `SchedulerKind`. This is a design mismatch: either pass these fields to the submitter, or simplify the enum.
-**Fix:** Either (a) change `QueuedSubmitter::submit()` to accept the command strings from the enum, or (b) simplify `ExecutionMode::Queued` to a unit variant (or just a marker) since the commands come from `QueuedRunner`'s `SchedulerKind`. Option (b) is cleaner — the submitter owns its command logic.
-
-### Issue 5: PATH mutation without `#[serial]` in tests
-
-**File:** `workflow_utils/tests/queued_integration.rs`
-**Severity:** Major
-**Problem:** `std::env::set_var("PATH", ...)` is process-global and unsound in parallel test execution. Comment mentions `#[serial]` but doesn't use it. As of Rust 1.83, `set_var` is `unsafe`.
-**Fix:** Add `serial_test` dev-dependency and `#[serial]` attribute to tests that mutate PATH. Alternatively, restructure tests to spawn a subprocess with a modified env (preferred for soundness).
-
-### Issue 6: `TaskPhase` missing `Copy`, `PartialEq`, `Eq` derives
-
-**File:** `workflow_core/src/monitoring.rs`
 **Severity:** Minor
-**Problem:** `TaskPhase` is a fieldless enum but only derives `Debug, Clone, Serialize, Deserialize`. This forces unnecessary `.clone()` calls (e.g., `phase.clone()` in `fire_hooks` match).
-**Fix:** Add `Copy, PartialEq, Eq` to the derive list. Remove `.clone()` calls on `TaskPhase` values.
+**Problem:** `use workflow_core::process::{OutputLocation, ProcessHandle}` imports `ProcessHandle` which is unused (clippy warning). The trait method `wait()` is available through the return type without this import.
+**Fix:** Change the import to `use workflow_core::process::OutputLocation;` only.
 
-### Issue 7: `QueuedProcessHandle::workdir` is dead field
+### Issue 2: Shell injection in `QueuedRunner::submit`
+
+**File:** `workflow_utils/src/queued.rs`
+**Severity:** Major
+**Problem:** `build_submit_cmd` interpolates `script_path`, `task_id`, and `log_dir` paths into a shell command string via `format!`, then `submit` passes this to `Command::new("sh").args(["-c", &submit_cmd])`. If any path or task ID contains shell metacharacters (spaces, semicolons, backticks), this enables command injection.
+**Fix:** Replace `sh -c` with direct `Command::new("sbatch")` / `Command::new("qsub")` using `.args()` for each argument. This avoids shell interpretation entirely.
+
+### Issue 3: `QueuedProcessHandle::wait()` non-blocking semantics undocumented
+
+**File:** `workflow_utils/src/queued.rs`
+**Severity:** Major
+**Problem:** `wait()` returns immediately with `self.finished_exit_code` which is `None` until `is_running()` detects completion. The `ProcessHandle` trait's `wait()` doc doesn't specify blocking semantics, so callers may assume it blocks. The workflow's `process_finished` does call `wait()` only after `is_running()` returns false (correct), but the contract is implicit.
+**Fix:** Add a doc comment to the `ProcessHandle` trait's `wait()` method in `workflow_core/src/process.rs` specifying: "Callers must ensure `is_running()` has returned `false` before calling `wait()`. Behavior when called on a still-running process is implementation-defined." Also add a doc comment on `QueuedProcessHandle::wait()` noting it returns immediately with cached state.
+
+### Issue 4: `log_dir` defaults to `"."` for Queued tasks
+
+**File:** `workflow_core/src/workflow.rs`
+**Severity:** Minor
+**Problem:** In the Queued dispatch branch, `self.log_dir.as_deref().unwrap_or_else(|| std::path::Path::new("."))` defaults to the process CWD, which may differ from `task.workdir`. Log files could end up in unexpected locations.
+**Fix:** Default to `&task.workdir` instead of `"."` when `self.log_dir` is None.
+
+### Issue 5: PBS job ID parsing untested
 
 **File:** `workflow_utils/src/queued.rs`
 **Severity:** Minor
-**Problem:** The `workdir: PathBuf` field is stored during construction but never read by any method.
-**Fix:** Remove the field, or document its intended future use with a TODO comment.
+**Problem:** `parse_job_id` handles both SLURM and PBS formats, but only SLURM is exercised in integration tests. The PBS path (trim + empty check) is untested.
+**Fix:** Add unit tests for `parse_job_id` by either making it `pub(crate)` or adding a `#[cfg(test)]` module with direct tests. Test cases: valid PBS output (`"12345.server\n"`), empty PBS output, valid SLURM output.
 
-### Issue 8: `pub use queued::*` glob re-export
-
-**File:** `workflow_utils/src/lib.rs`
-**Severity:** Minor
-**Problem:** Glob re-export leaks `QueuedProcessHandle` which should be opaque (callers use `Box<dyn ProcessHandle>`).
-**Fix:** Replace with explicit re-exports: `pub use queued::{QueuedRunner, SchedulerKind};`
-
-### Issue 9: `SystemProcessRunner` should derive `Default`
-
-**File:** `workflow_utils/src/executor.rs`
-**Severity:** Minor
-**Problem:** `new()` returns `Self { log_dir: None }` — this is exactly what `Default` would produce.
-**Fix:** Add `#[derive(Default)]` and keep `new()` as a convenience alias (or remove it in favor of `Default::default()`).
-
-### Issue 10: Periodic hook test sleeps 8 seconds
-
-**File:** `workflow_core/tests/hook_recording.rs`
-**Severity:** Minor
-**Problem:** `periodic_hook_fires_during_long_task` uses `sleep 8` — unnecessarily slow for CI.
-**Fix:** Reduce to `sleep 2` (still sufficient with `interval_secs: 1` to fire at least once).
-
-### Issue 11: `build_submit_cmd` doesn't shell-escape paths
+### Issue 6: Missing doc comments on `QueuedRunner` public API
 
 **File:** `workflow_utils/src/queued.rs`
 **Severity:** Minor
-**Problem:** Paths are interpolated directly into the shell command string via `format!`. Paths with spaces or special characters will break.
-**Fix:** Wrap paths in single-quotes with internal quote escaping, or use `shell_escape` crate.
+**Problem:** `QueuedRunner`, `SchedulerKind`, and the `QueuedSubmitter` impl lack doc comments. These are public types re-exported from `workflow_utils`.
+**Fix:** Add brief `///` doc comments to `QueuedRunner`, `SchedulerKind`, and the `submit` method.
+
+### Issue 7: PATH mutation race condition in queued integration tests
+
+**File:** `workflow_utils/tests/queued_integration.rs`
+**Severity:** Blocking
+**Problem:** `submit_returns_err_when_sbatch_unavailable` and `submit_with_mock_sbatch_returns_on_disk_handle` both call `std::env::set_var("PATH", ...)` which is process-global. By default Rust runs tests in parallel within the same binary, so the two tests race on PATH — one sets it to an empty dir, the other to mock_bin. This causes intermittent `NotFound` failures. The comment on line 44 acknowledges the need for `#[serial]` but it was never added. The `serial_test` crate is in Cargo.toml but unused.
+**Fix:** Add `use serial_test::serial;` and `#[serial]` attribute to both PATH-mutating tests.
