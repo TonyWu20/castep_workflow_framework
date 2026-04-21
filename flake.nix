@@ -65,9 +65,9 @@
                 command = ''
                   ANTHROPIC_BASE_URL=http://localhost:8000 \
                   CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
-                  ANTHROPIC_DEFAULT_OPUS_MODEL=Qwen3.5-35B-A3B-UD-Q2_K_XL-mlx \
-                  ANTHROPIC_DEFAULT_SONNET_MODEL=Qwen3.5-35B-A3B-UD-Q2_K_XL-mlx \
-                  ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwen3.5-35B-A3B-UD-Q2_K_XL-mlx \
+                  ANTHROPIC_DEFAULT_OPUS_MODEL=Qwen3.6-35B-A3B-oQ2 \
+                  ANTHROPIC_DEFAULT_SONNET_MODEL=Qwen3.6-35B-A3B-oQ2 \
+                  ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwen3.6-35B-A3B-oQ2 \
                   claude
                 '';
               }
