@@ -1,65 +1,45 @@
 ## PR Review: `phase-4` → `main`
 
-**Rating:** Request Changes
+**Rating:** Approve
 
-**Summary:** Phase 4 delivers all planned queued execution support with clean architecture. Prior round's 11 fix tasks all applied successfully. Two new issues surfaced: shell injection risk in `QueuedRunner::submit` and `wait()` semantics that rely on undocumented caller contract. Four minor items remain.
+**Summary:** Phase 4 completes all 7 fix-plan tasks cleanly. The branch introduces `TaskSuccessors` as a proper newtype, moves `set_task_graph` from the `StateStore` trait to an inherent method on `JsonStateStore`, stores the successor graph in `Workflow` via `run()`, adds graph-aware CLI retry with proper `None`/`Some` fallback, and exercises the queued polling loop with a `DelayedHandle` test. All tests pass and clippy is clean. Four minor API hygiene items remain (none blocking).
 
-**Cross-Round Patterns:** None
+**Cross-Round Patterns:** None. Shell injection (Round 2 Major) confirmed fixed in Round 3 and remains fixed. No regressions from prior rounds detected.
 
 **Axis Scores:**
+- Plan & Spec: Pass — all 7 fix-plan tasks completed, no out-of-scope additions
+- Architecture: Pass — DAG-centric design, `TaskSuccessors` newtype, `set_task_graph` correctly scoped to `JsonStateStore`, crate boundaries respected
+- Rust Style: Pass — meaningful error types, `#[must_use]` applied to getter, no dead code warnings, no clippy warnings
+- Test Coverage: Pass — 6 BFS unit tests, serialization round-trip, `DelayedHandle` polling test, queued workflow integration test
 
-- Plan & Spec: Pass — All 7 deliverables implemented; graph-aware retry explicitly deferred
-- Architecture: Pass — QueuedSubmitter in core, impl in utils, crate boundaries respected
-- Rust Style: Partial — Shell injection surface in queued.rs, one clippy warning
-- Test Coverage: Partial — Happy/error paths tested; PBS parsing and is_running/terminate untested
+---
 
 ## Fix Document for Author
 
-### Issue 1: Unused import `ProcessHandle` in queued integration test
+### Issue 1: `TaskSuccessors::inner()` exposes raw `HashMap`, undermining newtype
 
-**File:** `workflow_utils/tests/queued_integration.rs`
+**File:** `workflow_core/src/state.rs`
 **Severity:** Minor
-**Problem:** `use workflow_core::process::{OutputLocation, ProcessHandle}` imports `ProcessHandle` which is unused (clippy warning). The trait method `wait()` is available through the return type without this import.
-**Fix:** Change the import to `use workflow_core::process::OutputLocation;` only.
+**Problem:** `TaskSuccessors` wraps `HashMap<String, Vec<String>>` to encapsulate the adjacency representation. The `pub fn inner()` method returns `&HashMap<String, Vec<String>>` directly, giving callers full access to the raw backing type. This defeats newtype encapsulation — any caller using `inner()` couples to the concrete representation and will break if the backing type ever changes. Grep confirms `inner()` has zero call sites in the workspace; it is dead API surface.
+**Fix:** Remove `pub fn inner()` from `TaskSuccessors`. The existing `get()` and `is_empty()` methods cover all current usage. If a future use case arises that those cannot serve, add a purpose-specific method at that time.
 
-### Issue 2: Shell injection in `QueuedRunner::submit`
+### Issue 2: `TaskSuccessors` missing from `workflow_core` root re-exports
 
-**File:** `workflow_utils/src/queued.rs`
-**Severity:** Major
-**Problem:** `build_submit_cmd` interpolates `script_path`, `task_id`, and `log_dir` paths into a shell command string via `format!`, then `submit` passes this to `Command::new("sh").args(["-c", &submit_cmd])`. If any path or task ID contains shell metacharacters (spaces, semicolons, backticks), this enables command injection.
-**Fix:** Replace `sh -c` with direct `Command::new("sbatch")` / `Command::new("qsub")` using `.args()` for each argument. This avoids shell interpretation entirely.
-
-### Issue 3: `QueuedProcessHandle::wait()` non-blocking semantics undocumented
-
-**File:** `workflow_utils/src/queued.rs`
-**Severity:** Major
-**Problem:** `wait()` returns immediately with `self.finished_exit_code` which is `None` until `is_running()` detects completion. The `ProcessHandle` trait's `wait()` doc doesn't specify blocking semantics, so callers may assume it blocks. The workflow's `process_finished` does call `wait()` only after `is_running()` returns false (correct), but the contract is implicit.
-**Fix:** Add a doc comment to the `ProcessHandle` trait's `wait()` method in `workflow_core/src/process.rs` specifying: "Callers must ensure `is_running()` has returned `false` before calling `wait()`. Behavior when called on a still-running process is implementation-defined." Also add a doc comment on `QueuedProcessHandle::wait()` noting it returns immediately with cached state.
-
-### Issue 4: `log_dir` defaults to `"."` for Queued tasks
-
-**File:** `workflow_core/src/workflow.rs`
+**File:** `workflow_core/src/lib.rs`
 **Severity:** Minor
-**Problem:** In the Queued dispatch branch, `self.log_dir.as_deref().unwrap_or_else(|| std::path::Path::new("."))` defaults to the process CWD, which may differ from `task.workdir`. Log files could end up in unexpected locations.
-**Fix:** Default to `&task.workdir` instead of `"."` when `self.log_dir` is None.
+**Problem:** The re-export line (`pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary, TaskStatus}`) includes every primary public type from the `state` module except `TaskSuccessors`. The CLI works around this by importing via the full path `workflow_core::state::TaskSuccessors`, but this breaks the crate's own convention where all primary public types are accessible at the crate root. Users relying on autocomplete or docs will miss `TaskSuccessors`.
+**Fix:** Add `TaskSuccessors` to the re-export: `pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary, TaskStatus, TaskSuccessors};`
 
-### Issue 5: PBS job ID parsing untested
+### Issue 3: `downstream_tasks` BFS belongs in `workflow_core`, not the CLI binary
+
+**File:** `workflow-cli/src/main.rs`
+**Severity:** Minor
+**Problem:** `downstream_tasks` takes `&TaskSuccessors` (a `workflow_core` type) and returns `HashSet<String>`. It has zero CLI-specific dependencies — no `clap`, no I/O, no formatting. BFS traversal over a domain graph type is domain logic, not presentation logic. Its 6 unit tests are also self-contained. Library consumers wanting graph-aware retry cannot reuse this function since it lives in a binary crate.
+**Fix:** Move `downstream_tasks` to `workflow_core` — either as a free function in `state.rs` or as a method on `TaskSuccessors` (e.g., `TaskSuccessors::downstream_of(start: &[String]) -> HashSet<String>`). Re-export it and update the CLI import. Move or replicate the 6 unit tests alongside it.
+
+### Issue 4: `QueuedProcessHandle::wait()` exit-code semantics are underdocumented
 
 **File:** `workflow_utils/src/queued.rs`
 **Severity:** Minor
-**Problem:** `parse_job_id` handles both SLURM and PBS formats, but only SLURM is exercised in integration tests. The PBS path (trim + empty check) is untested.
-**Fix:** Add unit tests for `parse_job_id` by either making it `pub(crate)` or adding a `#[cfg(test)]` module with direct tests. Test cases: valid PBS output (`"12345.server\n"`), empty PBS output, valid SLURM output.
-
-### Issue 6: Missing doc comments on `QueuedRunner` public API
-
-**File:** `workflow_utils/src/queued.rs`
-**Severity:** Minor
-**Problem:** `QueuedRunner`, `SchedulerKind`, and the `QueuedSubmitter` impl lack doc comments. These are public types re-exported from `workflow_utils`.
-**Fix:** Add brief `///` doc comments to `QueuedRunner`, `SchedulerKind`, and the `submit` method.
-
-### Issue 7: PATH mutation race condition in queued integration tests
-
-**File:** `workflow_utils/tests/queued_integration.rs`
-**Severity:** Blocking
-**Problem:** `submit_returns_err_when_sbatch_unavailable` and `submit_with_mock_sbatch_returns_on_disk_handle` both call `std::env::set_var("PATH", ...)` which is process-global. By default Rust runs tests in parallel within the same binary, so the two tests race on PATH — one sets it to an empty dir, the other to mock_bin. This causes intermittent `NotFound` failures. The comment on line 44 acknowledges the need for `#[serial]` but it was never added. The `serial_test` crate is in Cargo.toml but unused.
-**Fix:** Add `use serial_test::serial;` and `#[serial]` attribute to both PATH-mutating tests.
+**Problem:** `wait()` returns `finished_exit_code` which can be: `Some(0)` (job left the queue, assumed success), `Some(-1)` (scheduler query command itself failed), or `None` (called before `is_running()` transitions to finished). The `-1` sentinel conflates "cannot reach scheduler" with "process killed by signal" (Unix signal termination also conventionally maps to a negative code). Additionally, a comment at line 141 says "accounting query in `wait()` may refine" but `wait()` performs no such refinement.
+**Fix:** Add a doc comment on `wait()` clarifying the three states and the approximate nature of `finished_exit_code`. Remove or fix the stale "accounting query" comment. No behavioral change needed — the caller in `workflow.rs` already handles all three cases defensively.
