@@ -94,9 +94,6 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let job_id = self.parse_job_id(&stdout)?;
 
-        let stdout_path = log_dir.join(format!("{}.stdout", task_id));
-        let stderr_path = log_dir.join(format!("{}.stderr", task_id));
-
         Ok(Box::new(QueuedProcessHandle {
             job_id,
             poll_cmd: self.build_poll_cmd(),

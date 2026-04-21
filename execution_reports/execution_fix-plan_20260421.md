@@ -22,3 +22,8 @@
 - **Validation output**:
   - `cargo check --workspace`: PASSED
 
+### TASK-5: Remove the second (duplicate) computation of stdout_path and stderr_path in QueuedRunner::submit
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+

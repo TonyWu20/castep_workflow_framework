@@ -3,11 +3,11 @@
   "completed": [
     "TASK-2",
     "TASK-3",
-    "TASK-5",
     "TASK-6",
     "TASK-7",
     "TASK-1",
-    "TASK-4"
+    "TASK-4",
+    "TASK-5"
   ],
   "failed": [
     "TASK-8",

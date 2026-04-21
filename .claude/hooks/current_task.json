@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-4",
-  "task_description": "Add QueuedSubmitter to the pub use process::{...} line in workflow_core/src/lib.rs",
+  "task_id": "TASK-5",
+  "task_description": "Remove the second (duplicate) computation of stdout_path and stderr_path in QueuedRunner::submit",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo check --workspace"
+    "cargo check -p workflow_utils"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T13:34:44Z"
+  "timestamp": "2026-04-21T13:35:03Z"
 }
