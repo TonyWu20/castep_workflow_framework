@@ -138,7 +138,9 @@ impl ProcessHandle for QueuedProcessHandle {
                     && !output.stdout.is_empty();
                 self.cached_running = running;
                 if !running {
-                    self.finished_exit_code = Some(0); // default; accounting query in wait() may refine
+                    // Job no longer appears in the queue; assume success (exit code 0).
+                    // The scheduler does not provide the actual exit code at poll time.
+                    self.finished_exit_code = Some(0);
                 }
             }
             Err(_) => {
@@ -168,6 +170,17 @@ impl ProcessHandle for QueuedProcessHandle {
         Ok(())
     }
 
+    /// Returns the process result after `is_running()` has returned `false`.
+    ///
+    /// # Exit code semantics (approximate)
+    ///
+    /// - `Some(0)` — job left the scheduler queue normally (assumed success).
+    /// - `Some(-1)` — the scheduler status query command itself failed (I/O error);
+    ///   this conflates "cannot reach scheduler" with an actual -1 exit code.
+    /// - `None` — `is_running()` was never called or never transitioned to finished;
+    ///   callers should treat `None` as an unknown outcome.
+    ///
+    /// The caller in `workflow.rs` handles all three cases defensively via `unwrap_or(-1)`.
     fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
         Ok(ProcessResult {
             exit_code: self.finished_exit_code,

@@ -143,6 +143,26 @@ impl TaskSuccessors {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    /// Returns the set of all task IDs transitively reachable downstream
+    /// from the given starting task IDs via BFS over the successor graph.
+    ///
+    /// The starting task IDs themselves are NOT included in the result.
+    /// Cycle-safe: the visited set prevents re-enqueuing.
+    pub fn downstream_of(&self, start: &[String]) -> std::collections::HashSet<String> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+        while let Some(id) = queue.pop_front() {
+            if let Some(deps) = self.get(&id) {
+                for dep in deps {
+                    if visited.insert(dep.to_owned()) {
+                        queue.push_back(dep.to_owned());
+                    }
+                }
+            }
+        }
+        visited
+    }
 }
 
 /// JSON-based state store implementation.
@@ -442,6 +462,77 @@ mod tests {
         assert!(a_succs.contains(&"b".to_string()));
         assert!(a_succs.contains(&"c".to_string()));
         assert_eq!(succ.get("b").unwrap(), &["d".to_string()]);
+    }
+
+    #[test]
+    fn downstream_of_linear_chain() {
+        // a -> b -> c: start [a] returns {b, c}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_diamond() {
+        // a -> b, a -> c, b -> d, c -> d: start [a] returns {b, c, d}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into(), "c".into()]);
+        map.insert("b".into(), vec!["d".into()]);
+        map.insert("c".into(), vec!["d".into()]);
+        map.insert("d".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+        assert!(result.contains("d"));
+    }
+
+    #[test]
+    fn downstream_of_start_not_in_map() {
+        let succ = TaskSuccessors::new(HashMap::new());
+        let result = succ.downstream_of(&["x".into()]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_empty_start() {
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_multiple_starts() {
+        // a -> c, b -> c: start [a, b] returns {c}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["c".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into(), "b".into()]);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_cycle_terminates() {
+        // a -> b -> a (cycle): BFS must terminate; visited set prevents re-enqueue
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["a".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert!(result.contains("b"));
+        assert!(result.contains("a"));
     }
 
     #[test]
