@@ -19,6 +19,9 @@ impl HookExecutor for ShellHookExecutor {
             .args(args)
             .env("TASK_ID", &ctx.task_id)
             .env("TASK_PHASE", ctx.phase.to_string().as_str())
+            // Deprecated: TASK_STATE is the old name for TASK_PHASE.
+            // Kept for backwards compatibility with existing hook scripts.
+            .env("TASK_STATE", ctx.phase.to_string().as_str())
             .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
             .env(
                 "EXIT_CODE",

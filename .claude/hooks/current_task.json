@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-7",
-  "task_description": "Replace println! with panic! for unexpected error variant in submit_returns_err_when_sbatch_unavailable test",
+  "task_id": "TASK-8",
+  "task_description": "Set deprecated TASK_STATE env var alongside TASK_PHASE for backwards compatibility with existing hook scripts",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo test -p workflow_utils --test queued_integration"
+    "cargo check -p workflow_utils"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T13:36:24Z"
+  "timestamp": "2026-04-21T13:36:45Z"
 }
