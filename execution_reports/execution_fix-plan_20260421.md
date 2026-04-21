@@ -279,3 +279,13 @@
 - **Validation output**:
   - `cargo test -p workflow-cli`: PASSED
 
+### TASK-6: Add #[must_use] annotation to JsonStateStore::task_successors() getter
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+
+### TASK-6: Add #[must_use] annotation to JsonStateStore::task_successors() getter
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+

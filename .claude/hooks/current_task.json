@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-4",
-  "task_description": "Add BFS unit tests for downstream_tasks: linear chain, diamond, missing start, empty start, multiple starts, cycle guard",
+  "task_id": "TASK-6",
+  "task_description": "Add #[must_use] annotation to JsonStateStore::task_successors() getter",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo test -p workflow-cli"
+    "cargo check -p workflow_core"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T14:29:20Z"
+  "timestamp": "2026-04-21T14:31:44Z"
 }

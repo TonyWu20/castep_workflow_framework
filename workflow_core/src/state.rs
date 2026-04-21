@@ -240,6 +240,7 @@ impl JsonStateStore {
 
     /// Returns the task successor graph persisted from the last workflow run.
     /// Returns `None` for state files created before graph persistence was added.
+    #[must_use]
     pub fn task_successors(&self) -> Option<&TaskSuccessors> {
         self.task_successors.as_ref()
     }
@@ -427,5 +428,45 @@ mod tests {
         s.save().unwrap();
         let loaded = JsonStateStore::load(&path).unwrap();
         assert_eq!(loaded.workflow_name(), "my_workflow");
+    }
+
+    #[test]
+    fn set_task_graph_persists_through_save_load() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("graph.json");
+        let mut s = JsonStateStore::new("graph_test", path.clone());
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), vec!["b".to_string(), "c".to_string()]);
+        map.insert("b".to_string(), vec!["d".to_string()]);
+        s.set_task_graph(TaskSuccessors::new(map));
+        s.save().unwrap();
+
+        let loaded = JsonStateStore::load(&path).unwrap();
+        let succ = loaded.task_successors().expect("task_successors should be Some after round-trip");
+        let a_succs = succ.get("a").unwrap();
+        assert!(a_succs.contains(&"b".to_string()));
+        assert!(a_succs.contains(&"c".to_string()));
+        assert_eq!(succ.get("b").unwrap(), &["d".to_string()]);
+    }
+
+    #[test]
+    fn old_state_file_deserializes_without_task_successors() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("old_state.json");
+        let json = serde_json::json!({
+            "workflow_name": "old_wf",
+            "created_at": "2024-01-01T00:00:00Z",
+            "last_updated": "2024-01-01T00:00:00Z",
+            "tasks": {},
+            "path": path.to_string_lossy()
+        })
+        .to_string();
+        std::fs::write(&path, json).unwrap();
+
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert!(
+            loaded.task_successors().is_none(),
+            "old state files without task_successors key should deserialize as None"
+        );
     }
 }
