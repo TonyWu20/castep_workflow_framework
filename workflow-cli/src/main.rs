@@ -97,31 +97,33 @@ fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<
         }
     }
 
-    let successors = state.task_successors().clone();
-    if successors.is_empty() {
-        eprintln!("warn: state file lacks dependency info; falling back to global reset");
-        let to_reset: Vec<String> = state
-            .all_tasks()
-            .into_iter()
-            .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
-            .map(|(id, _)| id)
-            .collect();
-        for id in to_reset {
-            state.mark_pending(&id);
+    match state.task_successors().cloned() {
+        None => {
+            eprintln!("warn: state file lacks dependency info; falling back to global reset");
+            let to_reset: Vec<String> = state
+                .all_tasks()
+                .into_iter()
+                .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
+                .map(|(id, _)| id)
+                .collect();
+            for id in to_reset {
+                state.mark_pending(&id);
+            }
         }
-    } else {
-        let downstream = downstream_tasks(task_ids, &successors);
-        let to_reset: Vec<String> = state
-            .all_tasks()
-            .into_iter()
-            .filter(|(id, s)| {
-                matches!(s, TaskStatus::SkippedDueToDependencyFailure)
-                    && downstream.contains(id)
-            })
-            .map(|(id, _)| id)
-            .collect();
-        for id in to_reset {
-            state.mark_pending(&id);
+        Some(successors) => {
+            let downstream = downstream_tasks(task_ids, &successors);
+            let to_reset: Vec<String> = state
+                .all_tasks()
+                .into_iter()
+                .filter(|(id, s)| {
+                    matches!(s, TaskStatus::SkippedDueToDependencyFailure)
+                        && downstream.contains(id)
+                })
+                .map(|(id, _)| id)
+                .collect();
+            for id in to_reset {
+                state.mark_pending(&id);
+            }
         }
     }
 

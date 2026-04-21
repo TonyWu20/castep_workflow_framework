@@ -147,7 +147,7 @@ pub struct JsonStateStore {
     last_updated: String,
     tasks: HashMap<String, TaskStatus>,
     #[serde(default)]
-    task_successors: HashMap<String, Vec<String>>,
+    task_successors: Option<HashMap<String, Vec<String>>>,
     path: PathBuf,
 }
 
@@ -160,7 +160,7 @@ impl JsonStateStore {
             created_at: now.clone(),
             last_updated: now,
             tasks: HashMap::new(),
-            task_successors: HashMap::new(),
+            task_successors: None,
             path,
         }
     }
@@ -209,13 +209,14 @@ impl JsonStateStore {
     }
 
     /// Returns the task successor graph persisted from the last workflow run.
-    pub fn task_successors(&self) -> &HashMap<String, Vec<String>> {
-        &self.task_successors
+    /// Returns `None` for state files created before graph persistence was added.
+    pub fn task_successors(&self) -> Option<&HashMap<String, Vec<String>>> {
+        self.task_successors.as_ref()
     }
 
     /// Sets the task dependency graph (successors map) for graph-aware retry.
     pub fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
-        self.task_successors = successors;
+        self.task_successors = Some(successors);
     }
 }
 

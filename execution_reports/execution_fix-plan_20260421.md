@@ -262,3 +262,9 @@
   - `cargo check --workspace`: PASSED
   - `cargo test --workspace`: PASSED
 
+### TASK-2: Change task_successors field from HashMap to Option<HashMap> in JsonStateStore; None = pre-graph state file, Some(empty) = graph with no edges; update getter, setter, constructor, and cmd_retry fallback
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+
