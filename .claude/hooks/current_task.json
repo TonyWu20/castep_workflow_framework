@@ -1,0 +1,12 @@
+{
+  "task_id": "TASK-1",
+  "task_description": "Remove set_task_graph from StateStore trait, make it inherent on JsonStateStore, store computed successor map on Workflow, expose via successor_map()",
+  "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
+  "plan_slug": "fix-plan",
+  "acceptance_commands": [
+    "cargo check --workspace",
+    "cargo test --workspace"
+  ],
+  "acceptance_prose": [],
+  "timestamp": "2026-04-21T14:20:57Z"
+}

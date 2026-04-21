@@ -250,3 +250,9 @@
         |                                   creates a temporary value which is freed while still in use
     ```
 
+### TASK-1: Remove set_task_graph from StateStore trait, make it inherent on JsonStateStore, store computed successor map on Workflow, expose via successor_map()
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+

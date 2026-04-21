@@ -30,6 +30,7 @@ pub struct Workflow {
     pub(crate) interrupt: Arc<AtomicBool>,
     log_dir: Option<std::path::PathBuf>,
     queued_submitter: Option<Arc<dyn crate::process::QueuedSubmitter>>,
+    computed_successors: Option<HashMap<String, Vec<String>>>,
 }
 
 impl Workflow {
@@ -46,6 +47,7 @@ impl Workflow {
             interrupt: Arc::new(AtomicBool::new(false)),
             log_dir: None,
             queued_submitter: None,
+            computed_successors: None,
         }
     }
 
@@ -70,6 +72,12 @@ impl Workflow {
     pub fn with_queued_submitter(mut self, qs: Arc<dyn crate::process::QueuedSubmitter>) -> Self {
         self.queued_submitter = Some(qs);
         self
+    }
+
+    /// Returns the computed successor map after `run()` has been called.
+    /// Returns `None` if `run()` has not yet been called.
+    pub fn successor_map(&self) -> Option<&HashMap<String, Vec<String>>> {
+        self.computed_successors.as_ref()
     }
 
     pub fn add_task(&mut self, task: Task) -> Result<(), WorkflowError> {
@@ -109,11 +117,11 @@ impl Workflow {
 
         let dag = self.build_dag()?;
 
-        // Persist task dependency graph for CLI retry
+        // Compute and store task dependency graph for CLI retrieval
         let successors: HashMap<String, Vec<String>> = dag.task_ids()
             .map(|id| (id.clone(), dag.successors(id)))
             .collect();
-        state.set_task_graph(successors);
+        self.computed_successors = Some(successors);
 
         // Initialize state for all tasks
         for id in dag.task_ids() {

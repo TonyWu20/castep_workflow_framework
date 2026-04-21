@@ -42,10 +42,6 @@ pub trait StateStore: Send + Sync {
 
     /// Persists the current state to disk.
     fn save(&self) -> Result<(), WorkflowError>;
-
-    /// Persists the task dependency graph (successors map) for graph-aware retry.
-    /// Default is a no-op; `JsonStateStore` overrides this.
-    fn set_task_graph(&mut self, _successors: HashMap<String, Vec<String>>) {}
 }
 
 /// Extension trait providing convenience methods for state management.
@@ -216,6 +212,11 @@ impl JsonStateStore {
     pub fn task_successors(&self) -> &HashMap<String, Vec<String>> {
         &self.task_successors
     }
+
+    /// Sets the task dependency graph (successors map) for graph-aware retry.
+    pub fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
+        self.task_successors = successors;
+    }
 }
 
 impl StateStore for JsonStateStore {
@@ -234,10 +235,6 @@ impl StateStore for JsonStateStore {
 
     fn save(&self) -> Result<(), WorkflowError> {
         self.persist()
-    }
-
-    fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
-        self.task_successors = successors;
     }
 }
 

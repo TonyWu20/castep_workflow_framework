@@ -1,0 +1,94 @@
+{
+  "plan": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
+  "compiled_at": "2026-04-21T14:16:59.901653+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "script": "TASK-1.sh",
+      "runner": "TASK-1.py",
+      "file": "workflow_core/src/state.rs",
+      "type": "replace",
+      "changes": 7,
+      "description": "Remove set_task_graph from StateStore trait, make it inherent on JsonStateStore, store computed successor map on Workflow, expose via successor_map()",
+      "acceptance": [
+        "cargo check --workspace",
+        "cargo test --workspace"
+      ]
+    },
+    {
+      "id": "TASK-2",
+      "script": "TASK-2.sh",
+      "runner": "TASK-2.py",
+      "file": "workflow_core/src/state.rs",
+      "type": "replace",
+      "changes": 4,
+      "description": "Change task_successors field from HashMap to Option<HashMap> in JsonStateStore; None = pre-graph state file, Some(empty) = graph with no edges; update getter, setter, constructor, and cmd_retry fallback",
+      "acceptance": [
+        "cargo check --workspace",
+        "cargo test --workspace"
+      ]
+    },
+    {
+      "id": "TASK-3",
+      "script": "TASK-3.sh",
+      "runner": "TASK-3.py",
+      "file": "workflow_core/src/state.rs",
+      "type": "replace",
+      "changes": 11,
+      "description": "Introduce pub struct TaskSuccessors(HashMap<String, Vec<String>>) with get() and is_empty(); use it in JsonStateStore field/getter/setter, Workflow computed_successors/successor_map(), and downstream_tasks in CLI",
+      "acceptance": [
+        "cargo check --workspace",
+        "cargo test --workspace"
+      ]
+    },
+    {
+      "id": "TASK-4",
+      "script": "TASK-4.sh",
+      "runner": "TASK-4.py",
+      "file": "workflow-cli/src/main.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add BFS unit tests for downstream_tasks: linear chain, diamond, missing start, empty start, multiple starts, cycle guard",
+      "acceptance": [
+        "cargo test -p workflow-cli"
+      ]
+    },
+    {
+      "id": "TASK-5",
+      "script": "TASK-5.sh",
+      "runner": "TASK-5.py",
+      "file": "workflow_core/src/state.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add two tests in workflow_core/src/state.rs: set_task_graph round-trip through save/load, and backwards-compatible deserialization of old state files without task_successors",
+      "acceptance": [
+        "cargo test -p workflow_core -- state::tests"
+      ]
+    },
+    {
+      "id": "TASK-6",
+      "script": "TASK-6.sh",
+      "runner": "TASK-6.py",
+      "file": "workflow_core/src/state.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add #[must_use] annotation to JsonStateStore::task_successors() getter",
+      "acceptance": [
+        "cargo check -p workflow_core"
+      ]
+    },
+    {
+      "id": "TASK-7",
+      "script": "TASK-7.sh",
+      "runner": "TASK-7.py",
+      "file": "workflow_core/tests/queued_workflow.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add queued_task_polls_before_completing test using DelayedHandle (AtomicUsize counter) that returns is_running()=true for first 2 polls then false, exercising the polling loop",
+      "acceptance": [
+        "cargo test -p workflow_core --test queued_workflow"
+      ]
+    }
+  ],
+  "skipped": []
+}
