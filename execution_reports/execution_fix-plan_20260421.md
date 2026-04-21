@@ -139,3 +139,40 @@
         |                                   creates a temporary value which is freed while still in use
     ```
 
+### TASK-7: Replace println! with panic! for unexpected error variant in submit_returns_err_when_sbatch_unavailable test
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo test -p workflow_utils --test queued_integration`: FAILED (exit 101)
+    ```
+    f.scheduler {
+    122 |             SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+    123 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:148:37
+        |
+    148 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    151 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    147 ~         let mut binding = Command::new("scancel");
+    148 ~         match self.scheduler {
+    149 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:149:35
+        |
+    149 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    ```
+

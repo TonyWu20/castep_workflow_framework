@@ -58,7 +58,7 @@ fn submit_returns_err_when_sbatch_unavailable() {
     );
     match result {
         Err(WorkflowError::QueueSubmitFailed(_)) => {}
-        Err(e) => println!("expected QueueSubmitFailed, got {:?}", e),
+        Err(e) => panic!("expected QueueSubmitFailed, got {:?}", e),
         Ok(_) => panic!("expected error but got Ok"),
     }
 }
