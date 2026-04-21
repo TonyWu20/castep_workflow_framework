@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-5",
-  "task_description": "Remove the second (duplicate) computation of stdout_path and stderr_path in QueuedRunner::submit",
+  "task_id": "TASK-6",
+  "task_description": "Change pub scheduler field to private, add pub fn scheduler() getter on QueuedRunner",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
     "cargo check -p workflow_utils"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T13:35:03Z"
+  "timestamp": "2026-04-21T13:35:25Z"
 }

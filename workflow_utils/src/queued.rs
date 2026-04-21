@@ -20,12 +20,17 @@ pub enum SchedulerKind {
 /// integrate with the workflow engine's `Queued` execution mode.
 pub struct QueuedRunner {
     /// Which scheduler dialect to use for command construction.
-    pub scheduler: SchedulerKind,
+    scheduler: SchedulerKind,
 }
 
 impl QueuedRunner {
     pub fn new(scheduler: SchedulerKind) -> Self {
         Self { scheduler }
+    }
+
+    /// Returns the scheduler kind this runner targets.
+    pub fn scheduler(&self) -> SchedulerKind {
+        self.scheduler
     }
 
     fn build_poll_cmd(&self) -> String {

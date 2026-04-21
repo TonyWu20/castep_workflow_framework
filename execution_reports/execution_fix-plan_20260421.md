@@ -27,3 +27,8 @@
 - **Validation output**:
   - `cargo check -p workflow_utils`: PASSED
 
+### TASK-6: Change pub scheduler field to private, add pub fn scheduler() getter on QueuedRunner
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+
