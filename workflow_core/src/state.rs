@@ -143,11 +143,6 @@ impl TaskSuccessors {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-
-    /// Returns a reference to the inner map.
-    pub fn inner(&self) -> &HashMap<String, Vec<String>> {
-        &self.0
-    }
 }
 
 /// JSON-based state store implementation.
