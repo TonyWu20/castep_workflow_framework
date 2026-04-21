@@ -1,159 +1,568 @@
-# Phase 4 Fix Plan (v2) — TOML format
-# Seven issues: unused import, shell injection, missing docs, log_dir default,
-# PBS test coverage, QueuedRunner docs, PATH race condition.
+# Phase 4 Fix Plan (v3) — TOML format
+# Nine issues from PR review round 2:
+# TASK-1: graph-aware retry (TASK-8 from impl plan), TASK-2: shell injection,
+# TASK-3: clippy items-after-test-module, TASK-4: QueuedSubmitter re-export,
+# TASK-5: duplicate path computation, TASK-6: pub scheduler field,
+# TASK-7: println->panic in test, TASK-8: TASK_STATE deprecation compat,
+# TASK-9: integration test for ExecutionMode::Queued via Workflow::run.
+
+# ---------------------------------------------------------------------------
+# TASK-1: Add task_successors to JsonStateStore + graph-aware cmd_retry
+# ---------------------------------------------------------------------------
 
 [tasks.TASK-1]
-description = "Remove unused ProcessHandle import in queued integration test"
+description = "Add task_successors field to JsonStateStore, set_task_graph to StateStore trait, persist graph in Workflow::run, rewrite cmd_retry for graph-aware downstream-only reset"
 type = "replace"
-acceptance = [
-    "cargo clippy -p workflow_utils --tests -- -D unused_imports",
-    "cargo test -p workflow_utils --test queued_integration",
-]
+acceptance = ["cargo check --workspace", "cargo test --workspace"]
 
+# Change 1 — JsonStateStore struct: add task_successors field
 [[tasks.TASK-1.changes]]
-file = "workflow_utils/tests/queued_integration.rs"
+file = "workflow_core/src/state.rs"
 before = '''
-    use workflow_core::process::{OutputLocation, ProcessHandle};
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JsonStateStore {
+    workflow_name: String,
+    created_at: String,
+    last_updated: String,
+    tasks: HashMap<String, TaskStatus>,
+    path: PathBuf,
+}
 '''
 after = '''
-    use workflow_core::process::OutputLocation;
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JsonStateStore {
+    workflow_name: String,
+    created_at: String,
+    last_updated: String,
+    tasks: HashMap<String, TaskStatus>,
+    #[serde(default)]
+    task_successors: HashMap<String, Vec<String>>,
+    path: PathBuf,
+}
 '''
 
-[tasks.TASK-2]
-description = "Eliminate shell injection in QueuedRunner::submit"
-type = "replace"
-acceptance = [
-    "cargo check -p workflow_utils",
-    "cargo test -p workflow_utils --test queued_integration",
-]
-
-[[tasks.TASK-2.changes]]
-file = "workflow_utils/src/queued.rs"
+# Change 2 — JsonStateStore::new: initialize task_successors
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/state.rs"
 before = '''
-    fn build_submit_cmd(&self, script_path: &str, task_id: &str, log_dir: &Path) -> String {
-        let stdout_path = log_dir.join(format!("{}.stdout", task_id));
-        let stderr_path = log_dir.join(format!("{}.stderr", task_id));
-        match self.scheduler {
-            SchedulerKind::Slurm => format!(
-                "sbatch -o {} -e {} {}",
-                stdout_path.display(), stderr_path.display(), script_path
-            ),
-            SchedulerKind::Pbs => format!(
-                "qsub -o {} -e {} {}",
-                stdout_path.display(), stderr_path.display(), script_path
-            ),
+        Self {
+            workflow_name: name.to_owned(),
+            created_at: now.clone(),
+            last_updated: now,
+            tasks: HashMap::new(),
+            path,
+        }
+'''
+after = '''
+        Self {
+            workflow_name: name.to_owned(),
+            created_at: now.clone(),
+            last_updated: now,
+            tasks: HashMap::new(),
+            task_successors: HashMap::new(),
+            path,
+        }
+'''
+
+# Change 3 — StateStore trait: add set_task_graph default method
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+pub trait StateStore: Send + Sync {
+    /// Returns the current status of a task.
+    fn get_status(&self, id: &str) -> Option<TaskStatus>;
+
+    /// Sets the status of a task and updates timestamp.
+    fn set_status(&mut self, id: &str, status: TaskStatus);
+
+    /// Returns all task IDs and their statuses.
+    fn all_tasks(&self) -> Vec<(String, TaskStatus)>;
+
+    /// Persists the current state to disk.
+    fn save(&self) -> Result<(), WorkflowError>;
+}
+'''
+after = '''
+pub trait StateStore: Send + Sync {
+    /// Returns the current status of a task.
+    fn get_status(&self, id: &str) -> Option<TaskStatus>;
+
+    /// Sets the status of a task and updates timestamp.
+    fn set_status(&mut self, id: &str, status: TaskStatus);
+
+    /// Returns all task IDs and their statuses.
+    fn all_tasks(&self) -> Vec<(String, TaskStatus)>;
+
+    /// Persists the current state to disk.
+    fn save(&self) -> Result<(), WorkflowError>;
+
+    /// Persists the task dependency graph (successors map) for graph-aware retry.
+    /// Default is a no-op; `JsonStateStore` overrides this.
+    fn set_task_graph(&mut self, _successors: HashMap<String, Vec<String>>) {}
+}
+'''
+
+# Change 4 — impl StateStore for JsonStateStore: add set_task_graph override
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    fn save(&self) -> Result<(), WorkflowError> {
+        self.persist()
+    }
+}
+
+fn now_iso8601() -> String {
+'''
+after = '''
+    fn save(&self) -> Result<(), WorkflowError> {
+        self.persist()
+    }
+
+    fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
+        self.task_successors = successors;
+    }
+}
+
+fn now_iso8601() -> String {
+'''
+
+# Change 5 — impl JsonStateStore: add task_successors() getter
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    /// Returns the path to the state file.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+'''
+after = '''
+    /// Returns the path to the state file.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns the task successor graph persisted from the last workflow run.
+    pub fn task_successors(&self) -> &HashMap<String, Vec<String>> {
+        &self.task_successors
+    }
+}
+'''
+
+# Change 6 — Workflow::run: persist successor graph after build_dag
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/workflow.rs"
+before = '''
+        let dag = self.build_dag()?;
+
+        // Initialize state for all tasks
+        for id in dag.task_ids() {
+'''
+after = '''
+        let dag = self.build_dag()?;
+
+        // Persist task dependency graph for CLI retry
+        let successors: HashMap<String, Vec<String>> = dag.task_ids()
+            .map(|id| (id.clone(), dag.successors(id)))
+            .collect();
+        state.set_task_graph(successors);
+
+        // Initialize state for all tasks
+        for id in dag.task_ids() {
+'''
+
+# Change 7 — workflow-cli main.rs: add HashMap import
+[[tasks.TASK-1.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+use clap::{Parser, Subcommand};
+use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+'''
+after = '''
+use clap::{Parser, Subcommand};
+use std::collections::HashMap;
+use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+'''
+
+# Change 8 — cmd_retry: graph-aware implementation
+[[tasks.TASK-1.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+fn cmd_retry(state: &mut dyn StateStore, task_ids: &[String]) -> anyhow::Result<()> {
+    for id in task_ids {
+        if state.get_status(id).is_none() {
+            eprintln!("warn: task '{}' not found", id);
+        } else {
+            state.mark_pending(id);
+        }
+    }
+    // Reset all dependency-failure-skipped tasks globally (not just those downstream
+    // of `task_ids`). Intentional for v0.1 simplicity — a graph-aware retry would
+    // require DAG access that the CLI does not have.
+    let to_reset: Vec<String> = state
+        .all_tasks()
+        .into_iter()
+        .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
+        .map(|(id, _)| id)
+        .collect();
+    for id in to_reset {
+        state.mark_pending(&id);
+    }
+    state.save().map_err(|e| anyhow::anyhow!("failed to save state: {}", e))?;
+    Ok(())
+}
+'''
+after = '''
+fn downstream_tasks(
+    start: &[String],
+    successors: &HashMap<String, Vec<String>>,
+) -> std::collections::HashSet<String> {
+    let mut visited = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+    while let Some(id) = queue.pop_front() {
+        if let Some(deps) = successors.get(&id) {
+            for dep in deps {
+                if visited.insert(dep.clone()) {
+                    queue.push_back(dep.clone());
+                }
+            }
+        }
+    }
+    visited
+}
+
+fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<()> {
+    for id in task_ids {
+        if state.get_status(id).is_none() {
+            eprintln!("warn: task '{}' not found", id);
+        } else {
+            state.mark_pending(id);
         }
     }
 
-    fn build_poll_cmd(&self) -> String {
-'''
-after = '''
-    fn build_poll_cmd(&self) -> String {
+    let successors = state.task_successors().clone();
+    if successors.is_empty() {
+        eprintln!("warn: state file lacks dependency info; falling back to global reset");
+        let to_reset: Vec<String> = state
+            .all_tasks()
+            .into_iter()
+            .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
+            .map(|(id, _)| id)
+            .collect();
+        for id in to_reset {
+            state.mark_pending(&id);
+        }
+    } else {
+        let downstream = downstream_tasks(task_ids, &successors);
+        let to_reset: Vec<String> = state
+            .all_tasks()
+            .into_iter()
+            .filter(|(id, s)| {
+                matches!(s, TaskStatus::SkippedDueToDependencyFailure)
+                    && downstream.contains(id)
+            })
+            .map(|(id, _)| id)
+            .collect();
+        for id in to_reset {
+            state.mark_pending(&id);
+        }
+    }
+
+    state.save().map_err(|e| anyhow::anyhow!("failed to save state: {}", e))?;
+    Ok(())
+}
 '''
 
+# Change 9 — cmd_retry call site in main(): type already matches (load_state_for_resume returns JsonStateStore)
+
+# Change 10 — update existing retry test to use &mut JsonStateStore
+[[tasks.TASK-1.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+        let _ = cmd_retry(&mut s, &["task_b".to_string()]);
+'''
+after = '''
+        cmd_retry(&mut s, &["task_b".to_string()]).unwrap();
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-2: Shell injection fix — replace poll_cmd/cancel_cmd strings with SchedulerKind
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-2]
+description = "Replace shell-injected poll_cmd/cancel_cmd String fields with direct Command construction using SchedulerKind"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils", "cargo test -p workflow_utils --test queued_integration"]
+
+# Change 1 — Remove build_poll_cmd and build_cancel_cmd methods
 [[tasks.TASK-2.changes]]
 file = "workflow_utils/src/queued.rs"
 before = '''
-        let submit_cmd = self.build_submit_cmd(
-            &workdir.join("job.sh").to_string_lossy(), task_id, log_dir
-        );
-        let output = Command::new("sh")
-            .args(["-c", &submit_cmd])
-            .current_dir(workdir)
-            .output()
-            .map_err(WorkflowError::Io)?;
-'''
-after = '''
-        let stdout_path = log_dir.join(format!("{}.stdout", task_id));
-        let stderr_path = log_dir.join(format!("{}.stderr", task_id));
-        let script_path = workdir.join("job.sh");
-
-        let output = match self.scheduler {
-            SchedulerKind::Slurm => Command::new("sbatch"),
-            SchedulerKind::Pbs => Command::new("qsub"),
+    fn build_poll_cmd(&self) -> String {
+        match self.scheduler {
+            SchedulerKind::Slurm => "squeue -j {job_id} -h".into(),
+            SchedulerKind::Pbs => "qstat {job_id}".into(),
         }
-        .args(["-o", &stdout_path.to_string_lossy(), "-e", &stderr_path.to_string_lossy()])
-        .arg(&script_path)
-        .current_dir(workdir)
-        .output()
-        .map_err(WorkflowError::Io)?;
-'''
+    }
 
-[tasks.TASK-3]
-description = "Add doc comments to ProcessHandle trait"
-type = "replace"
-acceptance = [
-    "cargo doc -p workflow_core --no-deps",
-    "cargo check -p workflow_core",
-]
+    fn build_cancel_cmd(&self) -> String {
+        match self.scheduler {
+            SchedulerKind::Slurm => "scancel {job_id}".into(),
+            SchedulerKind::Pbs => "qdel {job_id}".into(),
+        }
+    }
 
-[[tasks.TASK-3.changes]]
-file = "workflow_core/src/process.rs"
-before = '''
-pub trait ProcessHandle: Send {
-    fn is_running(&mut self) -> bool;
-    fn terminate(&mut self) -> Result<(), WorkflowError>;
-    fn wait(&mut self) -> Result<ProcessResult, WorkflowError>;
-}
+    fn parse_job_id
 '''
 after = '''
-/// A handle to a running (or finished) process, used to poll, wait, or terminate it.
-///
-/// Implementations must be `Send` so handles can be stored across thread boundaries.
-pub trait ProcessHandle: Send {
-    /// Returns `true` if the process is still running.
-    ///
-    /// Implementations may cache the result and only re-poll periodically.
-    fn is_running(&mut self) -> bool;
-
-    /// Requests termination of the process.
-    ///
-    /// Best-effort: the process may already have exited.
-    fn terminate(&mut self) -> Result<(), WorkflowError>;
-
-    /// Returns the process result once the process has finished.
-    ///
-    /// For queued (HPC) handles this may return immediately with `OnDisk` output
-    /// paths rather than captured output. Callers should ensure `is_running()`
-    /// has returned `false` before calling `wait()`, as behaviour when called
-    /// on a still-running process is implementation-defined.
-    fn wait(&mut self) -> Result<ProcessResult, WorkflowError>;
-}
+    fn parse_job_id
 '''
 
-[tasks.TASK-4]
-description = "Default log_dir to task workdir instead of \".\""
-type = "replace"
-acceptance = [
-    "cargo check -p workflow_core",
-    "cargo test -p workflow_core",
-]
-
-[[tasks.TASK-4.changes]]
-file = "workflow_core/src/workflow.rs"
-before = '''
-                                let log_dir = self.log_dir.as_deref()
-                                    .unwrap_or_else(|| std::path::Path::new("."));
-'''
-after = '''
-                                let log_dir = self.log_dir.as_deref()
-                                    .unwrap_or(task.workdir.as_path());
-'''
-
-[tasks.TASK-5]
-description = "Add unit tests for parse_job_id (SLURM and PBS)"
-type = "replace"
-acceptance = ["cargo test -p workflow_utils -- tests::parse"]
-
-[[tasks.TASK-5.changes]]
+# Change 2 — Replace QueuedProcessHandle struct fields
+[[tasks.TASK-2.changes]]
 file = "workflow_utils/src/queued.rs"
 before = '''
+pub struct QueuedProcessHandle {
+    job_id: String,
+    poll_cmd: String,
+    cancel_cmd: String,
+    stdout_path: PathBuf,
+    stderr_path: PathBuf,
+    last_poll: Instant,
+    poll_interval: Duration,
+    cached_running: bool,
+    finished_exit_code: Option<i32>,
+    started_at: Instant,
+}
+'''
+after = '''
+pub struct QueuedProcessHandle {
+    job_id: String,
+    scheduler: SchedulerKind,
+    stdout_path: PathBuf,
+    stderr_path: PathBuf,
+    last_poll: Instant,
+    poll_interval: Duration,
+    cached_running: bool,
+    finished_exit_code: Option<i32>,
+    started_at: Instant,
+}
+'''
+
+# Change 3 — Replace is_running() to use direct Command construction
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+    fn is_running(&mut self) -> bool {
+        if self.last_poll.elapsed() < self.poll_interval {
+            return self.cached_running;
+        }
+
+        let cmd = self.poll_cmd.replace("{job_id}", &self.job_id);
+        let result = Command::new("sh")
+            .args(["-c", &cmd])
+            .output();
+
+        match result {
+            Ok(output) => {
+                // Non-zero exit or empty stdout = job gone
+                let running = output.status.success()
+                    && !output.stdout.is_empty();
+                self.cached_running = running;
+                if !running {
+                    self.finished_exit_code = Some(0); // default; accounting query in wait() may refine
+                }
+            }
+            Err(_) => {
+                self.cached_running = false;
+                self.finished_exit_code = Some(-1);
+            }
+        }
+
+        self.last_poll = Instant::now();
+        self.cached_running
+    }
+'''
+after = '''
+    fn is_running(&mut self) -> bool {
+        if self.last_poll.elapsed() < self.poll_interval {
+            return self.cached_running;
+        }
+
+        let result = match self.scheduler {
+            SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+            SchedulerKind::Pbs => Command::new("qstat").arg(&self.job_id),
+        }
+        .output();
+
+        match result {
+            Ok(output) => {
+                // Non-zero exit or empty stdout = job gone
+                let running = output.status.success()
+                    && !output.stdout.is_empty();
+                self.cached_running = running;
+                if !running {
+                    self.finished_exit_code = Some(0); // default; accounting query in wait() may refine
+                }
+            }
+            Err(_) => {
+                self.cached_running = false;
+                self.finished_exit_code = Some(-1);
+            }
+        }
+
+        self.last_poll = Instant::now();
+        self.cached_running
+    }
+'''
+
+# Change 4 — Replace terminate() to use direct Command construction
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+    fn terminate(&mut self) -> Result<(), WorkflowError> {
+        let cmd = self.cancel_cmd.replace("{job_id}", &self.job_id);
+        Command::new("sh")
+            .args(["-c", &cmd])
+            .output()
+            .map_err(WorkflowError::Io)?;
+        Ok(())
+    }
+'''
+after = '''
+    fn terminate(&mut self) -> Result<(), WorkflowError> {
+        match self.scheduler {
+            SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+            SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        }
+        .output()
+        .map_err(WorkflowError::Io)?;
+        Ok(())
+    }
+'''
+
+# Change 5 — Update QueuedProcessHandle construction in submit()
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+        Ok(Box::new(QueuedProcessHandle {
+            job_id,
+            poll_cmd: self.build_poll_cmd(),
+            cancel_cmd: self.build_cancel_cmd(),
+            stdout_path,
+            stderr_path,
+            last_poll: Instant::now(),
+            poll_interval: Duration::from_secs(15),
+            cached_running: true,
+            finished_exit_code: None,
+            started_at: Instant::now(),
+        }))
+'''
+after = '''
+        Ok(Box::new(QueuedProcessHandle {
+            job_id,
+            scheduler: self.scheduler,
+            stdout_path,
+            stderr_path,
+            last_poll: Instant::now(),
+            poll_interval: Duration::from_secs(15),
+            cached_running: true,
+            finished_exit_code: None,
+            started_at: Instant::now(),
+        }))
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-3: Move test module to end of queued.rs (after all production impl blocks)
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-3]
+description = "Move #[cfg(test)] mod tests to the very end of queued.rs, after all production code"
+type = "replace"
+acceptance = ["cargo clippy -p workflow_utils -- -D warnings"]
+
+# Change 1 — Remove test module from its current position (between QueuedRunner and QueuedProcessHandle)
+[[tasks.TASK-3.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_slurm_job_id_from_submit_output() {
+        let runner = QueuedRunner::new(SchedulerKind::Slurm);
+        let id = runner.parse_job_id("Submitted batch job 12345").unwrap();
+        assert_eq!(id, "12345");
+    }
+
+    #[test]
+    fn parse_slurm_job_id_single_word() {
+        let runner = QueuedRunner::new(SchedulerKind::Slurm);
+        let id = runner.parse_job_id("99999").unwrap();
+        assert_eq!(id, "99999");
+    }
+
+    #[test]
+    fn parse_slurm_job_id_empty_fails() {
+        let runner = QueuedRunner::new(SchedulerKind::Slurm);
+        assert!(runner.parse_job_id("").is_err());
+    }
+
+    #[test]
+    fn parse_pbs_job_id_typical() {
+        let runner = QueuedRunner::new(SchedulerKind::Pbs);
+        let id = runner.parse_job_id("1234.pbs-server\n").unwrap();
+        assert_eq!(id, "1234.pbs-server");
+    }
+
+    #[test]
+    fn parse_pbs_job_id_empty_fails() {
+        let runner = QueuedRunner::new(SchedulerKind::Pbs);
+        assert!(runner.parse_job_id("").is_err());
+    }
+
+    #[test]
+    fn parse_pbs_job_id_whitespace_only_fails() {
+        let runner = QueuedRunner::new(SchedulerKind::Pbs);
+        assert!(runner.parse_job_id("   \n  ").is_err());
+    }
+}
+
+pub struct QueuedProcessHandle {
+'''
+after = '''
+}
+
+pub struct QueuedProcessHandle {
+'''
+
+# Change 2 — Append test module at the very end of the file
+[[tasks.TASK-3.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
+        Ok(ProcessResult {
+            exit_code: self.finished_exit_code,
+            output: OutputLocation::OnDisk {
+                stdout_path: self.stdout_path.clone(),
+                stderr_path: self.stderr_path.clone(),
+            },
             duration: self.started_at.elapsed(),
         })
     }
 }
 '''
 after = '''
+    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
+        Ok(ProcessResult {
+            exit_code: self.finished_exit_code,
+            output: OutputLocation::OnDisk {
+                stdout_path: self.stdout_path.clone(),
+                stderr_path: self.stderr_path.clone(),
+            },
             duration: self.started_at.elapsed(),
         })
     }
@@ -204,98 +613,290 @@ mod tests {
 }
 '''
 
-[tasks.TASK-6]
-description = "Add doc comments to SchedulerKind and QueuedRunner public API"
-type = "replace"
-acceptance = [
-    "cargo doc -p workflow_utils --no-deps",
-    "cargo check -p workflow_utils",
-]
+# ---------------------------------------------------------------------------
+# TASK-4: Re-export QueuedSubmitter from workflow_core root
+# ---------------------------------------------------------------------------
 
+[tasks.TASK-4]
+description = "Add QueuedSubmitter to the pub use process::{...} line in workflow_core/src/lib.rs"
+type = "replace"
+acceptance = ["cargo check --workspace"]
+
+[[tasks.TASK-4.changes]]
+file = "workflow_core/src/lib.rs"
+before = '''
+pub use process::{OutputLocation, ProcessHandle, ProcessResult, ProcessRunner};
+'''
+after = '''
+pub use process::{OutputLocation, ProcessHandle, ProcessResult, ProcessRunner, QueuedSubmitter};
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-5: Remove duplicated path computation in QueuedRunner::submit
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-5]
+description = "Remove the second (duplicate) computation of stdout_path and stderr_path in QueuedRunner::submit"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils"]
+
+[[tasks.TASK-5.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let job_id = self.parse_job_id(&stdout)?;
+
+        let stdout_path = log_dir.join(format!("{}.stdout", task_id));
+        let stderr_path = log_dir.join(format!("{}.stderr", task_id));
+
+        Ok(Box::new(QueuedProcessHandle {
+'''
+after = '''
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let job_id = self.parse_job_id(&stdout)?;
+
+        Ok(Box::new(QueuedProcessHandle {
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-6: Make scheduler field private, add getter
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-6]
+description = "Change pub scheduler field to private, add pub fn scheduler() getter on QueuedRunner"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils"]
+
+# Change 1 — Make the field private
 [[tasks.TASK-6.changes]]
 file = "workflow_utils/src/queued.rs"
 before = '''
-#[derive(Debug, Clone, Copy)]
-pub enum SchedulerKind {
-    Slurm,
-    Pbs,
-}
-
-pub struct QueuedRunner {
-    pub scheduler: SchedulerKind,
-}
-'''
-after = '''
-/// The type of HPC job scheduler to target.
-#[derive(Debug, Clone, Copy)]
-pub enum SchedulerKind {
-    /// SLURM Workload Manager (`sbatch` / `squeue` / `scancel`).
-    Slurm,
-    /// Portable Batch System (`qsub` / `qstat` / `qdel`).
-    Pbs,
-}
-
-/// Submits and manages jobs via an HPC batch scheduler.
-///
-/// Implements [`QueuedSubmitter`](workflow_core::process::QueuedSubmitter) to
-/// integrate with the workflow engine's `Queued` execution mode.
 pub struct QueuedRunner {
     /// Which scheduler dialect to use for command construction.
     pub scheduler: SchedulerKind,
 }
 '''
+after = '''
+pub struct QueuedRunner {
+    /// Which scheduler dialect to use for command construction.
+    scheduler: SchedulerKind,
+}
+'''
+
+# Change 2 — Add getter method after new()
+[[tasks.TASK-6.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+    pub fn new(scheduler: SchedulerKind) -> Self {
+        Self { scheduler }
+    }
+
+    fn build_poll_cmd
+'''
+after = '''
+    pub fn new(scheduler: SchedulerKind) -> Self {
+        Self { scheduler }
+    }
+
+    /// Returns the scheduler kind this runner targets.
+    pub fn scheduler(&self) -> SchedulerKind {
+        self.scheduler
+    }
+
+    fn build_poll_cmd
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-7: Replace println! with panic! in test arm
+# ---------------------------------------------------------------------------
 
 [tasks.TASK-7]
-description = "Add #[serial] to PATH-mutating queued integration tests"
+description = "Replace println! with panic! for unexpected error variant in submit_returns_err_when_sbatch_unavailable test"
 type = "replace"
 acceptance = ["cargo test -p workflow_utils --test queued_integration"]
 
 [[tasks.TASK-7.changes]]
-file = "workflow_utils/Cargo.toml"
-before = '''
-[dev-dependencies]
-tempfile = "3"
-'''
-after = '''
-[dev-dependencies]
-serial_test = "3"
-tempfile = "3"
-'''
-
-[[tasks.TASK-7.changes]]
 file = "workflow_utils/tests/queued_integration.rs"
 before = '''
-use workflow_core::process::QueuedSubmitter;
-use workflow_utils::{QueuedRunner, SchedulerKind};
+        Err(e) => println!("expected QueueSubmitFailed, got {:?}", e),
 '''
 after = '''
-use serial_test::serial;
-use workflow_core::process::QueuedSubmitter;
-use workflow_utils::{QueuedRunner, SchedulerKind};
+        Err(e) => panic!("expected QueueSubmitFailed, got {:?}", e),
 '''
 
-[[tasks.TASK-7.changes]]
-file = "workflow_utils/tests/queued_integration.rs"
+# ---------------------------------------------------------------------------
+# TASK-8: Set both TASK_STATE (deprecated) and TASK_PHASE env vars
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-8]
+description = "Set deprecated TASK_STATE env var alongside TASK_PHASE for backwards compatibility with existing hook scripts"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils"]
+
+[[tasks.TASK-8.changes]]
+file = "workflow_utils/src/monitoring.rs"
 before = '''
-#[test]
-fn submit_returns_err_when_sbatch_unavailable() {
+            .env("TASK_ID", &ctx.task_id)
+            .env("TASK_PHASE", ctx.phase.to_string().as_str())
+            .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
 '''
 after = '''
-#[test]
-#[serial]
-fn submit_returns_err_when_sbatch_unavailable() {
+            .env("TASK_ID", &ctx.task_id)
+            .env("TASK_PHASE", ctx.phase.to_string().as_str())
+            // Deprecated: TASK_STATE is the old name for TASK_PHASE.
+            // Kept for backwards compatibility with existing hook scripts.
+            .env("TASK_STATE", ctx.phase.to_string().as_str())
+            .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
 '''
 
-[[tasks.TASK-7.changes]]
-file = "workflow_utils/tests/queued_integration.rs"
-before = '''
-#[test]
-fn submit_with_mock_sbatch_returns_on_disk_handle() {
-'''
+# ---------------------------------------------------------------------------
+# TASK-9: Integration test for ExecutionMode::Queued through Workflow::run
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-9]
+description = "Add integration test verifying Workflow::run completes a Queued-mode task using a stub QueuedSubmitter"
+type = "create"
+acceptance = ["cargo test -p workflow_core --test queued_workflow"]
+
+[[tasks.TASK-9.changes]]
+file = "workflow_core/tests/queued_workflow.rs"
 after = '''
+//! Integration test: `ExecutionMode::Queued` through `Workflow::run`.
+//!
+//! Uses a stub `QueuedSubmitter` that returns a `ProcessHandle` which
+//! immediately reports `is_running() = false` and `wait()` yields exit code 0.
+
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Instant;
+
+use workflow_core::error::WorkflowError;
+use workflow_core::process::{
+    OutputLocation, ProcessHandle, ProcessResult, ProcessRunner, QueuedSubmitter,
+};
+use workflow_core::state::JsonStateStore;
+use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::workflow::Workflow;
+use workflow_core::{HookExecutor, HookResult, MonitoringHook};
+
+/// A stub submitter whose handles complete immediately with exit code 0.
+struct StubQueuedSubmitter;
+
+impl QueuedSubmitter for StubQueuedSubmitter {
+    fn submit(
+        &self,
+        _workdir: &Path,
+        task_id: &str,
+        log_dir: &Path,
+    ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
+        Ok(Box::new(ImmediateHandle {
+            stdout_path: log_dir.join(format!("{}.stdout", task_id)),
+            stderr_path: log_dir.join(format!("{}.stderr", task_id)),
+            start: Instant::now(),
+        }))
+    }
+}
+
+struct ImmediateHandle {
+    stdout_path: std::path::PathBuf,
+    stderr_path: std::path::PathBuf,
+    start: Instant,
+}
+
+impl ProcessHandle for ImmediateHandle {
+    fn is_running(&mut self) -> bool {
+        false
+    }
+
+    fn terminate(&mut self) -> Result<(), WorkflowError> {
+        Ok(())
+    }
+
+    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
+        Ok(ProcessResult {
+            exit_code: Some(0),
+            output: OutputLocation::OnDisk {
+                stdout_path: self.stdout_path.clone(),
+                stderr_path: self.stderr_path.clone(),
+            },
+            duration: self.start.elapsed(),
+        })
+    }
+}
+
+/// Stub runner — not used by Queued tasks but required by Workflow::run signature.
+struct UnusedRunner;
+
+impl ProcessRunner for UnusedRunner {
+    fn spawn(
+        &self,
+        _workdir: &Path,
+        _command: &str,
+        _args: &[String],
+        _env: &std::collections::HashMap<String, String>,
+    ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
+        panic!("UnusedRunner::spawn should not be called for Queued tasks");
+    }
+}
+
+struct NoopHookExecutor;
+
+impl HookExecutor for NoopHookExecutor {
+    fn execute_hook(
+        &self,
+        _hook: &MonitoringHook,
+        _ctx: &workflow_core::HookContext,
+    ) -> Result<HookResult, WorkflowError> {
+        Ok(HookResult {
+            success: true,
+            output: String::new(),
+        })
+    }
+}
+
 #[test]
-#[serial]
-fn submit_with_mock_sbatch_returns_on_disk_handle() {
+fn queued_task_completes_via_workflow_run() -> Result<(), WorkflowError> {
+    let dir = tempfile::tempdir().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+
+    let mut wf = Workflow::new("queued_test")
+        .with_max_parallel(4)?
+        .with_log_dir(&log_dir)
+        .with_queued_submitter(Arc::new(StubQueuedSubmitter));
+
+    wf.add_task(
+        Task::new("queued_a", ExecutionMode::Queued)
+            .workdir(dir.path().to_path_buf()),
+    )?;
+
+    let state_path = dir.path().join(".queued_test.workflow.json");
+    let mut state = JsonStateStore::new("queued_test", state_path);
+
+    let summary = wf.run(
+        &mut state,
+        Arc::new(UnusedRunner),
+        Arc::new(NoopHookExecutor),
+    )?;
+
+    assert_eq!(summary.succeeded.len(), 1);
+    assert!(summary.succeeded.contains(&"queued_a".to_string()));
+    assert!(summary.failed.is_empty());
+    assert!(summary.skipped.is_empty());
+
+    assert!(matches!(
+        state.get_status("queued_a"),
+        Some(workflow_core::state::TaskStatus::Completed)
+    ));
+
+    Ok(())
+}
 '''
 
-# All tasks are independent — no dependencies needed.
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+
+[dependencies]
+TASK-2 = ["TASK-5", "TASK-6"]
+TASK-3 = ["TASK-2"]
