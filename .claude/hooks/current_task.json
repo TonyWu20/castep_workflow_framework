@@ -1,11 +1,11 @@
 {
-  "task_id": "TASK-8",
-  "task_description": "Set deprecated TASK_STATE env var alongside TASK_PHASE for backwards compatibility with existing hook scripts",
+  "task_id": "TASK-9",
+  "task_description": "Add integration test verifying Workflow::run completes a Queued-mode task using a stub QueuedSubmitter",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo check -p workflow_utils"
+    "cargo test -p workflow_core --test queued_workflow"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T13:36:45Z"
+  "timestamp": "2026-04-21T13:37:05Z"
 }
