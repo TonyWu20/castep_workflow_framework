@@ -1,98 +1,28 @@
-# Phase 4 Fix Plan (v3) — TOML format
-# Nine issues from PR review round 2:
-# TASK-1: graph-aware retry (TASK-8 from impl plan), TASK-2: shell injection,
-# TASK-3: clippy items-after-test-module, TASK-4: QueuedSubmitter re-export,
-# TASK-5: duplicate path computation, TASK-6: pub scheduler field,
-# TASK-7: println->panic in test, TASK-8: TASK_STATE deprecation compat,
-# TASK-9: integration test for ExecutionMode::Queued via Workflow::run.
+# Phase 4 Fix Plan (v4) — TOML format
+# Seven issues from PR review round 3:
+# TASK-1: Remove set_task_graph from StateStore trait; add inherent method on JsonStateStore;
+#          add computed_successors field + successor_map() on Workflow
+# TASK-2: Option-wrap task_successors in JsonStateStore (None = pre-graph file, Some(empty) = no edges)
+# TASK-3: TaskSuccessors newtype replacing raw HashMap<String, Vec<String>>
+# TASK-4: BFS unit tests for downstream_tasks (linear, diamond, missing, empty, multi, cycle)
+# TASK-5: Serialization round-trip tests for task_successors field
+# TASK-6: #[must_use] on task_successors() getter
+# TASK-7: DelayedHandle polling test for Queued workflow (exercises poll loop)
 
 # ---------------------------------------------------------------------------
-# TASK-1: Add task_successors to JsonStateStore + graph-aware cmd_retry
+# TASK-1: Remove set_task_graph from StateStore trait, add inherent method on
+#         JsonStateStore, add computed_successors field + accessor on Workflow
 # ---------------------------------------------------------------------------
 
 [tasks.TASK-1]
-description = "Add task_successors field to JsonStateStore, set_task_graph to StateStore trait, persist graph in Workflow::run, rewrite cmd_retry for graph-aware downstream-only reset"
+description = "Remove set_task_graph from StateStore trait, make it inherent on JsonStateStore, store computed successor map on Workflow, expose via successor_map()"
 type = "replace"
 acceptance = ["cargo check --workspace", "cargo test --workspace"]
 
-# Change 1 — JsonStateStore struct: add task_successors field
+# Change 1 — Remove set_task_graph default from StateStore trait
 [[tasks.TASK-1.changes]]
 file = "workflow_core/src/state.rs"
 before = '''
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JsonStateStore {
-    workflow_name: String,
-    created_at: String,
-    last_updated: String,
-    tasks: HashMap<String, TaskStatus>,
-    path: PathBuf,
-}
-'''
-after = '''
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JsonStateStore {
-    workflow_name: String,
-    created_at: String,
-    last_updated: String,
-    tasks: HashMap<String, TaskStatus>,
-    #[serde(default)]
-    task_successors: HashMap<String, Vec<String>>,
-    path: PathBuf,
-}
-'''
-
-# Change 2 — JsonStateStore::new: initialize task_successors
-[[tasks.TASK-1.changes]]
-file = "workflow_core/src/state.rs"
-before = '''
-        Self {
-            workflow_name: name.to_owned(),
-            created_at: now.clone(),
-            last_updated: now,
-            tasks: HashMap::new(),
-            path,
-        }
-'''
-after = '''
-        Self {
-            workflow_name: name.to_owned(),
-            created_at: now.clone(),
-            last_updated: now,
-            tasks: HashMap::new(),
-            task_successors: HashMap::new(),
-            path,
-        }
-'''
-
-# Change 3 — StateStore trait: add set_task_graph default method
-[[tasks.TASK-1.changes]]
-file = "workflow_core/src/state.rs"
-before = '''
-pub trait StateStore: Send + Sync {
-    /// Returns the current status of a task.
-    fn get_status(&self, id: &str) -> Option<TaskStatus>;
-
-    /// Sets the status of a task and updates timestamp.
-    fn set_status(&mut self, id: &str, status: TaskStatus);
-
-    /// Returns all task IDs and their statuses.
-    fn all_tasks(&self) -> Vec<(String, TaskStatus)>;
-
-    /// Persists the current state to disk.
-    fn save(&self) -> Result<(), WorkflowError>;
-}
-'''
-after = '''
-pub trait StateStore: Send + Sync {
-    /// Returns the current status of a task.
-    fn get_status(&self, id: &str) -> Option<TaskStatus>;
-
-    /// Sets the status of a task and updates timestamp.
-    fn set_status(&mut self, id: &str, status: TaskStatus);
-
-    /// Returns all task IDs and their statuses.
-    fn all_tasks(&self) -> Vec<(String, TaskStatus)>;
-
     /// Persists the current state to disk.
     fn save(&self) -> Result<(), WorkflowError>;
 
@@ -101,19 +31,16 @@ pub trait StateStore: Send + Sync {
     fn set_task_graph(&mut self, _successors: HashMap<String, Vec<String>>) {}
 }
 '''
+after = '''
+    /// Persists the current state to disk.
+    fn save(&self) -> Result<(), WorkflowError>;
+}
+'''
 
-# Change 4 — impl StateStore for JsonStateStore: add set_task_graph override
+# Change 2 — Remove set_task_graph override from impl StateStore for JsonStateStore
 [[tasks.TASK-1.changes]]
 file = "workflow_core/src/state.rs"
 before = '''
-    fn save(&self) -> Result<(), WorkflowError> {
-        self.persist()
-    }
-}
-
-fn now_iso8601() -> String {
-'''
-after = '''
     fn save(&self) -> Result<(), WorkflowError> {
         self.persist()
     }
@@ -122,43 +49,91 @@ after = '''
         self.task_successors = successors;
     }
 }
-
-fn now_iso8601() -> String {
 '''
-
-# Change 5 — impl JsonStateStore: add task_successors() getter
-[[tasks.TASK-1.changes]]
-file = "workflow_core/src/state.rs"
-before = '''
-    /// Returns the path to the state file.
-    pub fn path(&self) -> &Path {
-        &self.path
+after = '''
+    fn save(&self) -> Result<(), WorkflowError> {
+        self.persist()
     }
 }
 '''
-after = '''
-    /// Returns the path to the state file.
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
 
+# Change 3 — Add inherent set_task_graph method on impl JsonStateStore (after task_successors getter)
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
     /// Returns the task successor graph persisted from the last workflow run.
     pub fn task_successors(&self) -> &HashMap<String, Vec<String>> {
         &self.task_successors
     }
 }
 '''
+after = '''
+    /// Returns the task successor graph persisted from the last workflow run.
+    pub fn task_successors(&self) -> &HashMap<String, Vec<String>> {
+        &self.task_successors
+    }
 
-# Change 6 — Workflow::run: persist successor graph after build_dag
+    /// Sets the task dependency graph (successors map) for graph-aware retry.
+    pub fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
+        self.task_successors = successors;
+    }
+}
+'''
+
+# Change 4 — Add computed_successors field to Workflow struct
 [[tasks.TASK-1.changes]]
 file = "workflow_core/src/workflow.rs"
 before = '''
-        let dag = self.build_dag()?;
-
-        // Initialize state for all tasks
-        for id in dag.task_ids() {
+pub struct Workflow {
+    pub name: String,
+    tasks: HashMap<String, Task>,
+    max_parallel: usize,
+    pub(crate) interrupt: Arc<AtomicBool>,
+    log_dir: Option<std::path::PathBuf>,
+    queued_submitter: Option<Arc<dyn crate::process::QueuedSubmitter>>,
+}
 '''
 after = '''
+pub struct Workflow {
+    pub name: String,
+    tasks: HashMap<String, Task>,
+    max_parallel: usize,
+    pub(crate) interrupt: Arc<AtomicBool>,
+    log_dir: Option<std::path::PathBuf>,
+    queued_submitter: Option<Arc<dyn crate::process::QueuedSubmitter>>,
+    computed_successors: Option<HashMap<String, Vec<String>>>,
+}
+'''
+
+# Change 5 — Initialize computed_successors in Workflow::new
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/workflow.rs"
+before = '''
+        Self {
+            name: name.into(),
+            tasks: HashMap::new(),
+            max_parallel,
+            interrupt: Arc::new(AtomicBool::new(false)),
+            log_dir: None,
+            queued_submitter: None,
+        }
+'''
+after = '''
+        Self {
+            name: name.into(),
+            tasks: HashMap::new(),
+            max_parallel,
+            interrupt: Arc::new(AtomicBool::new(false)),
+            log_dir: None,
+            queued_submitter: None,
+            computed_successors: None,
+        }
+'''
+
+# Change 6 — In Workflow::run, store successors in self.computed_successors instead of state.set_task_graph
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/workflow.rs"
+before = '''
         let dag = self.build_dag()?;
 
         // Persist task dependency graph for CLI retry
@@ -168,78 +143,101 @@ after = '''
         state.set_task_graph(successors);
 
         // Initialize state for all tasks
-        for id in dag.task_ids() {
-'''
-
-# Change 7 — workflow-cli main.rs: add HashMap import
-[[tasks.TASK-1.changes]]
-file = "workflow-cli/src/main.rs"
-before = '''
-use clap::{Parser, Subcommand};
-use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
 '''
 after = '''
-use clap::{Parser, Subcommand};
-use std::collections::HashMap;
-use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+        let dag = self.build_dag()?;
+
+        // Compute and store task dependency graph for CLI retrieval
+        let successors: HashMap<String, Vec<String>> = dag.task_ids()
+            .map(|id| (id.clone(), dag.successors(id)))
+            .collect();
+        self.computed_successors = Some(successors);
+
+        // Initialize state for all tasks
 '''
 
-# Change 8 — cmd_retry: graph-aware implementation
+# Change 7 — Add successor_map() accessor on Workflow (before add_task)
 [[tasks.TASK-1.changes]]
-file = "workflow-cli/src/main.rs"
+file = "workflow_core/src/workflow.rs"
 before = '''
-fn cmd_retry(state: &mut dyn StateStore, task_ids: &[String]) -> anyhow::Result<()> {
-    for id in task_ids {
-        if state.get_status(id).is_none() {
-            eprintln!("warn: task '{}' not found", id);
-        } else {
-            state.mark_pending(id);
-        }
-    }
-    // Reset all dependency-failure-skipped tasks globally (not just those downstream
-    // of `task_ids`). Intentional for v0.1 simplicity — a graph-aware retry would
-    // require DAG access that the CLI does not have.
-    let to_reset: Vec<String> = state
-        .all_tasks()
-        .into_iter()
-        .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
-        .map(|(id, _)| id)
-        .collect();
-    for id in to_reset {
-        state.mark_pending(&id);
-    }
-    state.save().map_err(|e| anyhow::anyhow!("failed to save state: {}", e))?;
-    Ok(())
-}
+    pub fn add_task(&mut self, task: Task) -> Result<(), WorkflowError> {
 '''
 after = '''
-fn downstream_tasks(
-    start: &[String],
-    successors: &HashMap<String, Vec<String>>,
-) -> std::collections::HashSet<String> {
-    let mut visited = std::collections::HashSet::new();
-    let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
-    while let Some(id) = queue.pop_front() {
-        if let Some(deps) = successors.get(&id) {
-            for dep in deps {
-                if visited.insert(dep.clone()) {
-                    queue.push_back(dep.clone());
-                }
-            }
-        }
-    }
-    visited
-}
-
-fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<()> {
-    for id in task_ids {
-        if state.get_status(id).is_none() {
-            eprintln!("warn: task '{}' not found", id);
-        } else {
-            state.mark_pending(id);
-        }
+    /// Returns the computed successor map after `run()` has been called.
+    /// Returns `None` if `run()` has not yet been called.
+    pub fn successor_map(&self) -> Option<&HashMap<String, Vec<String>>> {
+        self.computed_successors.as_ref()
     }
 
+    pub fn add_task(&mut self, task: Task) -> Result<(), WorkflowError> {
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-2: Option-wrap task_successors in JsonStateStore
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-2]
+description = "Change task_successors field from HashMap to Option<HashMap> in JsonStateStore; None = pre-graph state file, Some(empty) = graph with no edges; update getter, setter, constructor, and cmd_retry fallback"
+type = "replace"
+acceptance = ["cargo check --workspace", "cargo test --workspace"]
+
+# Change 1 — JsonStateStore struct: Option-wrap task_successors field
+[[tasks.TASK-2.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    #[serde(default)]
+    task_successors: HashMap<String, Vec<String>>,
+    path: PathBuf,
+'''
+after = '''
+    #[serde(default)]
+    task_successors: Option<HashMap<String, Vec<String>>>,
+    path: PathBuf,
+'''
+
+# Change 2 — JsonStateStore::new: initialize as None
+[[tasks.TASK-2.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+            task_successors: HashMap::new(),
+            path,
+'''
+after = '''
+            task_successors: None,
+            path,
+'''
+
+# Change 3 — Update getter and setter in impl JsonStateStore
+[[tasks.TASK-2.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    /// Returns the task successor graph persisted from the last workflow run.
+    pub fn task_successors(&self) -> &HashMap<String, Vec<String>> {
+        &self.task_successors
+    }
+
+    /// Sets the task dependency graph (successors map) for graph-aware retry.
+    pub fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
+        self.task_successors = successors;
+    }
+'''
+after = '''
+    /// Returns the task successor graph persisted from the last workflow run.
+    /// Returns `None` for state files created before graph persistence was added.
+    pub fn task_successors(&self) -> Option<&HashMap<String, Vec<String>>> {
+        self.task_successors.as_ref()
+    }
+
+    /// Sets the task dependency graph (successors map) for graph-aware retry.
+    pub fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
+        self.task_successors = Some(successors);
+    }
+'''
+
+# Change 4 — cmd_retry: check is_none() instead of is_empty()
+[[tasks.TASK-2.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
     let successors = state.task_successors().clone();
     if successors.is_empty() {
         eprintln!("warn: state file lacks dependency info; falling back to global reset");
@@ -267,529 +265,495 @@ fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<
             state.mark_pending(&id);
         }
     }
-
-    state.save().map_err(|e| anyhow::anyhow!("failed to save state: {}", e))?;
-    Ok(())
-}
-'''
-
-# Change 9 — cmd_retry call site in main(): type already matches (load_state_for_resume returns JsonStateStore)
-
-# Change 10 — update existing retry test to use &mut JsonStateStore
-[[tasks.TASK-1.changes]]
-file = "workflow-cli/src/main.rs"
-before = '''
-        let _ = cmd_retry(&mut s, &["task_b".to_string()]);
 '''
 after = '''
-        cmd_retry(&mut s, &["task_b".to_string()]).unwrap();
+    match state.task_successors().cloned() {
+        None => {
+            eprintln!("warn: state file lacks dependency info; falling back to global reset");
+            let to_reset: Vec<String> = state
+                .all_tasks()
+                .into_iter()
+                .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
+                .map(|(id, _)| id)
+                .collect();
+            for id in to_reset {
+                state.mark_pending(&id);
+            }
+        }
+        Some(successors) => {
+            let downstream = downstream_tasks(task_ids, &successors);
+            let to_reset: Vec<String> = state
+                .all_tasks()
+                .into_iter()
+                .filter(|(id, s)| {
+                    matches!(s, TaskStatus::SkippedDueToDependencyFailure)
+                        && downstream.contains(id)
+                })
+                .map(|(id, _)| id)
+                .collect();
+            for id in to_reset {
+                state.mark_pending(&id);
+            }
+        }
+    }
 '''
 
 # ---------------------------------------------------------------------------
-# TASK-2: Shell injection fix — replace poll_cmd/cancel_cmd strings with SchedulerKind
-# ---------------------------------------------------------------------------
-
-[tasks.TASK-2]
-description = "Replace shell-injected poll_cmd/cancel_cmd String fields with direct Command construction using SchedulerKind"
-type = "replace"
-acceptance = ["cargo check -p workflow_utils", "cargo test -p workflow_utils --test queued_integration"]
-
-# Change 1 — Remove build_poll_cmd and build_cancel_cmd methods
-[[tasks.TASK-2.changes]]
-file = "workflow_utils/src/queued.rs"
-before = '''
-    fn build_poll_cmd(&self) -> String {
-        match self.scheduler {
-            SchedulerKind::Slurm => "squeue -j {job_id} -h".into(),
-            SchedulerKind::Pbs => "qstat {job_id}".into(),
-        }
-    }
-
-    fn build_cancel_cmd(&self) -> String {
-        match self.scheduler {
-            SchedulerKind::Slurm => "scancel {job_id}".into(),
-            SchedulerKind::Pbs => "qdel {job_id}".into(),
-        }
-    }
-
-    fn parse_job_id
-'''
-after = '''
-    fn parse_job_id
-'''
-
-# Change 2 — Replace QueuedProcessHandle struct fields
-[[tasks.TASK-2.changes]]
-file = "workflow_utils/src/queued.rs"
-before = '''
-pub struct QueuedProcessHandle {
-    job_id: String,
-    poll_cmd: String,
-    cancel_cmd: String,
-    stdout_path: PathBuf,
-    stderr_path: PathBuf,
-    last_poll: Instant,
-    poll_interval: Duration,
-    cached_running: bool,
-    finished_exit_code: Option<i32>,
-    started_at: Instant,
-}
-'''
-after = '''
-pub struct QueuedProcessHandle {
-    job_id: String,
-    scheduler: SchedulerKind,
-    stdout_path: PathBuf,
-    stderr_path: PathBuf,
-    last_poll: Instant,
-    poll_interval: Duration,
-    cached_running: bool,
-    finished_exit_code: Option<i32>,
-    started_at: Instant,
-}
-'''
-
-# Change 3 — Replace is_running() to use direct Command construction
-[[tasks.TASK-2.changes]]
-file = "workflow_utils/src/queued.rs"
-before = '''
-    fn is_running(&mut self) -> bool {
-        if self.last_poll.elapsed() < self.poll_interval {
-            return self.cached_running;
-        }
-
-        let cmd = self.poll_cmd.replace("{job_id}", &self.job_id);
-        let result = Command::new("sh")
-            .args(["-c", &cmd])
-            .output();
-
-        match result {
-            Ok(output) => {
-                // Non-zero exit or empty stdout = job gone
-                let running = output.status.success()
-                    && !output.stdout.is_empty();
-                self.cached_running = running;
-                if !running {
-                    self.finished_exit_code = Some(0); // default; accounting query in wait() may refine
-                }
-            }
-            Err(_) => {
-                self.cached_running = false;
-                self.finished_exit_code = Some(-1);
-            }
-        }
-
-        self.last_poll = Instant::now();
-        self.cached_running
-    }
-'''
-after = '''
-    fn is_running(&mut self) -> bool {
-        if self.last_poll.elapsed() < self.poll_interval {
-            return self.cached_running;
-        }
-
-        let result = match self.scheduler {
-            SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
-            SchedulerKind::Pbs => Command::new("qstat").arg(&self.job_id),
-        }
-        .output();
-
-        match result {
-            Ok(output) => {
-                // Non-zero exit or empty stdout = job gone
-                let running = output.status.success()
-                    && !output.stdout.is_empty();
-                self.cached_running = running;
-                if !running {
-                    self.finished_exit_code = Some(0); // default; accounting query in wait() may refine
-                }
-            }
-            Err(_) => {
-                self.cached_running = false;
-                self.finished_exit_code = Some(-1);
-            }
-        }
-
-        self.last_poll = Instant::now();
-        self.cached_running
-    }
-'''
-
-# Change 4 — Replace terminate() to use direct Command construction
-[[tasks.TASK-2.changes]]
-file = "workflow_utils/src/queued.rs"
-before = '''
-    fn terminate(&mut self) -> Result<(), WorkflowError> {
-        let cmd = self.cancel_cmd.replace("{job_id}", &self.job_id);
-        Command::new("sh")
-            .args(["-c", &cmd])
-            .output()
-            .map_err(WorkflowError::Io)?;
-        Ok(())
-    }
-'''
-after = '''
-    fn terminate(&mut self) -> Result<(), WorkflowError> {
-        match self.scheduler {
-            SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
-            SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
-        }
-        .output()
-        .map_err(WorkflowError::Io)?;
-        Ok(())
-    }
-'''
-
-# Change 5 — Update QueuedProcessHandle construction in submit()
-[[tasks.TASK-2.changes]]
-file = "workflow_utils/src/queued.rs"
-before = '''
-        Ok(Box::new(QueuedProcessHandle {
-            job_id,
-            poll_cmd: self.build_poll_cmd(),
-            cancel_cmd: self.build_cancel_cmd(),
-            stdout_path,
-            stderr_path,
-            last_poll: Instant::now(),
-            poll_interval: Duration::from_secs(15),
-            cached_running: true,
-            finished_exit_code: None,
-            started_at: Instant::now(),
-        }))
-'''
-after = '''
-        Ok(Box::new(QueuedProcessHandle {
-            job_id,
-            scheduler: self.scheduler,
-            stdout_path,
-            stderr_path,
-            last_poll: Instant::now(),
-            poll_interval: Duration::from_secs(15),
-            cached_running: true,
-            finished_exit_code: None,
-            started_at: Instant::now(),
-        }))
-'''
-
-# ---------------------------------------------------------------------------
-# TASK-3: Move test module to end of queued.rs (after all production impl blocks)
+# TASK-3: Introduce TaskSuccessors newtype
 # ---------------------------------------------------------------------------
 
 [tasks.TASK-3]
-description = "Move #[cfg(test)] mod tests to the very end of queued.rs, after all production code"
+description = "Introduce pub struct TaskSuccessors(HashMap<String, Vec<String>>) with get() and is_empty(); use it in JsonStateStore field/getter/setter, Workflow computed_successors/successor_map(), and downstream_tasks in CLI"
 type = "replace"
-acceptance = ["cargo clippy -p workflow_utils -- -D warnings"]
+acceptance = ["cargo check --workspace", "cargo test --workspace"]
 
-# Change 1 — Remove test module from its current position (between QueuedRunner and QueuedProcessHandle)
+# Change 1 — Add TaskSuccessors newtype before JsonStateStore struct
 [[tasks.TASK-3.changes]]
-file = "workflow_utils/src/queued.rs"
+file = "workflow_core/src/state.rs"
 before = '''
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_slurm_job_id_from_submit_output() {
-        let runner = QueuedRunner::new(SchedulerKind::Slurm);
-        let id = runner.parse_job_id("Submitted batch job 12345").unwrap();
-        assert_eq!(id, "12345");
-    }
-
-    #[test]
-    fn parse_slurm_job_id_single_word() {
-        let runner = QueuedRunner::new(SchedulerKind::Slurm);
-        let id = runner.parse_job_id("99999").unwrap();
-        assert_eq!(id, "99999");
-    }
-
-    #[test]
-    fn parse_slurm_job_id_empty_fails() {
-        let runner = QueuedRunner::new(SchedulerKind::Slurm);
-        assert!(runner.parse_job_id("").is_err());
-    }
-
-    #[test]
-    fn parse_pbs_job_id_typical() {
-        let runner = QueuedRunner::new(SchedulerKind::Pbs);
-        let id = runner.parse_job_id("1234.pbs-server\n").unwrap();
-        assert_eq!(id, "1234.pbs-server");
-    }
-
-    #[test]
-    fn parse_pbs_job_id_empty_fails() {
-        let runner = QueuedRunner::new(SchedulerKind::Pbs);
-        assert!(runner.parse_job_id("").is_err());
-    }
-
-    #[test]
-    fn parse_pbs_job_id_whitespace_only_fails() {
-        let runner = QueuedRunner::new(SchedulerKind::Pbs);
-        assert!(runner.parse_job_id("   \n  ").is_err());
-    }
-}
-
-pub struct QueuedProcessHandle {
+/// JSON-based state store implementation.
 '''
 after = '''
+/// A typed wrapper around the task successor adjacency map.
+///
+/// Maps each task ID to its immediate downstream successors in the DAG.
+/// Used for graph-aware retry: given a set of failed tasks, BFS over this
+/// map finds all transitively downstream tasks to reset.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TaskSuccessors(HashMap<String, Vec<String>>);
+
+impl TaskSuccessors {
+    /// Creates a new `TaskSuccessors` from a raw adjacency map.
+    pub fn new(map: HashMap<String, Vec<String>>) -> Self {
+        Self(map)
+    }
+
+    /// Returns the immediate successors of the given task, if any.
+    pub fn get(&self, task_id: &str) -> Option<&[String]> {
+        self.0.get(task_id).map(|v| v.as_slice())
+    }
+
+    /// Returns `true` if the successor map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns a reference to the inner map.
+    pub fn inner(&self) -> &HashMap<String, Vec<String>> {
+        &self.0
+    }
 }
 
-pub struct QueuedProcessHandle {
+/// JSON-based state store implementation.
 '''
 
-# Change 2 — Append test module at the very end of the file
+# Change 2 — JsonStateStore struct: use Option<TaskSuccessors>
 [[tasks.TASK-3.changes]]
-file = "workflow_utils/src/queued.rs"
+file = "workflow_core/src/state.rs"
 before = '''
-    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
-        Ok(ProcessResult {
-            exit_code: self.finished_exit_code,
-            output: OutputLocation::OnDisk {
-                stdout_path: self.stdout_path.clone(),
-                stderr_path: self.stderr_path.clone(),
-            },
-            duration: self.started_at.elapsed(),
-        })
+    #[serde(default)]
+    task_successors: Option<HashMap<String, Vec<String>>>,
+    path: PathBuf,
+'''
+after = '''
+    #[serde(default)]
+    task_successors: Option<TaskSuccessors>,
+    path: PathBuf,
+'''
+
+# Change 3 — Update getter and setter signatures to use TaskSuccessors
+[[tasks.TASK-3.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    /// Returns the task successor graph persisted from the last workflow run.
+    /// Returns `None` for state files created before graph persistence was added.
+    pub fn task_successors(&self) -> Option<&HashMap<String, Vec<String>>> {
+        self.task_successors.as_ref()
     }
+
+    /// Sets the task dependency graph (successors map) for graph-aware retry.
+    pub fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
+        self.task_successors = Some(successors);
+    }
+'''
+after = '''
+    /// Returns the task successor graph persisted from the last workflow run.
+    /// Returns `None` for state files created before graph persistence was added.
+    pub fn task_successors(&self) -> Option<&TaskSuccessors> {
+        self.task_successors.as_ref()
+    }
+
+    /// Sets the task dependency graph (successors map) for graph-aware retry.
+    pub fn set_task_graph(&mut self, successors: TaskSuccessors) {
+        self.task_successors = Some(successors);
+    }
+'''
+
+# Change 4 — Import TaskSuccessors in workflow.rs
+[[tasks.TASK-3.changes]]
+file = "workflow_core/src/workflow.rs"
+before = '''
+use crate::state::{StateStore, StateStoreExt, TaskStatus};
+'''
+after = '''
+use crate::state::{StateStore, StateStoreExt, TaskStatus, TaskSuccessors};
+'''
+
+# Change 5 — Workflow struct: use Option<TaskSuccessors>
+[[tasks.TASK-3.changes]]
+file = "workflow_core/src/workflow.rs"
+before = '''
+    computed_successors: Option<HashMap<String, Vec<String>>>,
+'''
+after = '''
+    computed_successors: Option<TaskSuccessors>,
+'''
+
+# Change 6 — Workflow::run: construct TaskSuccessors
+[[tasks.TASK-3.changes]]
+file = "workflow_core/src/workflow.rs"
+before = '''
+        // Compute and store task dependency graph for CLI retrieval
+        let successors: HashMap<String, Vec<String>> = dag.task_ids()
+            .map(|id| (id.clone(), dag.successors(id)))
+            .collect();
+        self.computed_successors = Some(successors);
+'''
+after = '''
+        // Compute and store task dependency graph for CLI retrieval
+        let successors: HashMap<String, Vec<String>> = dag.task_ids()
+            .map(|id| (id.clone(), dag.successors(id)))
+            .collect();
+        self.computed_successors = Some(TaskSuccessors::new(successors));
+'''
+
+# Change 7 — Workflow::successor_map return type
+[[tasks.TASK-3.changes]]
+file = "workflow_core/src/workflow.rs"
+before = '''
+    /// Returns the computed successor map after `run()` has been called.
+    /// Returns `None` if `run()` has not yet been called.
+    pub fn successor_map(&self) -> Option<&HashMap<String, Vec<String>>> {
+        self.computed_successors.as_ref()
+    }
+'''
+after = '''
+    /// Returns the computed successor map after `run()` has been called.
+    /// Returns `None` if `run()` has not yet been called.
+    pub fn successor_map(&self) -> Option<&TaskSuccessors> {
+        self.computed_successors.as_ref()
+    }
+'''
+
+# Change 8 — CLI: import TaskSuccessors, remove now-unused HashMap import
+[[tasks.TASK-3.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+use clap::{Parser, Subcommand};
+use std::collections::HashMap;
+use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+'''
+after = '''
+use clap::{Parser, Subcommand};
+use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus, TaskSuccessors};
+'''
+
+# Change 9 — downstream_tasks: accept &TaskSuccessors instead of &HashMap
+[[tasks.TASK-3.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+fn downstream_tasks(
+    start: &[String],
+    successors: &HashMap<String, Vec<String>>,
+) -> std::collections::HashSet<String> {
+    let mut visited = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+    while let Some(id) = queue.pop_front() {
+        if let Some(deps) = successors.get(&id) {
+            for dep in deps {
+                if visited.insert(dep.clone()) {
+                    queue.push_back(dep.clone());
+                }
+            }
+        }
+    }
+    visited
 }
 '''
 after = '''
-    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
-        Ok(ProcessResult {
-            exit_code: self.finished_exit_code,
-            output: OutputLocation::OnDisk {
-                stdout_path: self.stdout_path.clone(),
-                stderr_path: self.stderr_path.clone(),
-            },
-            duration: self.started_at.elapsed(),
-        })
+fn downstream_tasks(
+    start: &[String],
+    successors: &TaskSuccessors,
+) -> std::collections::HashSet<String> {
+    let mut visited = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+    while let Some(id) = queue.pop_front() {
+        if let Some(deps) = successors.get(&id) {
+            for dep in deps {
+                if visited.insert(dep.clone()) {
+                    queue.push_back(dep.clone());
+                }
+            }
+        }
     }
+    visited
 }
+'''
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+# Change 10 — cmd_retry match: remove .cloned() since task_successors() now returns Option<&TaskSuccessors>
+[[tasks.TASK-3.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+    match state.task_successors().cloned() {
+        None => {
+'''
+after = '''
+    match state.task_successors() {
+        None => {
+'''
 
-    #[test]
-    fn parse_slurm_job_id_from_submit_output() {
-        let runner = QueuedRunner::new(SchedulerKind::Slurm);
-        let id = runner.parse_job_id("Submitted batch job 12345").unwrap();
-        assert_eq!(id, "12345");
-    }
-
-    #[test]
-    fn parse_slurm_job_id_single_word() {
-        let runner = QueuedRunner::new(SchedulerKind::Slurm);
-        let id = runner.parse_job_id("99999").unwrap();
-        assert_eq!(id, "99999");
-    }
-
-    #[test]
-    fn parse_slurm_job_id_empty_fails() {
-        let runner = QueuedRunner::new(SchedulerKind::Slurm);
-        assert!(runner.parse_job_id("").is_err());
-    }
-
-    #[test]
-    fn parse_pbs_job_id_typical() {
-        let runner = QueuedRunner::new(SchedulerKind::Pbs);
-        let id = runner.parse_job_id("1234.pbs-server\n").unwrap();
-        assert_eq!(id, "1234.pbs-server");
-    }
-
-    #[test]
-    fn parse_pbs_job_id_empty_fails() {
-        let runner = QueuedRunner::new(SchedulerKind::Pbs);
-        assert!(runner.parse_job_id("").is_err());
-    }
-
-    #[test]
-    fn parse_pbs_job_id_whitespace_only_fails() {
-        let runner = QueuedRunner::new(SchedulerKind::Pbs);
-        assert!(runner.parse_job_id("   \n  ").is_err());
-    }
-}
+# Change 11 — cmd_retry Some arm: borrow TaskSuccessors by ref
+[[tasks.TASK-3.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+        Some(successors) => {
+            let downstream = downstream_tasks(task_ids, &successors);
+'''
+after = '''
+        Some(successors) => {
+            let downstream = downstream_tasks(task_ids, successors);
 '''
 
 # ---------------------------------------------------------------------------
-# TASK-4: Re-export QueuedSubmitter from workflow_core root
+# TASK-4: BFS unit tests for downstream_tasks
 # ---------------------------------------------------------------------------
 
 [tasks.TASK-4]
-description = "Add QueuedSubmitter to the pub use process::{...} line in workflow_core/src/lib.rs"
+description = "Add BFS unit tests for downstream_tasks: linear chain, diamond, missing start, empty start, multiple starts, cycle guard"
 type = "replace"
-acceptance = ["cargo check --workspace"]
+acceptance = ["cargo test -p workflow-cli"]
 
 [[tasks.TASK-4.changes]]
-file = "workflow_core/src/lib.rs"
+file = "workflow-cli/src/main.rs"
 before = '''
-pub use process::{OutputLocation, ProcessHandle, ProcessResult, ProcessRunner};
+    #[test]
+    fn inspect_unknown_task_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        assert!(cmd_inspect(&s, Some("nonexistent")).is_err());
+    }
+}
 '''
 after = '''
-pub use process::{OutputLocation, ProcessHandle, ProcessResult, ProcessRunner, QueuedSubmitter};
+    #[test]
+    fn inspect_unknown_task_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        assert!(cmd_inspect(&s, Some("nonexistent")).is_err());
+    }
+
+    #[test]
+    fn downstream_linear_chain() {
+        // a -> b -> c: start [a] returns {b, c}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_diamond() {
+        // a -> b, a -> c, b -> d, c -> d: start [a] returns {b, c, d}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into(), "c".into()]);
+        map.insert("b".into(), vec!["d".into()]);
+        map.insert("c".into(), vec!["d".into()]);
+        map.insert("d".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+        assert!(result.contains("d"));
+    }
+
+    #[test]
+    fn downstream_start_not_in_map() {
+        let succ = TaskSuccessors::new(std::collections::HashMap::new());
+        let result = downstream_tasks(&["x".into()], &succ);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_empty_start() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&[], &succ);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_multiple_starts() {
+        // a -> c, b -> c: start [a, b] returns {c}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["c".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into(), "b".into()], &succ);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_cycle_terminates() {
+        // a -> b -> a (cycle): BFS must terminate; visited set prevents re-enqueue
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["a".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert!(result.contains("b"));
+        assert!(result.contains("a"));
+    }
+}
 '''
 
 # ---------------------------------------------------------------------------
-# TASK-5: Remove duplicated path computation in QueuedRunner::submit
+# TASK-5: Serialization round-trip tests for task_successors
 # ---------------------------------------------------------------------------
 
 [tasks.TASK-5]
-description = "Remove the second (duplicate) computation of stdout_path and stderr_path in QueuedRunner::submit"
+description = "Add two tests in workflow_core/src/state.rs: set_task_graph round-trip through save/load, and backwards-compatible deserialization of old state files without task_successors"
 type = "replace"
-acceptance = ["cargo check -p workflow_utils"]
+acceptance = ["cargo test -p workflow_core -- state::tests"]
 
 [[tasks.TASK-5.changes]]
-file = "workflow_utils/src/queued.rs"
+file = "workflow_core/src/state.rs"
 before = '''
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let job_id = self.parse_job_id(&stdout)?;
-
-        let stdout_path = log_dir.join(format!("{}.stdout", task_id));
-        let stderr_path = log_dir.join(format!("{}.stderr", task_id));
-
-        Ok(Box::new(QueuedProcessHandle {
+    #[test]
+    fn workflow_name_preserved() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("name.json");
+        let s = JsonStateStore::new("my_workflow", path.clone());
+        s.save().unwrap();
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert_eq!(loaded.workflow_name(), "my_workflow");
+    }
+}
 '''
 after = '''
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let job_id = self.parse_job_id(&stdout)?;
+    #[test]
+    fn workflow_name_preserved() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("name.json");
+        let s = JsonStateStore::new("my_workflow", path.clone());
+        s.save().unwrap();
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert_eq!(loaded.workflow_name(), "my_workflow");
+    }
 
-        Ok(Box::new(QueuedProcessHandle {
+    #[test]
+    fn set_task_graph_persists_through_save_load() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("graph.json");
+        let mut s = JsonStateStore::new("graph_test", path.clone());
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), vec!["b".to_string(), "c".to_string()]);
+        map.insert("b".to_string(), vec!["d".to_string()]);
+        s.set_task_graph(TaskSuccessors::new(map));
+        s.save().unwrap();
+
+        let loaded = JsonStateStore::load(&path).unwrap();
+        let succ = loaded.task_successors().expect("task_successors should be Some after round-trip");
+        let a_succs = succ.get("a").unwrap();
+        assert!(a_succs.contains(&"b".to_string()));
+        assert!(a_succs.contains(&"c".to_string()));
+        assert_eq!(succ.get("b").unwrap(), &["d".to_string()]);
+    }
+
+    #[test]
+    fn old_state_file_deserializes_without_task_successors() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("old_state.json");
+        let json = serde_json::json!({
+            "workflow_name": "old_wf",
+            "created_at": "2024-01-01T00:00:00Z",
+            "last_updated": "2024-01-01T00:00:00Z",
+            "tasks": {},
+            "path": path.to_string_lossy()
+        })
+        .to_string();
+        std::fs::write(&path, json).unwrap();
+
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert!(
+            loaded.task_successors().is_none(),
+            "old state files without task_successors key should deserialize as None"
+        );
+    }
+}
 '''
 
 # ---------------------------------------------------------------------------
-# TASK-6: Make scheduler field private, add getter
+# TASK-6: #[must_use] on task_successors() getter
 # ---------------------------------------------------------------------------
 
 [tasks.TASK-6]
-description = "Change pub scheduler field to private, add pub fn scheduler() getter on QueuedRunner"
+description = "Add #[must_use] annotation to JsonStateStore::task_successors() getter"
 type = "replace"
-acceptance = ["cargo check -p workflow_utils"]
+acceptance = ["cargo check -p workflow_core"]
 
-# Change 1 — Make the field private
 [[tasks.TASK-6.changes]]
-file = "workflow_utils/src/queued.rs"
+file = "workflow_core/src/state.rs"
 before = '''
-pub struct QueuedRunner {
-    /// Which scheduler dialect to use for command construction.
-    pub scheduler: SchedulerKind,
-}
+    /// Returns the task successor graph persisted from the last workflow run.
+    /// Returns `None` for state files created before graph persistence was added.
+    pub fn task_successors(&self) -> Option<&TaskSuccessors> {
 '''
 after = '''
-pub struct QueuedRunner {
-    /// Which scheduler dialect to use for command construction.
-    scheduler: SchedulerKind,
-}
-'''
-
-# Change 2 — Add getter method after new()
-[[tasks.TASK-6.changes]]
-file = "workflow_utils/src/queued.rs"
-before = '''
-    pub fn new(scheduler: SchedulerKind) -> Self {
-        Self { scheduler }
-    }
-
-    fn build_poll_cmd
-'''
-after = '''
-    pub fn new(scheduler: SchedulerKind) -> Self {
-        Self { scheduler }
-    }
-
-    /// Returns the scheduler kind this runner targets.
-    pub fn scheduler(&self) -> SchedulerKind {
-        self.scheduler
-    }
-
-    fn build_poll_cmd
+    /// Returns the task successor graph persisted from the last workflow run.
+    /// Returns `None` for state files created before graph persistence was added.
+    #[must_use]
+    pub fn task_successors(&self) -> Option<&TaskSuccessors> {
 '''
 
 # ---------------------------------------------------------------------------
-# TASK-7: Replace println! with panic! in test arm
+# TASK-7: Add queued_task_polls_before_completing test with DelayedHandle
 # ---------------------------------------------------------------------------
 
 [tasks.TASK-7]
-description = "Replace println! with panic! for unexpected error variant in submit_returns_err_when_sbatch_unavailable test"
+description = "Add queued_task_polls_before_completing test using DelayedHandle (AtomicUsize counter) that returns is_running()=true for first 2 polls then false, exercising the polling loop"
 type = "replace"
-acceptance = ["cargo test -p workflow_utils --test queued_integration"]
-
-[[tasks.TASK-7.changes]]
-file = "workflow_utils/tests/queued_integration.rs"
-before = '''
-        Err(e) => println!("expected QueueSubmitFailed, got {:?}", e),
-'''
-after = '''
-        Err(e) => panic!("expected QueueSubmitFailed, got {:?}", e),
-'''
-
-# ---------------------------------------------------------------------------
-# TASK-8: Set both TASK_STATE (deprecated) and TASK_PHASE env vars
-# ---------------------------------------------------------------------------
-
-[tasks.TASK-8]
-description = "Set deprecated TASK_STATE env var alongside TASK_PHASE for backwards compatibility with existing hook scripts"
-type = "replace"
-acceptance = ["cargo check -p workflow_utils"]
-
-[[tasks.TASK-8.changes]]
-file = "workflow_utils/src/monitoring.rs"
-before = '''
-            .env("TASK_ID", &ctx.task_id)
-            .env("TASK_PHASE", ctx.phase.to_string().as_str())
-            .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
-'''
-after = '''
-            .env("TASK_ID", &ctx.task_id)
-            .env("TASK_PHASE", ctx.phase.to_string().as_str())
-            // Deprecated: TASK_STATE is the old name for TASK_PHASE.
-            // Kept for backwards compatibility with existing hook scripts.
-            .env("TASK_STATE", ctx.phase.to_string().as_str())
-            .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
-'''
-
-# ---------------------------------------------------------------------------
-# TASK-9: Integration test for ExecutionMode::Queued through Workflow::run
-# ---------------------------------------------------------------------------
-
-[tasks.TASK-9]
-description = "Add integration test verifying Workflow::run completes a Queued-mode task using a stub QueuedSubmitter"
-type = "create"
 acceptance = ["cargo test -p workflow_core --test queued_workflow"]
 
-[[tasks.TASK-9.changes]]
+[[tasks.TASK-7.changes]]
 file = "workflow_core/tests/queued_workflow.rs"
+before = '''
+#[test]
+fn queued_task_completes_via_workflow_run() -> Result<(), WorkflowError> {
+'''
 after = '''
-//! Integration test: `ExecutionMode::Queued` through `Workflow::run`.
-//!
-//! Uses a stub `QueuedSubmitter` that returns a `ProcessHandle` which
-//! immediately reports `is_running() = false` and `wait()` yields exit code 0.
+struct DelayedQueuedSubmitter {
+    delay_polls: usize,
+}
 
-use std::path::Path;
-use std::sync::Arc;
-use std::time::Instant;
-
-use workflow_core::error::WorkflowError;
-use workflow_core::process::{
-    OutputLocation, ProcessHandle, ProcessResult, ProcessRunner, QueuedSubmitter,
-};
-use workflow_core::state::JsonStateStore;
-use workflow_core::task::{ExecutionMode, Task};
-use workflow_core::workflow::Workflow;
-use workflow_core::{HookExecutor, HookResult, MonitoringHook};
-
-/// A stub submitter whose handles complete immediately with exit code 0.
-struct StubQueuedSubmitter;
-
-impl QueuedSubmitter for StubQueuedSubmitter {
+impl QueuedSubmitter for DelayedQueuedSubmitter {
     fn submit(
         &self,
         _workdir: &Path,
         task_id: &str,
         log_dir: &Path,
     ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
-        Ok(Box::new(ImmediateHandle {
+        Ok(Box::new(DelayedHandle {
+            poll_count: std::sync::atomic::AtomicUsize::new(0),
+            delay_polls: self.delay_polls,
             stdout_path: log_dir.join(format!("{}.stdout", task_id)),
             stderr_path: log_dir.join(format!("{}.stderr", task_id)),
             start: Instant::now(),
@@ -797,15 +761,18 @@ impl QueuedSubmitter for StubQueuedSubmitter {
     }
 }
 
-struct ImmediateHandle {
+struct DelayedHandle {
+    poll_count: std::sync::atomic::AtomicUsize,
+    delay_polls: usize,
     stdout_path: std::path::PathBuf,
     stderr_path: std::path::PathBuf,
     start: Instant,
 }
 
-impl ProcessHandle for ImmediateHandle {
+impl ProcessHandle for DelayedHandle {
     fn is_running(&mut self) -> bool {
-        false
+        let count = self.poll_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        count < self.delay_polls
     }
 
     fn terminate(&mut self) -> Result<(), WorkflowError> {
@@ -824,54 +791,24 @@ impl ProcessHandle for ImmediateHandle {
     }
 }
 
-/// Stub runner — not used by Queued tasks but required by Workflow::run signature.
-struct UnusedRunner;
-
-impl ProcessRunner for UnusedRunner {
-    fn spawn(
-        &self,
-        _workdir: &Path,
-        _command: &str,
-        _args: &[String],
-        _env: &std::collections::HashMap<String, String>,
-    ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
-        panic!("UnusedRunner::spawn should not be called for Queued tasks");
-    }
-}
-
-struct NoopHookExecutor;
-
-impl HookExecutor for NoopHookExecutor {
-    fn execute_hook(
-        &self,
-        _hook: &MonitoringHook,
-        _ctx: &workflow_core::HookContext,
-    ) -> Result<HookResult, WorkflowError> {
-        Ok(HookResult {
-            success: true,
-            output: String::new(),
-        })
-    }
-}
-
 #[test]
-fn queued_task_completes_via_workflow_run() -> Result<(), WorkflowError> {
+fn queued_task_polls_before_completing() -> Result<(), WorkflowError> {
     let dir = tempfile::tempdir().unwrap();
     let log_dir = dir.path().join("logs");
     std::fs::create_dir_all(&log_dir).unwrap();
 
-    let mut wf = Workflow::new("queued_test")
+    let mut wf = Workflow::new("queued_poll_test")
         .with_max_parallel(4)?
         .with_log_dir(&log_dir)
-        .with_queued_submitter(Arc::new(StubQueuedSubmitter));
+        .with_queued_submitter(Arc::new(DelayedQueuedSubmitter { delay_polls: 2 }));
 
     wf.add_task(
-        Task::new("queued_a", ExecutionMode::Queued)
+        Task::new("queued_delayed", ExecutionMode::Queued)
             .workdir(dir.path().to_path_buf()),
     )?;
 
-    let state_path = dir.path().join(".queued_test.workflow.json");
-    let mut state = JsonStateStore::new("queued_test", state_path);
+    let state_path = dir.path().join(".queued_poll_test.workflow.json");
+    let mut state = JsonStateStore::new("queued_poll_test", state_path);
 
     let summary = wf.run(
         &mut state,
@@ -880,17 +817,19 @@ fn queued_task_completes_via_workflow_run() -> Result<(), WorkflowError> {
     )?;
 
     assert_eq!(summary.succeeded.len(), 1);
-    assert!(summary.succeeded.contains(&"queued_a".to_string()));
+    assert!(summary.succeeded.contains(&"queued_delayed".to_string()));
     assert!(summary.failed.is_empty());
-    assert!(summary.skipped.is_empty());
 
     assert!(matches!(
-        state.get_status("queued_a"),
+        state.get_status("queued_delayed"),
         Some(workflow_core::state::TaskStatus::Completed)
     ));
 
     Ok(())
 }
+
+#[test]
+fn queued_task_completes_via_workflow_run() -> Result<(), WorkflowError> {
 '''
 
 # ---------------------------------------------------------------------------
@@ -898,5 +837,8 @@ fn queued_task_completes_via_workflow_run() -> Result<(), WorkflowError> {
 # ---------------------------------------------------------------------------
 
 [dependencies]
-TASK-2 = ["TASK-5", "TASK-6"]
-TASK-3 = ["TASK-2"]
+TASK-2 = ["TASK-1"]
+TASK-3 = ["TASK-1", "TASK-2"]
+TASK-4 = ["TASK-3"]
+TASK-5 = ["TASK-2", "TASK-3"]
+TASK-6 = ["TASK-2", "TASK-3"]
