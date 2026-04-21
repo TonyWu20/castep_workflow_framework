@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "rust-development-pipeline@rust-development-pipeline": true
+  }
+}

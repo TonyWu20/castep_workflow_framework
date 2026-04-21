@@ -1,12 +1,11 @@
 {
-  "task_id": "TASK-6",
-  "task_description": "Add doc comments to SchedulerKind and QueuedRunner public API",
+  "task_id": "TASK-7",
+  "task_description": "Add #[serial] to PATH-mutating queued integration tests",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.md",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo doc -p workflow_utils --no-deps",
-    "cargo check -p workflow_utils"
+    "cargo test -p workflow_utils --test queued_integration"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-20T03:02:30Z"
+  "timestamp": "2026-04-21T11:14:23Z"
 }

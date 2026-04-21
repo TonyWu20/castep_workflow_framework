@@ -45,7 +45,7 @@
                   CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
                   ANTHROPIC_DEFAULT_OPUS_MODEL=Qwopus3.5-9B-6bit \
                   ANTHROPIC_DEFAULT_SONNET_MODEL=Qwopus3.5-9B-6bit \
-                  ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwopus3.5-9B-6bit \
+                  ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwopus3.5-4B-6bit \
                   claude --model sonnet
                 '';
               }
