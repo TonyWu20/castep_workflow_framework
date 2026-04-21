@@ -1,12 +1,11 @@
 {
-  "task_id": "TASK-1",
-  "task_description": "Add task_successors field to JsonStateStore, set_task_graph to StateStore trait, persist graph in Workflow::run, rewrite cmd_retry for graph-aware downstream-only reset",
+  "task_id": "TASK-4",
+  "task_description": "Add QueuedSubmitter to the pub use process::{...} line in workflow_core/src/lib.rs",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo check --workspace",
-    "cargo test --workspace"
+    "cargo check --workspace"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T13:34:12Z"
+  "timestamp": "2026-04-21T13:34:44Z"
 }

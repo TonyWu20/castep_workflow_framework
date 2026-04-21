@@ -17,3 +17,8 @@
   - `cargo check --workspace`: PASSED
   - `cargo test --workspace`: PASSED
 
+### TASK-4: Add QueuedSubmitter to the pub use process::{...} line in workflow_core/src/lib.rs
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+
