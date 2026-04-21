@@ -1,11 +1,12 @@
 {
-  "task_id": "TASK-6",
-  "task_description": "Change pub scheduler field to private, add pub fn scheduler() getter on QueuedRunner",
+  "task_id": "TASK-2",
+  "task_description": "Replace shell-injected poll_cmd/cancel_cmd String fields with direct Command construction using SchedulerKind",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo check -p workflow_utils"
+    "cargo check -p workflow_utils",
+    "cargo test -p workflow_utils --test queued_integration"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T13:35:25Z"
+  "timestamp": "2026-04-21T13:35:44Z"
 }

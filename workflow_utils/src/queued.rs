@@ -33,20 +33,6 @@ impl QueuedRunner {
         self.scheduler
     }
 
-    fn build_poll_cmd(&self) -> String {
-        match self.scheduler {
-            SchedulerKind::Slurm => "squeue -j {job_id} -h".into(),
-            SchedulerKind::Pbs => "qstat {job_id}".into(),
-        }
-    }
-
-    fn build_cancel_cmd(&self) -> String {
-        match self.scheduler {
-            SchedulerKind::Slurm => "scancel {job_id}".into(),
-            SchedulerKind::Pbs => "qdel {job_id}".into(),
-        }
-    }
-
     fn parse_job_id(&self, stdout: &str) -> Result<String, WorkflowError> {
         match self.scheduler {
             SchedulerKind::Slurm => stdout
@@ -101,8 +87,7 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
 
         Ok(Box::new(QueuedProcessHandle {
             job_id,
-            poll_cmd: self.build_poll_cmd(),
-            cancel_cmd: self.build_cancel_cmd(),
+            scheduler: self.scheduler,
             stdout_path,
             stderr_path,
             last_poll: Instant::now(),
@@ -160,8 +145,7 @@ mod tests {
 
 pub struct QueuedProcessHandle {
     job_id: String,
-    poll_cmd: String,
-    cancel_cmd: String,
+    scheduler: SchedulerKind,
     stdout_path: PathBuf,
     stderr_path: PathBuf,
     last_poll: Instant,
@@ -177,10 +161,11 @@ impl ProcessHandle for QueuedProcessHandle {
             return self.cached_running;
         }
 
-        let cmd = self.poll_cmd.replace("{job_id}", &self.job_id);
-        let result = Command::new("sh")
-            .args(["-c", &cmd])
-            .output();
+        let result = match self.scheduler {
+            SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+            SchedulerKind::Pbs => Command::new("qstat").arg(&self.job_id),
+        }
+        .output();
 
         match result {
             Ok(output) => {
@@ -203,11 +188,12 @@ impl ProcessHandle for QueuedProcessHandle {
     }
 
     fn terminate(&mut self) -> Result<(), WorkflowError> {
-        let cmd = self.cancel_cmd.replace("{job_id}", &self.job_id);
-        Command::new("sh")
-            .args(["-c", &cmd])
-            .output()
-            .map_err(WorkflowError::Io)?;
+        match self.scheduler {
+            SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+            SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        }
+        .output()
+        .map_err(WorkflowError::Io)?;
         Ok(())
     }
 

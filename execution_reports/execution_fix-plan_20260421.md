@@ -32,3 +32,73 @@
 - **Validation output**:
   - `cargo check -p workflow_utils`: PASSED
 
+### TASK-2: Replace shell-injected poll_cmd/cancel_cmd String fields with direct Command construction using SchedulerKind
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: FAILED (exit 101)
+    ```
+    f.scheduler {
+    166 |             SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+    167 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:192:37
+        |
+    192 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    195 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    191 ~         let mut binding = Command::new("scancel");
+    192 ~         match self.scheduler {
+    193 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:193:35
+        |
+    193 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    ```
+  - `cargo test -p workflow_utils --test queued_integration`: FAILED (exit 101)
+    ```
+    mand::new("squeue").args(["-j", &self.job_id, "-h"]),
+    167 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:192:37
+        |
+    192 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    195 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    191 ~         let mut binding = Command::new("scancel");
+    192 ~         match self.scheduler {
+    193 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:193:35
+        |
+    193 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    194 |         }
+    ```
+
