@@ -4,6 +4,7 @@
 //! handles scheduler unavailability gracefully, and that `QueuedProcessHandle`
 //! satisfies the `ProcessHandle` trait contract.
 
+use serial_test::serial;
 use workflow_core::process::QueuedSubmitter;
 use workflow_utils::{QueuedRunner, SchedulerKind};
 
@@ -26,6 +27,7 @@ fn queued_runner_implements_queued_submitter_pbs() {
 /// This relies on `sh -c "sbatch ..."` exiting non-zero when `sbatch` is absent,
 /// which triggers the `!output.status.success()` branch.
 #[test]
+#[serial]
 fn submit_returns_err_when_sbatch_unavailable() {
     use workflow_core::error::WorkflowError;
 
@@ -65,6 +67,7 @@ fn submit_returns_err_when_sbatch_unavailable() {
 /// `wait()` produces an `OnDisk` `OutputLocation` pointing to the expected paths.
 #[cfg(unix)]
 #[test]
+#[serial]
 fn submit_with_mock_sbatch_returns_on_disk_handle() {
     use std::os::unix::fs::PermissionsExt;
     use workflow_core::process::OutputLocation;

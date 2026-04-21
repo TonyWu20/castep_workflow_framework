@@ -8,4 +8,5 @@ serde = { workspace = true }
 workflow_core = { path = "../workflow_core" }
 
 [dev-dependencies]
+serial_test = "3"
 tempfile = "3"
