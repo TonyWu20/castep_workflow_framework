@@ -11,7 +11,7 @@ use workflow_core::error::WorkflowError;
 use workflow_core::process::{
     OutputLocation, ProcessHandle, ProcessResult, ProcessRunner, QueuedSubmitter,
 };
-use workflow_core::state::JsonStateStore;
+use workflow_core::state::{JsonStateStore, StateStore};
 use workflow_core::task::{ExecutionMode, Task};
 use workflow_core::workflow::Workflow;
 use workflow_core::{HookExecutor, HookResult, MonitoringHook};

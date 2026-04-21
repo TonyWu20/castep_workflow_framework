@@ -74,7 +74,7 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
         .arg(&script_path)
         .current_dir(workdir)
         .output()
-        .map_err(WorkflowError::Io)?;
+        .map_err(|e| WorkflowError::QueueSubmitFailed(e.to_string()))?;
 
         if !output.status.success() {
             return Err(WorkflowError::QueueSubmitFailed(
@@ -117,11 +117,19 @@ impl ProcessHandle for QueuedProcessHandle {
             return self.cached_running;
         }
 
-        let result = match self.scheduler {
-            SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
-            SchedulerKind::Pbs => Command::new("qstat").arg(&self.job_id),
-        }
-        .output();
+        let mut cmd = match self.scheduler {
+            SchedulerKind::Slurm => {
+                let mut c = Command::new("squeue");
+                c.args(["-j", &self.job_id, "-h"]);
+                c
+            }
+            SchedulerKind::Pbs => {
+                let mut c = Command::new("qstat");
+                c.arg(&self.job_id);
+                c
+            }
+        };
+        let result = cmd.output();
 
         match result {
             Ok(output) => {
@@ -144,12 +152,19 @@ impl ProcessHandle for QueuedProcessHandle {
     }
 
     fn terminate(&mut self) -> Result<(), WorkflowError> {
-        match self.scheduler {
-            SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
-            SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
-        }
-        .output()
-        .map_err(WorkflowError::Io)?;
+        let mut cmd = match self.scheduler {
+            SchedulerKind::Slurm => {
+                let mut c = Command::new("scancel");
+                c.arg(&self.job_id);
+                c
+            }
+            SchedulerKind::Pbs => {
+                let mut c = Command::new("qdel");
+                c.arg(&self.job_id);
+                c
+            }
+        };
+        cmd.output().map_err(WorkflowError::Io)?;
         Ok(())
     }
 
