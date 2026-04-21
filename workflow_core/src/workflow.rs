@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::dag::Dag;
 use crate::error::WorkflowError;
 use crate::process::{ProcessHandle, ProcessRunner};
-use crate::state::{StateStore, StateStoreExt, TaskStatus};
+use crate::state::{StateStore, StateStoreExt, TaskStatus, TaskSuccessors};
 use crate::task::{ExecutionMode, Task, TaskClosure};
 
 use std::collections::{HashMap, HashSet};
@@ -30,7 +30,7 @@ pub struct Workflow {
     pub(crate) interrupt: Arc<AtomicBool>,
     log_dir: Option<std::path::PathBuf>,
     queued_submitter: Option<Arc<dyn crate::process::QueuedSubmitter>>,
-    computed_successors: Option<HashMap<String, Vec<String>>>,
+    computed_successors: Option<TaskSuccessors>,
 }
 
 impl Workflow {
@@ -76,7 +76,7 @@ impl Workflow {
 
     /// Returns the computed successor map after `run()` has been called.
     /// Returns `None` if `run()` has not yet been called.
-    pub fn successor_map(&self) -> Option<&HashMap<String, Vec<String>>> {
+    pub fn successor_map(&self) -> Option<&TaskSuccessors> {
         self.computed_successors.as_ref()
     }
 
@@ -121,7 +121,7 @@ impl Workflow {
         let successors: HashMap<String, Vec<String>> = dag.task_ids()
             .map(|id| (id.clone(), dag.successors(id)))
             .collect();
-        self.computed_successors = Some(successors);
+        self.computed_successors = Some(TaskSuccessors::new(successors));
 
         // Initialize state for all tasks
         for id in dag.task_ids() {

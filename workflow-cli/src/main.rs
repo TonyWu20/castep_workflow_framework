@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::collections::HashMap;
-use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus, TaskSuccessors};
 
 #[derive(Parser)]
 #[command(name = "workflow-cli", about = "Workflow state inspection tool")]
@@ -72,7 +71,7 @@ fn cmd_inspect(state: &dyn StateStore, task_id: Option<&str>) -> anyhow::Result<
 
 fn downstream_tasks(
     start: &[String],
-    successors: &HashMap<String, Vec<String>>,
+    successors: &TaskSuccessors,
 ) -> std::collections::HashSet<String> {
     let mut visited = std::collections::HashSet::new();
     let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
@@ -97,7 +96,7 @@ fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<
         }
     }
 
-    match state.task_successors().cloned() {
+    match state.task_successors() {
         None => {
             eprintln!("warn: state file lacks dependency info; falling back to global reset");
             let to_reset: Vec<String> = state
@@ -111,7 +110,7 @@ fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<
             }
         }
         Some(successors) => {
-            let downstream = downstream_tasks(task_ids, &successors);
+            let downstream = downstream_tasks(task_ids, successors);
             let to_reset: Vec<String> = state
                 .all_tasks()
                 .into_iter()

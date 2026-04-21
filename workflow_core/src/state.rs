@@ -120,6 +120,36 @@ pub struct StateSummary {
     pub skipped: usize,
 }
 
+/// A typed wrapper around the task successor adjacency map.
+///
+/// Maps each task ID to its immediate downstream successors in the DAG.
+/// Used for graph-aware retry: given a set of failed tasks, BFS over this
+/// map finds all transitively downstream tasks to reset.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TaskSuccessors(HashMap<String, Vec<String>>);
+
+impl TaskSuccessors {
+    /// Creates a new `TaskSuccessors` from a raw adjacency map.
+    pub fn new(map: HashMap<String, Vec<String>>) -> Self {
+        Self(map)
+    }
+
+    /// Returns the immediate successors of the given task, if any.
+    pub fn get(&self, task_id: &str) -> Option<&[String]> {
+        self.0.get(task_id).map(|v| v.as_slice())
+    }
+
+    /// Returns `true` if the successor map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns a reference to the inner map.
+    pub fn inner(&self) -> &HashMap<String, Vec<String>> {
+        &self.0
+    }
+}
+
 /// JSON-based state store implementation.
 ///
 /// # Crash Recovery and Resume
@@ -147,7 +177,7 @@ pub struct JsonStateStore {
     last_updated: String,
     tasks: HashMap<String, TaskStatus>,
     #[serde(default)]
-    task_successors: Option<HashMap<String, Vec<String>>>,
+    task_successors: Option<TaskSuccessors>,
     path: PathBuf,
 }
 
@@ -210,12 +240,12 @@ impl JsonStateStore {
 
     /// Returns the task successor graph persisted from the last workflow run.
     /// Returns `None` for state files created before graph persistence was added.
-    pub fn task_successors(&self) -> Option<&HashMap<String, Vec<String>>> {
+    pub fn task_successors(&self) -> Option<&TaskSuccessors> {
         self.task_successors.as_ref()
     }
 
     /// Sets the task dependency graph (successors map) for graph-aware retry.
-    pub fn set_task_graph(&mut self, successors: HashMap<String, Vec<String>>) {
+    pub fn set_task_graph(&mut self, successors: TaskSuccessors) {
         self.task_successors = Some(successors);
     }
 }

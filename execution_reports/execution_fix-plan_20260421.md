@@ -268,3 +268,9 @@
   - `cargo check --workspace`: PASSED
   - `cargo test --workspace`: PASSED
 
+### TASK-3: Introduce pub struct TaskSuccessors(HashMap<String, Vec<String>>) with get() and is_empty(); use it in JsonStateStore field/getter/setter, Workflow computed_successors/successor_map(), and downstream_tasks in CLI
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+
