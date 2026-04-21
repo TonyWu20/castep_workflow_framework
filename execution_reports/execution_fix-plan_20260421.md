@@ -289,3 +289,8 @@
 - **Validation output**:
   - `cargo check -p workflow_core`: PASSED
 
+### TASK-7: Add queued_task_polls_before_completing test using DelayedHandle (AtomicUsize counter) that returns is_running()=true for first 2 polls then false, exercising the polling loop
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p workflow_core --test queued_workflow`: PASSED
+

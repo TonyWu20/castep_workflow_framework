@@ -91,6 +91,94 @@ impl HookExecutor for NoopHookExecutor {
     }
 }
 
+struct DelayedQueuedSubmitter {
+    delay_polls: usize,
+}
+
+impl QueuedSubmitter for DelayedQueuedSubmitter {
+    fn submit(
+        &self,
+        _workdir: &Path,
+        task_id: &str,
+        log_dir: &Path,
+    ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
+        Ok(Box::new(DelayedHandle {
+            poll_count: std::sync::atomic::AtomicUsize::new(0),
+            delay_polls: self.delay_polls,
+            stdout_path: log_dir.join(format!("{}.stdout", task_id)),
+            stderr_path: log_dir.join(format!("{}.stderr", task_id)),
+            start: Instant::now(),
+        }))
+    }
+}
+
+struct DelayedHandle {
+    poll_count: std::sync::atomic::AtomicUsize,
+    delay_polls: usize,
+    stdout_path: std::path::PathBuf,
+    stderr_path: std::path::PathBuf,
+    start: Instant,
+}
+
+impl ProcessHandle for DelayedHandle {
+    fn is_running(&mut self) -> bool {
+        let count = self.poll_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        count < self.delay_polls
+    }
+
+    fn terminate(&mut self) -> Result<(), WorkflowError> {
+        Ok(())
+    }
+
+    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
+        Ok(ProcessResult {
+            exit_code: Some(0),
+            output: OutputLocation::OnDisk {
+                stdout_path: self.stdout_path.clone(),
+                stderr_path: self.stderr_path.clone(),
+            },
+            duration: self.start.elapsed(),
+        })
+    }
+}
+
+#[test]
+fn queued_task_polls_before_completing() -> Result<(), WorkflowError> {
+    let dir = tempfile::tempdir().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+
+    let mut wf = Workflow::new("queued_poll_test")
+        .with_max_parallel(4)?
+        .with_log_dir(&log_dir)
+        .with_queued_submitter(Arc::new(DelayedQueuedSubmitter { delay_polls: 2 }));
+
+    wf.add_task(
+        Task::new("queued_delayed", ExecutionMode::Queued)
+            .workdir(dir.path().to_path_buf()),
+    )?;
+
+    let state_path = dir.path().join(".queued_poll_test.workflow.json");
+    let mut state = JsonStateStore::new("queued_poll_test", state_path);
+
+    let summary = wf.run(
+        &mut state,
+        Arc::new(UnusedRunner),
+        Arc::new(NoopHookExecutor),
+    )?;
+
+    assert_eq!(summary.succeeded.len(), 1);
+    assert!(summary.succeeded.contains(&"queued_delayed".to_string()));
+    assert!(summary.failed.is_empty());
+
+    assert!(matches!(
+        state.get_status("queued_delayed"),
+        Some(workflow_core::state::TaskStatus::Completed)
+    ));
+
+    Ok(())
+}
+
 #[test]
 fn queued_task_completes_via_workflow_run() -> Result<(), WorkflowError> {
     let dir = tempfile::tempdir().unwrap();
