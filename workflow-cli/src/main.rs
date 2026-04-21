@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
 
 #[derive(Parser)]
@@ -69,7 +70,25 @@ fn cmd_inspect(state: &dyn StateStore, task_id: Option<&str>) -> anyhow::Result<
     }
 }
 
-fn cmd_retry(state: &mut dyn StateStore, task_ids: &[String]) -> anyhow::Result<()> {
+fn downstream_tasks(
+    start: &[String],
+    successors: &HashMap<String, Vec<String>>,
+) -> std::collections::HashSet<String> {
+    let mut visited = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+    while let Some(id) = queue.pop_front() {
+        if let Some(deps) = successors.get(&id) {
+            for dep in deps {
+                if visited.insert(dep.clone()) {
+                    queue.push_back(dep.clone());
+                }
+            }
+        }
+    }
+    visited
+}
+
+fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<()> {
     for id in task_ids {
         if state.get_status(id).is_none() {
             eprintln!("warn: task '{}' not found", id);
@@ -77,18 +96,35 @@ fn cmd_retry(state: &mut dyn StateStore, task_ids: &[String]) -> anyhow::Result<
             state.mark_pending(id);
         }
     }
-    // Reset all dependency-failure-skipped tasks globally (not just those downstream
-    // of `task_ids`). Intentional for v0.1 simplicity — a graph-aware retry would
-    // require DAG access that the CLI does not have.
-    let to_reset: Vec<String> = state
-        .all_tasks()
-        .into_iter()
-        .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
-        .map(|(id, _)| id)
-        .collect();
-    for id in to_reset {
-        state.mark_pending(&id);
+
+    let successors = state.task_successors().clone();
+    if successors.is_empty() {
+        eprintln!("warn: state file lacks dependency info; falling back to global reset");
+        let to_reset: Vec<String> = state
+            .all_tasks()
+            .into_iter()
+            .filter(|(_, s)| matches!(s, TaskStatus::SkippedDueToDependencyFailure))
+            .map(|(id, _)| id)
+            .collect();
+        for id in to_reset {
+            state.mark_pending(&id);
+        }
+    } else {
+        let downstream = downstream_tasks(task_ids, &successors);
+        let to_reset: Vec<String> = state
+            .all_tasks()
+            .into_iter()
+            .filter(|(id, s)| {
+                matches!(s, TaskStatus::SkippedDueToDependencyFailure)
+                    && downstream.contains(id)
+            })
+            .map(|(id, _)| id)
+            .collect();
+        for id in to_reset {
+            state.mark_pending(&id);
+        }
     }
+
     state.save().map_err(|e| anyhow::anyhow!("failed to save state: {}", e))?;
     Ok(())
 }
@@ -134,7 +170,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut s = make_state(dir.path());
         // task_b=Failed, task_c=SkippedDueToDependencyFailure, task_a=Completed
-        let _ = cmd_retry(&mut s, &["task_b".to_string()]);
+        cmd_retry(&mut s, &["task_b".to_string()]).unwrap();
         assert!(matches!(s.get_status("task_b"), Some(TaskStatus::Pending)));
         assert!(matches!(s.get_status("task_c"), Some(TaskStatus::Pending)));
         assert!(matches!(s.get_status("task_a"), Some(TaskStatus::Completed))); // unchanged

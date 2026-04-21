@@ -109,6 +109,12 @@ impl Workflow {
 
         let dag = self.build_dag()?;
 
+        // Persist task dependency graph for CLI retry
+        let successors: HashMap<String, Vec<String>> = dag.task_ids()
+            .map(|id| (id.clone(), dag.successors(id)))
+            .collect();
+        state.set_task_graph(successors);
+
         // Initialize state for all tasks
         for id in dag.task_ids() {
             if state.get_status(id).is_none() {
