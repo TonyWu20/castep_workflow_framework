@@ -1,12 +1,11 @@
 {
-  "task_id": "TASK-3",
-  "task_description": "Introduce pub struct TaskSuccessors(HashMap<String, Vec<String>>) with get() and is_empty(); use it in JsonStateStore field/getter/setter, Workflow computed_successors/successor_map(), and downstream_tasks in CLI",
+  "task_id": "TASK-4",
+  "task_description": "Add BFS unit tests for downstream_tasks: linear chain, diamond, missing start, empty start, multiple starts, cycle guard",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo check --workspace",
-    "cargo test --workspace"
+    "cargo test -p workflow-cli"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T14:27:29Z"
+  "timestamp": "2026-04-21T14:29:20Z"
 }

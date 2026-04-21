@@ -274,3 +274,8 @@
   - `cargo check --workspace`: PASSED
   - `cargo test --workspace`: PASSED
 
+### TASK-4: Add BFS unit tests for downstream_tasks: linear chain, diamond, missing start, empty start, multiple starts, cycle guard
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p workflow-cli`: PASSED
+

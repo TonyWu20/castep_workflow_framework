@@ -211,4 +211,75 @@ mod tests {
         let s = make_state(dir.path());
         assert!(cmd_inspect(&s, Some("nonexistent")).is_err());
     }
+
+    #[test]
+    fn downstream_linear_chain() {
+        // a -> b -> c: start [a] returns {b, c}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_diamond() {
+        // a -> b, a -> c, b -> d, c -> d: start [a] returns {b, c, d}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into(), "c".into()]);
+        map.insert("b".into(), vec!["d".into()]);
+        map.insert("c".into(), vec!["d".into()]);
+        map.insert("d".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+        assert!(result.contains("d"));
+    }
+
+    #[test]
+    fn downstream_start_not_in_map() {
+        let succ = TaskSuccessors::new(std::collections::HashMap::new());
+        let result = downstream_tasks(&["x".into()], &succ);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_empty_start() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&[], &succ);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_multiple_starts() {
+        // a -> c, b -> c: start [a, b] returns {c}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["c".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into(), "b".into()], &succ);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_cycle_terminates() {
+        // a -> b -> a (cycle): BFS must terminate; visited set prevents re-enqueue
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["a".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert!(result.contains("b"));
+        assert!(result.contains("a"));
+    }
 }
