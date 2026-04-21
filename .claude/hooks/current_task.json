@@ -1,12 +1,11 @@
 {
-  "task_id": "TASK-2",
-  "task_description": "Replace shell-injected poll_cmd/cancel_cmd String fields with direct Command construction using SchedulerKind",
+  "task_id": "TASK-3",
+  "task_description": "Move #[cfg(test)] mod tests to the very end of queued.rs, after all production code",
   "plan_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml",
   "plan_slug": "fix-plan",
   "acceptance_commands": [
-    "cargo check -p workflow_utils",
-    "cargo test -p workflow_utils --test queued_integration"
+    "cargo clippy -p workflow_utils -- -D warnings"
   ],
   "acceptance_prose": [],
-  "timestamp": "2026-04-21T13:35:44Z"
+  "timestamp": "2026-04-21T13:36:03Z"
 }
