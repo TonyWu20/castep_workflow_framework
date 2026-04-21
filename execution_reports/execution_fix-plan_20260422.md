@@ -12,3 +12,8 @@
   - `cargo check --workspace`: PASSED
   - `cargo test --workspace`: PASSED
 
+### TASK-2: Add TaskSuccessors to the pub use line in workflow_core/src/lib.rs so it is accessible at the crate root like its sibling types
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+
