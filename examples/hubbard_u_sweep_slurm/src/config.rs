@@ -3,29 +3,25 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(name = "hubbard_u_sweep_slurm")]
 pub struct SweepConfig {
-    /// SLURM account name
-    #[arg(long, env = "CASTEP_SLURM_ACCOUNT")]
-    pub account: String,
-
     /// SLURM partition
-    #[arg(long, env = "CASTEP_SLURM_PARTITION", default_value = "standard")]
+    #[arg(long, env = "CASTEP_SLURM_PARTITION", default_value = "debug")]
     pub partition: String,
 
     /// Number of MPI tasks (cores) per job
     #[arg(long, default_value_t = 16)]
     pub ntasks: u32,
 
-    /// Walltime per job (HH:MM:SS)
-    #[arg(long, default_value = "01:00:00")]
-    pub walltime: String,
+    /// Nix flake URI for the CASTEP environment
+    #[arg(
+        long,
+        env = "CASTEP_NIX_FLAKE",
+        default_value = "git+ssh://git@github.com/TonyWu20/CASTEP-25.12-nixos#castep_25_mkl"
+    )]
+    pub nix_flake: String,
 
-    /// Module load commands, comma-separated (e.g. "castep/24.1,intel/2024")
-    #[arg(long, env = "CASTEP_MODULES", value_delimiter = ',')]
-    pub modules: Vec<String>,
-
-    /// CASTEP executable command (e.g. "castep.mpi" or "mpirun -np 16 castep.mpi")
-    #[arg(long, env = "CASTEP_COMMAND", default_value = "castep.mpi")]
-    pub castep_command: String,
+    /// Network interface for OpenMPI TCP (e.g. "enp6s0")
+    #[arg(long, env = "CASTEP_MPI_IF", default_value = "enp6s0")]
+    pub mpi_if: String,
 
     /// Seed name (CASTEP input file prefix, without extension)
     #[arg(long, default_value = "ZnO")]
@@ -58,13 +54,5 @@ impl SweepConfig {
             .split(',')
             .filter_map(|s| s.trim().parse::<f64>().ok())
             .collect()
-    }
-
-    pub fn module_load_lines(&self) -> String {
-        self.modules
-            .iter()
-            .map(|m| format!("module load {}", m))
-            .collect::<Vec<_>>()
-            .join("\n")
     }
 }
