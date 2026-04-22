@@ -18,7 +18,10 @@ impl HookExecutor for ShellHookExecutor {
             .command(cmd)
             .args(args)
             .env("TASK_ID", &ctx.task_id)
-            .env("TASK_STATE", &ctx.state)
+            .env("TASK_PHASE", ctx.phase.to_string().as_str())
+            // Deprecated: TASK_STATE is the old name for TASK_PHASE.
+            // Kept for backwards compatibility with existing hook scripts.
+            .env("TASK_STATE", ctx.phase.to_string().as_str())
             .env("WORKDIR", ctx.workdir.to_string_lossy().as_ref())
             .env(
                 "EXIT_CODE",
@@ -36,7 +39,7 @@ impl HookExecutor for ShellHookExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use workflow_core::HookTrigger;
+    use workflow_core::{HookTrigger, TaskPhase};
 
     #[test]
     fn test_shell_hook_executor_success() {
@@ -45,7 +48,7 @@ mod tests {
         let ctx = HookContext {
             task_id: "task1".to_string(),
             workdir: std::path::PathBuf::from("/tmp"),
-            state: "Completed".to_string(),
+            phase: TaskPhase::Completed,
             exit_code: Some(0),
         };
         let result = executor.execute_hook(&hook, &ctx).unwrap();
@@ -60,7 +63,7 @@ mod tests {
         let ctx = HookContext {
             task_id: "task1".to_string(),
             workdir: std::path::PathBuf::from("/tmp"),
-            state: "Completed".to_string(),
+            phase: TaskPhase::Completed,
             exit_code: Some(0),
         };
         let result = executor.execute_hook(&hook, &ctx).unwrap();

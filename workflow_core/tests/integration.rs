@@ -8,7 +8,7 @@ use workflow_core::task::Task;
 use workflow_core::workflow::Workflow;
 use workflow_utils::{ShellHookExecutor, SystemProcessRunner};
 
-fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner) }
+fn runner() -> Arc<dyn ProcessRunner> { Arc::new(SystemProcessRunner::new()) }
 fn executor() -> Arc<dyn HookExecutor> { Arc::new(ShellHookExecutor) }
 
 use common::direct;

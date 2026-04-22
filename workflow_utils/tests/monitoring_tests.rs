@@ -1,4 +1,4 @@
-use workflow_core::HookExecutor;
+use workflow_core::{HookExecutor, TaskPhase};
 use workflow_utils::{HookContext, HookTrigger, MonitoringHook, ShellHookExecutor};
 
 #[test]
@@ -7,7 +7,7 @@ fn test_hook_executes() {
     let ctx = HookContext {
         task_id: "task1".into(),
         workdir: std::path::PathBuf::from("/tmp"),
-        state: "Completed".into(),
+        phase: TaskPhase::Completed,
         exit_code: Some(0),
     };
     let executor = ShellHookExecutor;
@@ -22,7 +22,7 @@ fn test_hook_receives_context() {
     let ctx = HookContext {
         task_id: "mytask".into(),
         workdir: std::path::PathBuf::from("/tmp"),
-        state: "Completed".into(),
+        phase: TaskPhase::Completed,
         exit_code: Some(0),
     };
     let executor = ShellHookExecutor;

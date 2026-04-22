@@ -120,6 +120,51 @@ pub struct StateSummary {
     pub skipped: usize,
 }
 
+/// A typed wrapper around the task successor adjacency map.
+///
+/// Maps each task ID to its immediate downstream successors in the DAG.
+/// Used for graph-aware retry: given a set of failed tasks, BFS over this
+/// map finds all transitively downstream tasks to reset.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TaskSuccessors(HashMap<String, Vec<String>>);
+
+impl TaskSuccessors {
+    /// Creates a new `TaskSuccessors` from a raw adjacency map.
+    pub fn new(map: HashMap<String, Vec<String>>) -> Self {
+        Self(map)
+    }
+
+    /// Returns the immediate successors of the given task, if any.
+    pub fn get(&self, task_id: &str) -> Option<&[String]> {
+        self.0.get(task_id).map(|v| v.as_slice())
+    }
+
+    /// Returns `true` if the successor map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the set of all task IDs transitively reachable downstream
+    /// from the given starting task IDs via BFS over the successor graph.
+    ///
+    /// The starting task IDs themselves are NOT included in the result.
+    /// Cycle-safe: the visited set prevents re-enqueuing.
+    pub fn downstream_of(&self, start: &[String]) -> std::collections::HashSet<String> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+        while let Some(id) = queue.pop_front() {
+            if let Some(deps) = self.get(&id) {
+                for dep in deps {
+                    if visited.insert(dep.to_owned()) {
+                        queue.push_back(dep.to_owned());
+                    }
+                }
+            }
+        }
+        visited
+    }
+}
+
 /// JSON-based state store implementation.
 ///
 /// # Crash Recovery and Resume
@@ -146,6 +191,8 @@ pub struct JsonStateStore {
     created_at: String,
     last_updated: String,
     tasks: HashMap<String, TaskStatus>,
+    #[serde(default)]
+    task_successors: Option<TaskSuccessors>,
     path: PathBuf,
 }
 
@@ -158,6 +205,7 @@ impl JsonStateStore {
             created_at: now.clone(),
             last_updated: now,
             tasks: HashMap::new(),
+            task_successors: None,
             path,
         }
     }
@@ -203,6 +251,18 @@ impl JsonStateStore {
     /// Returns the path to the state file.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Returns the task successor graph persisted from the last workflow run.
+    /// Returns `None` for state files created before graph persistence was added.
+    #[must_use]
+    pub fn task_successors(&self) -> Option<&TaskSuccessors> {
+        self.task_successors.as_ref()
+    }
+
+    /// Sets the task dependency graph (successors map) for graph-aware retry.
+    pub fn set_task_graph(&mut self, successors: TaskSuccessors) {
+        self.task_successors = Some(successors);
     }
 }
 
@@ -383,5 +443,116 @@ mod tests {
         s.save().unwrap();
         let loaded = JsonStateStore::load(&path).unwrap();
         assert_eq!(loaded.workflow_name(), "my_workflow");
+    }
+
+    #[test]
+    fn set_task_graph_persists_through_save_load() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("graph.json");
+        let mut s = JsonStateStore::new("graph_test", path.clone());
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), vec!["b".to_string(), "c".to_string()]);
+        map.insert("b".to_string(), vec!["d".to_string()]);
+        s.set_task_graph(TaskSuccessors::new(map));
+        s.save().unwrap();
+
+        let loaded = JsonStateStore::load(&path).unwrap();
+        let succ = loaded.task_successors().expect("task_successors should be Some after round-trip");
+        let a_succs = succ.get("a").unwrap();
+        assert!(a_succs.contains(&"b".to_string()));
+        assert!(a_succs.contains(&"c".to_string()));
+        assert_eq!(succ.get("b").unwrap(), &["d".to_string()]);
+    }
+
+    #[test]
+    fn downstream_of_linear_chain() {
+        // a -> b -> c: start [a] returns {b, c}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_diamond() {
+        // a -> b, a -> c, b -> d, c -> d: start [a] returns {b, c, d}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into(), "c".into()]);
+        map.insert("b".into(), vec!["d".into()]);
+        map.insert("c".into(), vec!["d".into()]);
+        map.insert("d".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+        assert!(result.contains("d"));
+    }
+
+    #[test]
+    fn downstream_of_start_not_in_map() {
+        let succ = TaskSuccessors::new(HashMap::new());
+        let result = succ.downstream_of(&["x".into()]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_empty_start() {
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_multiple_starts() {
+        // a -> c, b -> c: start [a, b] returns {c}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["c".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into(), "b".into()]);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_cycle_terminates() {
+        // a -> b -> a (cycle): BFS must terminate; visited set prevents re-enqueue
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["a".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert!(result.contains("b"));
+        assert!(result.contains("a"));
+    }
+
+    #[test]
+    fn old_state_file_deserializes_without_task_successors() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("old_state.json");
+        let json = serde_json::json!({
+            "workflow_name": "old_wf",
+            "created_at": "2024-01-01T00:00:00Z",
+            "last_updated": "2024-01-01T00:00:00Z",
+            "tasks": {},
+            "path": path.to_string_lossy()
+        })
+        .to_string();
+        std::fs::write(&path, json).unwrap();
+
+        let loaded = JsonStateStore::load(&path).unwrap();
+        assert!(
+            loaded.task_successors().is_none(),
+            "old state files without task_successors key should deserialize as None"
+        );
     }
 }

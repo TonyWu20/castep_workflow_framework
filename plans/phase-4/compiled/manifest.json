@@ -1,0 +1,44 @@
+{
+  "plan": "/Users/tony/programming/castep_workflow_framework/plans/phase-4/PHASE4_IMPLEMENTATION_PLAN.md",
+  "compiled_at": "2026-04-18T21:08:50.570353+00:00",
+  "tasks": [
+    {
+      "id": "TASK-7",
+      "script": "TASK-7.sh",
+      "runner": "TASK-7.py",
+      "file": "workflow_utils/src/queued.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Implement `QueuedSubmitter` trait for `QueuedRunner`",
+      "acceptance": [
+        "cargo check --workspace"
+      ]
+    },
+    {
+      "id": "TASK-8",
+      "script": "TASK-8.sh",
+      "runner": "TASK-8.py",
+      "file": "workflow_core/src/state.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add `task_successors` to `JsonStateStore` and graph-aware `cmd_retry`",
+      "acceptance": [
+        "cargo check --workspace",
+        "cargo test --workspace"
+      ]
+    },
+    {
+      "id": "TASK-12",
+      "script": "TASK-12.sh",
+      "runner": "TASK-12.py",
+      "file": "workflow_utils/tests/queued_integration.rs",
+      "type": "create",
+      "changes": 1,
+      "description": "Integration test for queued execution lifecycle",
+      "acceptance": [
+        "cargo test -p workflow_utils --test queued_integration"
+      ]
+    }
+  ],
+  "skipped": []
+}

@@ -8,6 +8,7 @@ use workflow_core::{
     JsonStateStore, StateStoreExt, Task, Workflow,
     state::{StateStore, TaskStatus},
 };
+use workflow_utils::SystemProcessRunner;
 
 use common::direct;
 
@@ -47,7 +48,7 @@ fn test_resume_skips_completed_reruns_interrupted() {
     )
     .unwrap();
 
-    let runner = Arc::new(workflow_utils::SystemProcessRunner);
+    let runner = Arc::new(SystemProcessRunner::new());
     let executor = Arc::new(workflow_utils::ShellHookExecutor);
     let mut state = Box::new(JsonStateStore::load(&state_path).unwrap());
 

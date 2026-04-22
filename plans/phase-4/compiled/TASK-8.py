@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""TASK-8: Add `task_successors` to `JsonStateStore` and graph-aware `cmd_retry`"""
+import base64, json, subprocess, sys
+
+TASK_ID = "TASK-8"
+STEPS = json.loads('[{"before_b64": "Zm4gY21kX3JldHJ5KHN0YXRlOiAmbXV0IGR5biBTdGF0ZVN0b3JlLCB0YXNrX2lkczogJltTdHJpbmddKSAtPiBhbnlob3c6OlJlc3VsdDwoKT4gewogICAgZm9yIGlkIGluIHRhc2tfaWRzIHsKICAgICAgICBpZiBzdGF0ZS5nZXRfc3RhdHVzKGlkKS5pc19ub25lKCkgewogICAgICAgICAgICBlcHJpbnRsbiEoIndhcm46IHRhc2sgJ3t9JyBub3QgZm91bmQiLCBpZCk7CiAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgc3RhdGUubWFya19wZW5kaW5nKGlkKTsKICAgICAgICB9CiAgICB9CiAgICAvLyBSZXNldCBhbGwgZGVwZW5kZW5jeS1mYWlsdXJlLXNraXBwZWQgdGFza3MgZ2xvYmFsbHkgKG5vdCBqdXN0IHRob3NlIGRvd25zdHJlYW0KICAgIC8vIG9mIGB0YXNrX2lkc2ApLiBJbnRlbnRpb25hbCBmb3IgdjAuMSBzaW1wbGljaXR5IOKAlCBhIGdyYXBoLWF3YXJlIHJldHJ5IHdvdWxkCiAgICAvLyByZXF1aXJlIERBRyBhY2Nlc3MgdGhhdCB0aGUgQ0xJIGRvZXMgbm90IGhhdmUuCiAgICBsZXQgdG9fcmVzZXQ6IFZlYzxTdHJpbmc+ID0gc3RhdGUKICAgICAgICAuYWxsX3Rhc2tzKCkKICAgICAgICAuaW50b19pdGVyKCkKICAgICAgICAuZmlsdGVyKHwoXywgcyl8IG1hdGNoZXMhKHMsIFRhc2tTdGF0dXM6OlNraXBwZWREdWVUb0RlcGVuZGVuY3lGYWlsdXJlKSkKICAgICAgICAubWFwKHwoaWQsIF8pfCBpZCkKICAgICAgICAuY29sbGVjdCgpOwogICAgZm9yIGlkIGluIHRvX3Jlc2V0IHsKICAgICAgICBzdGF0ZS5tYXJrX3BlbmRpbmcoJmlkKTsKICAgIH0KICAgIHN0YXRlLnNhdmUoKS5tYXBfZXJyKHxlfCBhbnlob3c6OmFueWhvdyEoImZhaWxlZCB0byBzYXZlIHN0YXRlOiB7fSIsIGUpKT87CiAgICBPaygoKSkKfQ==", "after_b64": "Zm4gZG93bnN0cmVhbV90YXNrcygKICAgIHN0YXJ0OiAmW1N0cmluZ10sCiAgICBzdWNjZXNzb3JzOiAmSGFzaE1hcDxTdHJpbmcsIFZlYzxTdHJpbmc+PiwKKSAtPiBzdGQ6OmNvbGxlY3Rpb25zOjpIYXNoU2V0PFN0cmluZz4gewogICAgbGV0IG11dCB2aXNpdGVkID0gc3RkOjpjb2xsZWN0aW9uczo6SGFzaFNldDo6bmV3KCk7CiAgICBsZXQgbXV0IHF1ZXVlOiBzdGQ6OmNvbGxlY3Rpb25zOjpWZWNEZXF1ZTxTdHJpbmc+ID0gc3RhcnQuaXRlcigpLmNsb25lZCgpLmNvbGxlY3QoKTsKICAgIHdoaWxlIGxldCBTb21lKGlkKSA9IHF1ZXVlLnBvcF9mcm9udCgpIHsKICAgICAgICBpZiBsZXQgU29tZShkZXBzKSA9IHN1Y2Nlc3NvcnMuZ2V0KCZpZCkgewogICAgICAgICAgICBmb3IgZGVwIGluIGRlcHMgewogICAgICAgICAgICAgICAgaWYgdmlzaXRlZC5pbnNlcnQoZGVwLmNsb25lKCkpIHsKICAgICAgICAgICAgICAgICAgICBxdWV1ZS5wdXNoX2JhY2soZGVwLmNsb25lKCkpOwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQogICAgdmlzaXRlZAp9CgpmbiBjbWRfcmV0cnkoc3RhdGU6ICZtdXQgSnNvblN0YXRlU3RvcmUsIHRhc2tfaWRzOiAmW1N0cmluZ10pIC0+IGFueWhvdzo6UmVzdWx0PCgpPiB7CiAgICBmb3IgaWQgaW4gdGFza19pZHMgewogICAgICAgIGlmIHN0YXRlLmdldF9zdGF0dXMoaWQpLmlzX25vbmUoKSB7CiAgICAgICAgICAgIGVwcmludGxuISgid2FybjogdGFzayAne30nIG5vdCBmb3VuZCIsIGlkKTsKICAgICAgICB9IGVsc2UgewogICAgICAgICAgICBzdGF0ZS5tYXJrX3BlbmRpbmcoaWQpOwogICAgICAgIH0KICAgIH0KCiAgICBsZXQgc3VjY2Vzc29ycyA9IHN0YXRlLnRhc2tfc3VjY2Vzc29ycygpLmNsb25lKCk7CiAgICBpZiBzdWNjZXNzb3JzLmlzX2VtcHR5KCkgewogICAgICAgIGVwcmludGxuISgid2Fybjogc3RhdGUgZmlsZSBsYWNrcyBkZXBlbmRlbmN5IGluZm87IGZhbGxpbmcgYmFjayB0byBnbG9iYWwgcmVzZXQiKTsKICAgICAgICBsZXQgdG9fcmVzZXQ6IFZlYzxTdHJpbmc+ID0gc3RhdGUKICAgICAgICAgICAgLmFsbF90YXNrcygpCiAgICAgICAgICAgIC5pbnRvX2l0ZXIoKQogICAgICAgICAgICAuZmlsdGVyKHwoXywgcyl8IG1hdGNoZXMhKHMsIFRhc2tTdGF0dXM6OlNraXBwZWREdWVUb0RlcGVuZGVuY3lGYWlsdXJlKSkKICAgICAgICAgICAgLm1hcCh8KGlkLCBfKXwgaWQpCiAgICAgICAgICAgIC5jb2xsZWN0KCk7CiAgICAgICAgZm9yIGlkIGluIHRvX3Jlc2V0IHsKICAgICAgICAgICAgc3RhdGUubWFya19wZW5kaW5nKCZpZCk7CiAgICAgICAgfQogICAgfSBlbHNlIHsKICAgICAgICBsZXQgZG93bnN0cmVhbSA9IGRvd25zdHJlYW1fdGFza3ModGFza19pZHMsICZzdWNjZXNzb3JzKTsKICAgICAgICBsZXQgdG9fcmVzZXQ6IFZlYzxTdHJpbmc+ID0gc3RhdGUKICAgICAgICAgICAgLmFsbF90YXNrcygpCiAgICAgICAgICAgIC5pbnRvX2l0ZXIoKQogICAgICAgICAgICAuZmlsdGVyKHwoaWQsIHMpfCB7CiAgICAgICAgICAgICAgICBtYXRjaGVzIShzLCBUYXNrU3RhdHVzOjpTa2lwcGVkRHVlVG9EZXBlbmRlbmN5RmFpbHVyZSkKICAgICAgICAgICAgICAgICAgICAmJiBkb3duc3RyZWFtLmNvbnRhaW5zKGlkKQogICAgICAgICAgICB9KQogICAgICAgICAgICAubWFwKHwoaWQsIF8pfCBpZCkKICAgICAgICAgICAgLmNvbGxlY3QoKTsKICAgICAgICBmb3IgaWQgaW4gdG9fcmVzZXQgewogICAgICAgICAgICBzdGF0ZS5tYXJrX3BlbmRpbmcoJmlkKTsKICAgICAgICB9CiAgICB9CgogICAgc3RhdGUuc2F2ZSgpLm1hcF9lcnIofGV8IGFueWhvdzo6YW55aG93ISgiZmFpbGVkIHRvIHNhdmUgc3RhdGU6IHt9IiwgZSkpPzsKICAgIE9rKCgpKQp9", "target": "workflow_core/src/state.rs", "index": 0}]')
+
+for step in STEPS:
+    before = base64.b64decode(step["before_b64"]).decode()
+    after = base64.b64decode(step["after_b64"]).decode()
+    target = step["target"]
+    idx = step["index"]
+
+    content = open(target).read()
+    if before not in content:
+        print(f"FAILED {TASK_ID} change {idx}: pattern not found in {target}", file=sys.stderr)
+        print(f"Expected (first 200 chars): {repr(before[:200])}", file=sys.stderr)
+        sys.exit(1)
+
+    result = subprocess.run(
+        ["sd", "-F", "-A", "-n", "1", before, after, target],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"FAILED {TASK_ID} change {idx}: sd error: {result.stderr}", file=sys.stderr)
+        sys.exit(result.returncode)
+
+    new_content = open(target).read()
+    if after and after not in new_content:
+        print(f"FAILED {TASK_ID} change {idx}: replacement not found after apply", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"OK {TASK_ID} change {idx}: applied to {target}")
+
+print(f"OK {TASK_ID}: all changes applied")

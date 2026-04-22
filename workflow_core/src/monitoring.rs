@@ -49,6 +49,27 @@ pub enum HookTrigger {
     Periodic { interval_secs: u64 },
 }
 
+/// The phase of a task in the workflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskPhase {
+    /// Task is currently running.
+    Running,
+    /// Task has completed successfully.
+    Completed,
+    /// Task has failed.
+    Failed,
+}
+
+impl std::fmt::Display for TaskPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskPhase::Running => write!(f, "Running"),
+            TaskPhase::Completed => write!(f, "Completed"),
+            TaskPhase::Failed => write!(f, "Failed"),
+        }
+    }
+}
+
 /// Context available to monitoring hooks during execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookContext {
@@ -56,8 +77,8 @@ pub struct HookContext {
     pub task_id: String,
     /// Working directory for the task.
     pub workdir: std::path::PathBuf,
-    /// Current state of the task (running, completed, failed, etc.).
-    pub state: String,
+    /// Current phase of the task.
+    pub phase: TaskPhase,
     /// Exit code of the task (if available).
     pub exit_code: Option<i32>,
 }
@@ -124,7 +145,7 @@ mod tests {
         let ctx = HookContext {
             task_id: "task-1".to_string(),
             workdir: std::path::PathBuf::from("."),
-            state: "running".to_string(),
+            phase: TaskPhase::Running,
             exit_code: None,
         };
         assert_eq!(ctx.task_id, "task-1");
@@ -148,7 +169,7 @@ mod tests {
         };
         let ctx = HookContext {
             task_id: "t1".into(),
-            state: "running".into(),
+            phase: TaskPhase::Running,
             workdir: std::path::PathBuf::from("."),
             exit_code: None,
         };
@@ -165,7 +186,7 @@ mod tests {
         };
         let ctx = HookContext {
             task_id: "t1".into(),
-            state: "running".into(),
+            phase: TaskPhase::Running,
             workdir: std::path::PathBuf::from("."),
             exit_code: None,
         };

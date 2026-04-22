@@ -7,6 +7,7 @@ use std::time::Instant;
 // the core process/error types without a direct `workflow_core` dependency.
 pub use workflow_core::WorkflowError;
 pub use workflow_core::{ProcessHandle, ProcessResult, ProcessRunner};
+pub use workflow_core::process::OutputLocation;
 
 pub struct TaskExecutor {
     workdir: PathBuf,
@@ -105,7 +106,20 @@ impl ExecutionHandle {
 
 /// Concrete implementation of the ProcessRunner trait for system processes.
 /// Wraps `std::process::Child` with output capture and timing.
-pub struct SystemProcessRunner;
+#[derive(Default)]
+pub struct SystemProcessRunner {
+    log_dir: Option<PathBuf>,
+}
+
+impl SystemProcessRunner {
+    pub fn new() -> Self {
+        Self { log_dir: None }
+    }
+
+    pub fn with_log_dir(dir: impl Into<PathBuf>) -> Self {
+        Self { log_dir: Some(dir.into()) }
+    }
+}
 
 impl ProcessRunner for SystemProcessRunner {
     fn spawn(
@@ -115,18 +129,34 @@ impl ProcessRunner for SystemProcessRunner {
         args: &[String],
         env: &HashMap<String, String>,
     ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
+        let (stdout_cfg, stderr_cfg, output_files) = if let Some(ref log_dir) = self.log_dir {
+            // Derive file prefix from workdir leaf directory name
+            let prefix = workdir
+                .file_name()
+                .map(|n| n.to_string_lossy().replace('/', "_"))
+                .unwrap_or_else(|| "unknown".into());
+            let stdout_path = log_dir.join(format!("{}.stdout", prefix));
+            let stderr_path = log_dir.join(format!("{}.stderr", prefix));
+            let stdout_file = std::fs::File::create(&stdout_path).map_err(WorkflowError::Io)?;
+            let stderr_file = std::fs::File::create(&stderr_path).map_err(WorkflowError::Io)?;
+            (Stdio::from(stdout_file), Stdio::from(stderr_file), Some((stdout_path, stderr_path)))
+        } else {
+            (Stdio::piped(), Stdio::piped(), None)
+        };
+
         let child = Command::new(command)
             .args(args)
             .envs(env)
             .current_dir(workdir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(stdout_cfg)
+            .stderr(stderr_cfg)
             .spawn()
             .map_err(WorkflowError::Io)?;
 
         Ok(Box::new(SystemProcessHandle {
             child: Some(child),
             start: Instant::now(),
+            output_files,
         }))
     }
 }
@@ -136,6 +166,7 @@ impl ProcessRunner for SystemProcessRunner {
 pub struct SystemProcessHandle {
     child: Option<Child>,
     start: Instant,
+    output_files: Option<(PathBuf, PathBuf)>,
 }
 
 impl ProcessHandle for SystemProcessHandle {
@@ -157,12 +188,24 @@ impl ProcessHandle for SystemProcessHandle {
         let child = self.child.take()
             .ok_or_else(|| WorkflowError::InvalidConfig("wait() called twice".into()))?;
 
-        let output = child.wait_with_output().map_err(WorkflowError::Io)?;
+        let (output_loc, exit_code) = if let Some((ref stdout_path, ref stderr_path)) = self.output_files {
+            // File-backed: just wait for exit, output is on disk
+            let status = child.wait_with_output().map_err(WorkflowError::Io)?;
+            (OutputLocation::OnDisk {
+                stdout_path: stdout_path.clone(),
+                stderr_path: stderr_path.clone(),
+            }, status.status.code())
+        } else {
+            let output = child.wait_with_output().map_err(WorkflowError::Io)?;
+            (OutputLocation::Captured {
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            }, output.status.code())
+        };
 
         Ok(ProcessResult {
-            exit_code: output.status.code(),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit_code,
+            output: output_loc,
             duration: self.start.elapsed(),
         })
     }

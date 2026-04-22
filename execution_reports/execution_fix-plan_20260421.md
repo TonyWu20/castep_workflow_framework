@@ -1,0 +1,296 @@
+# Execution Report
+
+**Plan**: /Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-4/fix-plan.toml
+**Started**: 2026-04-21T11:29:36Z
+**Status**: In Progress
+
+## Task Results
+
+### TASK-7: Add #[serial] to PATH-mutating queued integration tests
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p workflow_utils --test queued_integration`: PASSED
+
+### TASK-1: Add task_successors field to JsonStateStore, set_task_graph to StateStore trait, persist graph in Workflow::run, rewrite cmd_retry for graph-aware downstream-only reset
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+
+### TASK-4: Add QueuedSubmitter to the pub use process::{...} line in workflow_core/src/lib.rs
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+
+### TASK-5: Remove the second (duplicate) computation of stdout_path and stderr_path in QueuedRunner::submit
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+
+### TASK-6: Change pub scheduler field to private, add pub fn scheduler() getter on QueuedRunner
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+
+### TASK-2: Replace shell-injected poll_cmd/cancel_cmd String fields with direct Command construction using SchedulerKind
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: FAILED (exit 101)
+    ```
+    f.scheduler {
+    166 |             SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+    167 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:192:37
+        |
+    192 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    195 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    191 ~         let mut binding = Command::new("scancel");
+    192 ~         match self.scheduler {
+    193 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:193:35
+        |
+    193 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    ```
+  - `cargo test -p workflow_utils --test queued_integration`: FAILED (exit 101)
+    ```
+    mand::new("squeue").args(["-j", &self.job_id, "-h"]),
+    167 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:192:37
+        |
+    192 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    195 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    191 ~         let mut binding = Command::new("scancel");
+    192 ~         match self.scheduler {
+    193 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:193:35
+        |
+    193 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    194 |         }
+    ```
+
+### TASK-3: Move #[cfg(test)] mod tests to the very end of queued.rs, after all production code
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo clippy -p workflow_utils -- -D warnings`: FAILED (exit 101)
+    ```
+    f.scheduler {
+    122 |             SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+    123 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:148:37
+        |
+    148 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    151 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    147 ~         let mut binding = Command::new("scancel");
+    148 ~         match self.scheduler {
+    149 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:149:35
+        |
+    149 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    ```
+
+### TASK-7: Replace println! with panic! for unexpected error variant in submit_returns_err_when_sbatch_unavailable test
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo test -p workflow_utils --test queued_integration`: FAILED (exit 101)
+    ```
+    f.scheduler {
+    122 |             SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+    123 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:148:37
+        |
+    148 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    151 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    147 ~         let mut binding = Command::new("scancel");
+    148 ~         match self.scheduler {
+    149 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:149:35
+        |
+    149 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    ```
+
+### TASK-8: Set deprecated TASK_STATE env var alongside TASK_PHASE for backwards compatibility with existing hook scripts
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: FAILED (exit 101)
+    ```
+    f.scheduler {
+    122 |             SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+    123 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:148:37
+        |
+    148 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    151 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    147 ~         let mut binding = Command::new("scancel");
+    148 ~         match self.scheduler {
+    149 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:149:35
+        |
+    149 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    ```
+
+### TASK-9: Add integration test verifying Workflow::run completes a Queued-mode task using a stub QueuedSubmitter
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo test -p workflow_core --test queued_workflow`: FAILED (exit 101)
+    ```
+    f.scheduler {
+    122 |             SchedulerKind::Slurm => Command::new("squeue").args(["-j", &self.job_id, "-h"]),
+    123 ~             SchedulerKind::Pbs => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:148:37
+        |
+    148 |             SchedulerKind::Slurm => Command::new("scancel").arg(&self.job_id),
+        |                                     ^^^^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                     |
+        |                                     creates a temporary value which is freed while still in use
+    ...
+    151 |         .output()
+        |          ------ borrow later used by call
+        |
+    help: consider using a `let` binding to create a longer lived value
+        |
+    147 ~         let mut binding = Command::new("scancel");
+    148 ~         match self.scheduler {
+    149 ~             SchedulerKind::Slurm => binding.arg(&self.job_id),
+        |
+    
+    error[E0716]: temporary value dropped while borrowed
+       --> workflow_utils/src/queued.rs:149:35
+        |
+    149 |             SchedulerKind::Pbs => Command::new("qdel").arg(&self.job_id),
+        |                                   ^^^^^^^^^^^^^^^^^^^^                 - temporary value is freed at the end of this statement
+        |                                   |
+        |                                   creates a temporary value which is freed while still in use
+    ```
+
+### TASK-1: Remove set_task_graph from StateStore trait, make it inherent on JsonStateStore, store computed successor map on Workflow, expose via successor_map()
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+
+### TASK-1: Remove set_task_graph from StateStore trait, make it inherent on JsonStateStore, store computed successor map on Workflow, expose via successor_map()
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+
+### TASK-2: Change task_successors field from HashMap to Option<HashMap> in JsonStateStore; None = pre-graph state file, Some(empty) = graph with no edges; update getter, setter, constructor, and cmd_retry fallback
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+
+### TASK-3: Introduce pub struct TaskSuccessors(HashMap<String, Vec<String>>) with get() and is_empty(); use it in JsonStateStore field/getter/setter, Workflow computed_successors/successor_map(), and downstream_tasks in CLI
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check --workspace`: PASSED
+  - `cargo test --workspace`: PASSED
+
+### TASK-4: Add BFS unit tests for downstream_tasks: linear chain, diamond, missing start, empty start, multiple starts, cycle guard
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p workflow-cli`: PASSED
+
+### TASK-6: Add #[must_use] annotation to JsonStateStore::task_successors() getter
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+
+### TASK-6: Add #[must_use] annotation to JsonStateStore::task_successors() getter
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+
+### TASK-7: Add queued_task_polls_before_completing test using DelayedHandle (AtomicUsize counter) that returns is_running()=true for first 2 polls then false, exercising the polling loop
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p workflow_core --test queued_workflow`: PASSED
+

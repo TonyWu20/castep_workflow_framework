@@ -1,0 +1,360 @@
+# Phase 4 Fix Plan (v5) — TOML format
+# Four issues from PR review round 4 (senior re-review):
+# TASK-1: Remove TaskSuccessors::inner() — dead API, breaks newtype encapsulation
+# TASK-2: Add TaskSuccessors to workflow_core root re-exports in lib.rs
+# TASK-3: Move downstream_tasks BFS from CLI binary to workflow_core (as TaskSuccessors method)
+# TASK-4: Document QueuedProcessHandle::wait() exit-code semantics; fix stale comment
+
+# ---------------------------------------------------------------------------
+# TASK-1: Remove TaskSuccessors::inner() — unused and breaks newtype encapsulation
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-1]
+description = "Remove pub fn inner() from TaskSuccessors; it is dead code and exposes the raw HashMap backing type, defeating the newtype abstraction"
+type = "replace"
+acceptance = ["cargo check --workspace", "cargo test --workspace"]
+
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    /// Returns `true` if the successor map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns a reference to the inner map.
+    pub fn inner(&self) -> &HashMap<String, Vec<String>> {
+        &self.0
+    }
+}
+'''
+after = '''
+    /// Returns `true` if the successor map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-2: Add TaskSuccessors to workflow_core root re-exports
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-2]
+description = "Add TaskSuccessors to the pub use line in workflow_core/src/lib.rs so it is accessible at the crate root like its sibling types"
+type = "replace"
+acceptance = ["cargo check --workspace"]
+
+[[tasks.TASK-2.changes]]
+file = "workflow_core/src/lib.rs"
+before = '''
+pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary, TaskStatus};
+'''
+after = '''
+pub use state::{JsonStateStore, StateStore, StateStoreExt, StateSummary, TaskStatus, TaskSuccessors};
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-3: Move downstream_tasks BFS into workflow_core as TaskSuccessors::downstream_of
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-3]
+description = "Move BFS traversal downstream_tasks from workflow-cli/src/main.rs into workflow_core/src/state.rs as pub fn TaskSuccessors::downstream_of; update CLI to call through the library; move unit tests with it"
+type = "replace"
+acceptance = ["cargo check --workspace", "cargo test --workspace", "cargo test -p workflow-cli"]
+
+# Change 1 — Add downstream_of method to TaskSuccessors in state.rs
+[[tasks.TASK-3.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    /// Returns `true` if the successor map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+'''
+after = '''
+    /// Returns `true` if the successor map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the set of all task IDs transitively reachable downstream
+    /// from the given starting task IDs via BFS over the successor graph.
+    ///
+    /// The starting task IDs themselves are NOT included in the result.
+    /// Cycle-safe: the visited set prevents re-enqueuing.
+    pub fn downstream_of(&self, start: &[String]) -> std::collections::HashSet<String> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+        while let Some(id) = queue.pop_front() {
+            if let Some(deps) = self.get(&id) {
+                for dep in deps {
+                    if visited.insert(dep.to_owned()) {
+                        queue.push_back(dep.to_owned());
+                    }
+                }
+            }
+        }
+        visited
+    }
+}
+'''
+
+# Change 2 — Remove the standalone downstream_tasks function from the CLI
+[[tasks.TASK-3.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+fn downstream_tasks(
+    start: &[String],
+    successors: &TaskSuccessors,
+) -> std::collections::HashSet<String> {
+    let mut visited = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+    while let Some(id) = queue.pop_front() {
+        if let Some(deps) = successors.get(&id) {
+            for dep in deps {
+                if visited.insert(dep.clone()) {
+                    queue.push_back(dep.clone());
+                }
+            }
+        }
+    }
+    visited
+}
+'''
+after = '''
+'''
+
+# Change 3 — Update cmd_retry to call successors.downstream_of instead of the local function
+[[tasks.TASK-3.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+        Some(successors) => {
+            let downstream = downstream_tasks(task_ids, successors);
+'''
+after = '''
+        Some(successors) => {
+            let downstream = successors.downstream_of(task_ids);
+'''
+
+# Change 4 — Move BFS unit tests from CLI to state.rs tests module (append to existing test block)
+[[tasks.TASK-3.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    #[test]
+    fn old_state_file_deserializes_without_task_successors() {
+'''
+after = '''
+    #[test]
+    fn downstream_of_linear_chain() {
+        // a -> b -> c: start [a] returns {b, c}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_diamond() {
+        // a -> b, a -> c, b -> d, c -> d: start [a] returns {b, c, d}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into(), "c".into()]);
+        map.insert("b".into(), vec!["d".into()]);
+        map.insert("c".into(), vec!["d".into()]);
+        map.insert("d".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+        assert!(result.contains("d"));
+    }
+
+    #[test]
+    fn downstream_of_start_not_in_map() {
+        let succ = TaskSuccessors::new(HashMap::new());
+        let result = succ.downstream_of(&["x".into()]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_empty_start() {
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_multiple_starts() {
+        // a -> c, b -> c: start [a, b] returns {c}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["c".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into(), "b".into()]);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_cycle_terminates() {
+        // a -> b -> a (cycle): BFS must terminate; visited set prevents re-enqueue
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["a".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert!(result.contains("b"));
+        assert!(result.contains("a"));
+    }
+
+    #[test]
+    fn old_state_file_deserializes_without_task_successors() {
+'''
+
+# Change 5 — Remove the 6 now-duplicate BFS tests from the CLI test module
+[[tasks.TASK-3.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+    #[test]
+    fn downstream_linear_chain() {
+        // a -> b -> c: start [a] returns {b, c}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_diamond() {
+        // a -> b, a -> c, b -> d, c -> d: start [a] returns {b, c, d}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into(), "c".into()]);
+        map.insert("b".into(), vec!["d".into()]);
+        map.insert("c".into(), vec!["d".into()]);
+        map.insert("d".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+        assert!(result.contains("d"));
+    }
+
+    #[test]
+    fn downstream_start_not_in_map() {
+        let succ = TaskSuccessors::new(std::collections::HashMap::new());
+        let result = downstream_tasks(&["x".into()], &succ);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_empty_start() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&[], &succ);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_multiple_starts() {
+        // a -> c, b -> c: start [a, b] returns {c}
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["c".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into(), "b".into()], &succ);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_cycle_terminates() {
+        // a -> b -> a (cycle): BFS must terminate; visited set prevents re-enqueue
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["a".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = downstream_tasks(&["a".into()], &succ);
+        assert!(result.contains("b"));
+        assert!(result.contains("a"));
+    }
+}
+'''
+after = '''
+}
+'''
+
+# ---------------------------------------------------------------------------
+# TASK-4: Document QueuedProcessHandle::wait() exit-code semantics and fix stale comment
+# ---------------------------------------------------------------------------
+
+[tasks.TASK-4]
+description = "Add doc comment to QueuedProcessHandle::wait() explaining the three exit-code states; fix the stale 'accounting query in wait() may refine' comment in is_running()"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils"]
+
+# Change 1 — Fix stale comment in is_running()
+[[tasks.TASK-4.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+                if !running {
+                    self.finished_exit_code = Some(0); // default; accounting query in wait() may refine
+                }
+'''
+after = '''
+                if !running {
+                    // Job no longer appears in the queue; assume success (exit code 0).
+                    // The scheduler does not provide the actual exit code at poll time.
+                    self.finished_exit_code = Some(0);
+                }
+'''
+
+# Change 2 — Add doc comment to wait() explaining the three states
+[[tasks.TASK-4.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
+        Ok(ProcessResult {
+            exit_code: self.finished_exit_code,
+'''
+after = '''
+    /// Returns the process result after `is_running()` has returned `false`.
+    ///
+    /// # Exit code semantics (approximate)
+    ///
+    /// - `Some(0)` — job left the scheduler queue normally (assumed success).
+    /// - `Some(-1)` — the scheduler status query command itself failed (I/O error);
+    ///   this conflates "cannot reach scheduler" with an actual -1 exit code.
+    /// - `None` — `is_running()` was never called or never transitioned to finished;
+    ///   callers should treat `None` as an unknown outcome.
+    ///
+    /// The caller in `workflow.rs` handles all three cases defensively via `unwrap_or(-1)`.
+    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
+        Ok(ProcessResult {
+            exit_code: self.finished_exit_code,
+'''
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+
+[dependencies]
+TASK-2 = ["TASK-1"]
+TASK-3 = ["TASK-1", "TASK-2"]

@@ -62,7 +62,7 @@ fn main() -> Result<()> {
 
     let state_path = std::path::PathBuf::from(".hubbard_u_sweep.workflow.json");
     let mut state = JsonStateStore::new("hubbard_u_sweep", state_path);
-    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner);
+    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
     let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
 
     workflow.run(&mut state, runner, executor)?;

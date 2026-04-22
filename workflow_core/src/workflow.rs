@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::dag::Dag;
 use crate::error::WorkflowError;
 use crate::process::{ProcessHandle, ProcessRunner};
-use crate::state::{StateStore, StateStoreExt, TaskStatus};
+use crate::state::{StateStore, StateStoreExt, TaskStatus, TaskSuccessors};
 use crate::task::{ExecutionMode, Task, TaskClosure};
 
 use std::collections::{HashMap, HashSet};
@@ -20,6 +20,7 @@ pub(crate) struct InFlightTask {
     pub monitors: Vec<crate::monitoring::MonitoringHook>,
     pub collect: Option<TaskClosure>,
     pub workdir: std::path::PathBuf,
+    pub last_periodic_fire: HashMap<String, Instant>,
 }
 
 pub struct Workflow {
@@ -27,6 +28,9 @@ pub struct Workflow {
     tasks: HashMap<String, Task>,
     max_parallel: usize,
     pub(crate) interrupt: Arc<AtomicBool>,
+    log_dir: Option<std::path::PathBuf>,
+    queued_submitter: Option<Arc<dyn crate::process::QueuedSubmitter>>,
+    computed_successors: Option<TaskSuccessors>,
 }
 
 impl Workflow {
@@ -41,6 +45,9 @@ impl Workflow {
             tasks: HashMap::new(),
             max_parallel,
             interrupt: Arc::new(AtomicBool::new(false)),
+            log_dir: None,
+            queued_submitter: None,
+            computed_successors: None,
         }
     }
 
@@ -53,6 +60,24 @@ impl Workflow {
         }
         self.max_parallel = n;
         Ok(self)
+    }
+
+    /// Sets the directory for log file creation.
+    pub fn with_log_dir(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.log_dir = Some(path.into());
+        self
+    }
+
+    /// Sets the QueuedSubmitter for Queued execution mode tasks.
+    pub fn with_queued_submitter(mut self, qs: Arc<dyn crate::process::QueuedSubmitter>) -> Self {
+        self.queued_submitter = Some(qs);
+        self
+    }
+
+    /// Returns the computed successor map after `run()` has been called.
+    /// Returns `None` if `run()` has not yet been called.
+    pub fn successor_map(&self) -> Option<&TaskSuccessors> {
+        self.computed_successors.as_ref()
     }
 
     pub fn add_task(&mut self, task: Task) -> Result<(), WorkflowError> {
@@ -86,24 +111,17 @@ impl Workflow {
         signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
         signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
 
-        // Reject Queued tasks and Periodic hooks upfront — before any processes are spawned —
-        // so we never orphan handles.
-        for (id, task) in &self.tasks {
-            if matches!(task.mode, ExecutionMode::Queued { .. }) {
-                return Err(WorkflowError::InvalidConfig(
-                    format!("task '{}': Queued execution mode is not yet implemented", id)
-                ));
-            }
-            for hook in &task.monitors {
-                if matches!(hook.trigger, crate::monitoring::HookTrigger::Periodic { .. }) {
-                    return Err(WorkflowError::InvalidConfig(
-                        format!("task '{}': Periodic hooks are not yet supported", id)
-                    ));
-                }
-            }
+        if let Some(ref dir) = self.log_dir {
+            std::fs::create_dir_all(dir).map_err(WorkflowError::Io)?;
         }
 
         let dag = self.build_dag()?;
+
+        // Compute and store task dependency graph for CLI retrieval
+        let successors: HashMap<String, Vec<String>> = dag.task_ids()
+            .map(|id| (id.clone(), dag.successors(id)))
+            .collect();
+        self.computed_successors = Some(TaskSuccessors::new(successors));
 
         // Initialize state for all tasks
         for id in dag.task_ids() {
@@ -143,6 +161,32 @@ impl Workflow {
 
             propagate_skips(&dag, state, &self.tasks)?;
 
+            // Fire periodic hooks for in-flight tasks
+            for (task_id, t) in handles.iter_mut() {
+                for hook in &t.monitors {
+                    if let crate::monitoring::HookTrigger::Periodic { interval_secs } = hook.trigger {
+                        let last = t.last_periodic_fire
+                            .entry(hook.name.clone())
+                            .or_insert(t.started_at);
+                        if last.elapsed() >= Duration::from_secs(interval_secs) {
+                            let ctx = crate::monitoring::HookContext {
+                                task_id: task_id.clone(),
+                                workdir: t.workdir.clone(),
+                                phase: crate::monitoring::TaskPhase::Running,
+                                exit_code: None,
+                            };
+                            if let Err(e) = hook_executor.execute_hook(hook, &ctx) {
+                                tracing::warn!(
+                                    "Periodic hook '{}' for task '{}' failed: {}",
+                                    hook.name, task_id, e
+                                );
+                            }
+                            *last = Instant::now();
+                        }
+                    }
+                }
+            }
+
             // Dispatch ready tasks
             let done_set: HashSet<String> = state
                 .all_tasks()
@@ -176,34 +220,51 @@ impl Workflow {
                             }
                         }
 
-                        let ExecutionMode::Direct {
-                            command,
-                            args,
-                            env,
-                            timeout,
-                        } = &task.mode else {
-                            unreachable!("non-Direct tasks rejected by upfront validation");
-                        };
-
-                        if let Some(d) = timeout {
-                            task_timeouts.insert(id.to_string(), *d);
-                        }
-
-                        let monitors = task.monitors.clone();
-                        let task_workdir = task.workdir.clone();
-                        let handle = match runner.spawn(&task.workdir, command, args, env) {
-                            Ok(h) => h,
-                            Err(e) => {
-                                state.mark_failed(&id, e.to_string());
-                                state.save()?;
-                                continue;
+                        let handle = match &task.mode {
+                            ExecutionMode::Direct { command, args, env, timeout } => {
+                                if let Some(d) = timeout {
+                                    task_timeouts.insert(id.to_string(), *d);
+                                }
+                                match runner.spawn(&task.workdir, command, args, env) {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        state.mark_failed(&id, e.to_string());
+                                        state.save()?;
+                                        continue;
+                                    }
+                                }
+                            }
+                            ExecutionMode::Queued => {
+                                let qs = match self.queued_submitter.as_ref() {
+                                    Some(qs) => qs,
+                                    None => {
+                                        state.mark_failed(&id, format!(
+                                            "task '{}': Queued mode requires a QueuedSubmitter", id
+                                        ));
+                                        state.save()?;
+                                        continue;
+                                    }
+                                };
+                                let log_dir = self.log_dir.as_deref()
+                                    .unwrap_or(task.workdir.as_path());
+                                match qs.submit(&task.workdir, &id, log_dir) {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        state.mark_failed(&id, e.to_string());
+                                        state.save()?;
+                                        continue;
+                                    }
+                                }
                             }
                         };
 
+                        let monitors = task.monitors.clone();
+                        let task_workdir = task.workdir.clone();
+
                         fire_hooks(
                             &monitors,
-                            task_workdir,
-                            "running",
+                            &task_workdir,
+                            crate::monitoring::TaskPhase::Running,
                             None,
                             &id,
                             hook_executor.as_ref(),
@@ -215,6 +276,7 @@ impl Workflow {
                             monitors,
                             collect: task.collect,
                             workdir: task.workdir,
+                            last_periodic_fire: HashMap::new(),
                         });
                     }
                 }
@@ -260,24 +322,25 @@ impl Workflow {
 /// Logs warnings for individual hook failures but does not propagate them.
 fn fire_hooks(
     monitors: &[crate::monitoring::MonitoringHook],
-    workdir: std::path::PathBuf,
-    final_state: &str,
+    workdir: &std::path::Path,
+    phase: crate::monitoring::TaskPhase,
     exit_code: Option<i32>,
     task_id: &str,
     hook_executor: &dyn HookExecutor,
 ) {
     let ctx = crate::monitoring::HookContext {
         task_id: task_id.to_string(),
-        workdir,
-        state: final_state.to_string(),
+        workdir: workdir.to_path_buf(),
+        phase,
         exit_code,
     };
     for hook in monitors {
-        let should_fire = matches!((&hook.trigger, final_state), (
-            crate::monitoring::HookTrigger::OnStart,
-            "running"
-        ) | (crate::monitoring::HookTrigger::OnComplete, "completed")
-            | (crate::monitoring::HookTrigger::OnFailure, "failed"));
+        let should_fire = matches!(
+            (&hook.trigger, phase),
+            (crate::monitoring::HookTrigger::OnStart, crate::monitoring::TaskPhase::Running)
+                | (crate::monitoring::HookTrigger::OnComplete, crate::monitoring::TaskPhase::Completed)
+                | (crate::monitoring::HookTrigger::OnFailure, crate::monitoring::TaskPhase::Failed)
+        );
         if should_fire {
             if let Err(e) = hook_executor.execute_hook(hook, &ctx) {
                 tracing::warn!(
@@ -305,7 +368,7 @@ fn process_finished(
         return Ok(());
     }
 
-    let (final_state, exit_code) = if let Ok(process_result) = t.handle.wait() {
+    let exit_code = if let Ok(process_result) = t.handle.wait() {
         match process_result.exit_code {
             Some(0) => {
                 state.mark_completed(id);
@@ -318,25 +381,31 @@ fn process_finished(
                         );
                     }
                 }
-                ("completed", process_result.exit_code)
+                process_result.exit_code
             }
             _ => {
                 state.mark_failed(
                     id,
                     format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
                 );
-                ("failed", process_result.exit_code)
+                process_result.exit_code
             }
         }
     } else {
         state.mark_failed(id, "process terminated".to_string());
-        ("failed", None)
+        None
+    };
+
+    let task_phase = if exit_code == Some(0) {
+        crate::monitoring::TaskPhase::Completed
+    } else {
+        crate::monitoring::TaskPhase::Failed
     };
 
     fire_hooks(
         &t.monitors,
-        t.workdir,
-        final_state,
+        &t.workdir,
+        task_phase,
         exit_code,
         id,
         hook_executor,
@@ -521,8 +590,10 @@ mod tests {
             let output = child.wait_with_output().map_err(WorkflowError::Io)?;
             Ok(crate::process::ProcessResult {
                 exit_code: output.status.code(),
-                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                output: crate::process::OutputLocation::Captured {
+                    stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                    stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                },
                 duration: self.start.elapsed(),
             })
         }

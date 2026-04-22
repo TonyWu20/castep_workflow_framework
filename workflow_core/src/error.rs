@@ -32,6 +32,9 @@ pub enum WorkflowError {
 
     #[error("workflow interrupted by signal")]
     Interrupted,
+
+    #[error("failed to submit job to queue: {0}")]
+    QueueSubmitFailed(String),
 }
 
 
