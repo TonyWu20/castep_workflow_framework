@@ -22,7 +22,7 @@ use job_script::generate_job_script;
 fn main() -> Result<()> {
     workflow_core::init_default_logging().ok();
     let config = SweepConfig::parse();
-    let u_values = config.parse_u_values();
+    let u_values = config.parse_u_values().map_err(|e| anyhow::anyhow!(e))?;
 
     let seed_cell = include_str!("../seeds/ZnO.cell");
     let seed_param = include_str!("../seeds/ZnO.param");
