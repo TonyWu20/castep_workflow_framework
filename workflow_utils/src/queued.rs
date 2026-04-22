@@ -62,22 +62,23 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
         task_id: &str,
         log_dir: &Path,
     ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
-        let stdout_path = log_dir.join(format!("{}.stdout", task_id));
-        let stderr_path = log_dir.join(format!("{}.stderr", task_id));
-        let script_path = workdir.join("job.sh").canonicalize().map_err(|e| {
-            WorkflowError::QueueSubmitFailed(format!(
-                "failed to resolve job script path {}: {}",
-                workdir.join("job.sh").display(),
-                e
-            ))
-        })?;
+        // Absolutize log paths so sbatch resolves them correctly when running from inside workdir.
+        let cwd = std::env::current_dir()
+            .map_err(|e| WorkflowError::QueueSubmitFailed(format!("cannot determine cwd: {}", e)))?;
+        let abs_log_dir = if log_dir.is_absolute() {
+            log_dir.to_path_buf()
+        } else {
+            cwd.join(log_dir)
+        };
+        let stdout_path = abs_log_dir.join(format!("{}.stdout", task_id));
+        let stderr_path = abs_log_dir.join(format!("{}.stderr", task_id));
 
         let output = match self.scheduler {
             SchedulerKind::Slurm => Command::new("sbatch"),
             SchedulerKind::Pbs => Command::new("qsub"),
         }
         .args(["-o", &stdout_path.to_string_lossy(), "-e", &stderr_path.to_string_lossy()])
-        .arg(&script_path)
+        .arg("job.sh")
         .current_dir(workdir)
         .output()
         .map_err(|e| WorkflowError::QueueSubmitFailed(e.to_string()))?;
