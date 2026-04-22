@@ -1,0 +1,106 @@
+# Phase 5 Fix Plan — compilable-plan-spec v2
+# Generated: 2026-04-23
+
+[tasks.TASK-1]
+description = "Extract hardcoded 'job.sh' literal into a pub const JOB_SCRIPT_NAME in queued module"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils", "cargo test -p workflow_utils"]
+
+[[tasks.TASK-1.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+use workflow_core::error::WorkflowError;
+use workflow_core::process::{OutputLocation, ProcessHandle, ProcessResult};
+
+/// The type of HPC job scheduler to target.
+#[derive(Debug, Clone, Copy)]
+pub enum SchedulerKind {
+'''
+after = '''
+use workflow_core::error::WorkflowError;
+use workflow_core::process::{OutputLocation, ProcessHandle, ProcessResult};
+
+/// Default job script filename used by [`QueuedRunner::submit`].
+pub const JOB_SCRIPT_NAME: &str = "job.sh";
+
+/// The type of HPC job scheduler to target.
+#[derive(Debug, Clone, Copy)]
+pub enum SchedulerKind {
+'''
+
+[[tasks.TASK-1.changes]]
+file = "workflow_utils/src/queued.rs"
+before = '''
+        .args(["-o", &stdout_path.to_string_lossy(), "-e", &stderr_path.to_string_lossy()])
+        .arg("job.sh")
+        .current_dir(workdir)
+'''
+after = '''
+        .args(["-o", &stdout_path.to_string_lossy(), "-e", &stderr_path.to_string_lossy()])
+        .arg(JOB_SCRIPT_NAME)
+        .current_dir(workdir)
+'''
+
+[tasks.TASK-2]
+description = "Re-export JOB_SCRIPT_NAME from workflow_utils top-level lib.rs"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils"]
+
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/src/lib.rs"
+before = '''
+pub use queued::{QueuedRunner, SchedulerKind};
+'''
+after = '''
+pub use queued::{QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME};
+'''
+
+[tasks.TASK-3]
+description = "Make parse_u_values return Result<Vec<f64>, String> instead of silently dropping unparseable values"
+type = "replace"
+acceptance = ["cargo check -p hubbard_u_sweep_slurm"]
+
+[[tasks.TASK-3.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/config.rs"
+before = '''
+impl SweepConfig {
+    pub fn parse_u_values(&self) -> Vec<f64> {
+        self.u_values
+            .split(',')
+            .filter_map(|s| s.trim().parse::<f64>().ok())
+            .collect()
+    }
+}
+'''
+after = '''
+impl SweepConfig {
+    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
+        self.u_values
+            .split(',')
+            .map(|s| {
+                s.trim()
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid U value '{}': {}", s.trim(), e))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    }
+}
+'''
+
+[tasks.TASK-4]
+description = "Update parse_u_values call site in main.rs to propagate the error"
+type = "replace"
+acceptance = ["cargo check -p hubbard_u_sweep_slurm", "cargo test -p hubbard_u_sweep_slurm"]
+
+[[tasks.TASK-4.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+    let u_values = config.parse_u_values();
+'''
+after = '''
+    let u_values = config.parse_u_values().map_err(|e| anyhow::anyhow!(e))?;
+'''
+
+[dependencies]
+TASK-2 = ["TASK-1"]
+TASK-4 = ["TASK-3"]
