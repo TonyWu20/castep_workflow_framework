@@ -64,7 +64,13 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
     ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
         let stdout_path = log_dir.join(format!("{}.stdout", task_id));
         let stderr_path = log_dir.join(format!("{}.stderr", task_id));
-        let script_path = workdir.join("job.sh");
+        let script_path = workdir.join("job.sh").canonicalize().map_err(|e| {
+            WorkflowError::QueueSubmitFailed(format!(
+                "failed to resolve job script path {}: {}",
+                workdir.join("job.sh").display(),
+                e
+            ))
+        })?;
 
         let output = match self.scheduler {
             SchedulerKind::Slurm => Command::new("sbatch"),

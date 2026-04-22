@@ -1,7 +1,7 @@
 # Phase 5A: Production Hubbard U Sweep on SLURM
 
 **Date:** 2026-04-22
-**Status:** Draft
+**Status:** Complete (with post-run friction log)
 
 ## Context
 
@@ -318,3 +318,44 @@ Run with a mock castep_command like `echo` and check:
 - State file shows all tasks `Completed`
 - `workflow-cli status .hubbard_u_sweep_slurm.workflow.json` shows correct summary
 - Resume works after Ctrl-C (interrupt and restart)
+
+---
+
+## Post-Run Friction Log
+
+Issues surfaced during the first real cluster run. Candidates for Phase 5B API improvements.
+
+### FRICTION-1: `sbatch` fails with relative script path when `current_dir` is set
+
+**Symptom:**
+```json
+"scf_U5.0": {
+  "Failed": {
+    "error": "failed to submit job to queue: sbatch: error: Unable to open file runs/U5.0/job.sh\n"
+  }
+}
+```
+
+**Root cause:** `QueuedRunner::submit()` constructs `script_path = workdir.join("job.sh")`
+(a relative path like `runs/U5.0/job.sh`) and then calls `.current_dir(workdir)`.
+`sbatch` receives the relative path and tries to resolve it from `runs/U5.0/`, where it
+doesn't exist.
+
+**Fix applied:** `canonicalize()` the script path before passing it to `sbatch`, producing
+an absolute path that is unambiguous regardless of `current_dir`. Also provides an early
+error if `job.sh` was never written by the setup hook.
+(`workflow_utils/src/queued.rs`, `QueuedRunner::submit`)
+
+**Phase 5B implication:** `QueuedRunner::submit` should accept an absolute script path
+(or always canonicalize internally, as fixed). The API should make it impossible to pass
+a relative path that becomes ambiguous under `current_dir`.
+
+### FRICTION-2: No obvious guidance on where to invoke the binary
+
+**Symptom:** It is not documented that the binary must be run from the directory where
+`runs/`, `logs/`, and the state file should be created, since all those paths are hardcoded
+as relative strings in `main.rs`.
+
+**Phase 5B implication:** Either:
+- Accept a `--workdir` / `--output-dir` flag so the binary can be invoked from anywhere, or
+- Document the CWD requirement prominently in `--help` output (via clap `#[command(about)]`).
