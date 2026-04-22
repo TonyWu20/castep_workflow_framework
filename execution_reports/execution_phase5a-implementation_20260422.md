@@ -37,3 +37,9 @@
   - `cargo check -p workflow-cli`: PASSED
   - `cargo test -p workflow-cli`: PASSED
 
+### TASK-5: Create config.rs (SweepConfig) and job_script.rs (generate_job_script)
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `test -f examples/hubbard_u_sweep_slurm/src/config.rs`: PASSED
+  - `test -f examples/hubbard_u_sweep_slurm/src/job_script.rs`: FAILED (exit 1)
+
