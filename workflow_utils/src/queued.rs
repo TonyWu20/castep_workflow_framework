@@ -5,6 +5,9 @@ use std::time::{Duration, Instant};
 use workflow_core::error::WorkflowError;
 use workflow_core::process::{OutputLocation, ProcessHandle, ProcessResult};
 
+/// Default job script filename used by [`QueuedRunner::submit`].
+pub const JOB_SCRIPT_NAME: &str = "job.sh";
+
 /// The type of HPC job scheduler to target.
 #[derive(Debug, Clone, Copy)]
 pub enum SchedulerKind {
@@ -78,7 +81,7 @@ impl workflow_core::process::QueuedSubmitter for QueuedRunner {
             SchedulerKind::Pbs => Command::new("qsub"),
         }
         .args(["-o", &stdout_path.to_string_lossy(), "-e", &stderr_path.to_string_lossy()])
-        .arg("job.sh")
+        .arg(JOB_SCRIPT_NAME)
         .current_dir(workdir)
         .output()
         .map_err(|e| WorkflowError::QueueSubmitFailed(e.to_string()))?;
