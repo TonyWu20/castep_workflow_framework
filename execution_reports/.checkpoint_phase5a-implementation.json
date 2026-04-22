@@ -2,7 +2,8 @@
   "plan": "/Users/tony/programming/castep_workflow_framework/plans/phase-5/phase5a_implementation.toml",
   "base_commit": "9c3745436a32fa9a36a85d2921c59daca66275bc",
   "completed": [
-    "TASK-1"
+    "TASK-1",
+    "TASK-2"
   ],
   "failed": [],
   "blocked": []
