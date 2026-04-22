@@ -3,7 +3,8 @@
   "base_commit": "9c3745436a32fa9a36a85d2921c59daca66275bc",
   "completed": [
     "TASK-1",
-    "TASK-2"
+    "TASK-2",
+    "TASK-4"
   ],
   "failed": [
     "TASK-3"

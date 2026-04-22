@@ -31,3 +31,9 @@
     diff: examples/hubbard_u_sweep_slurm/seeds/ZnO.param: No such file or directory
     ```
 
+### TASK-4: Remove extra blank line between cmd_inspect and cmd_retry in workflow-cli/src/main.rs
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow-cli`: PASSED
+  - `cargo test -p workflow-cli`: PASSED
+
