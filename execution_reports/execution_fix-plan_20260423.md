@@ -12,3 +12,8 @@
   - `cargo check -p workflow_utils`: PASSED
   - `cargo test -p workflow_utils`: PASSED
 
+### TASK-2: Re-export JOB_SCRIPT_NAME from workflow_utils top-level lib.rs
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+
