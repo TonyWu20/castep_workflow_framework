@@ -106,3 +106,98 @@
     error: could not compile `hubbard_u_sweep_slurm` (bin "hubbard_u_sweep_slurm") due to 3 previous errors
     ```
 
+### TASK-7: Verify full workspace builds and passes clippy
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo check --workspace`: FAILED (exit 101)
+    ```
+    Checking hubbard_u_sweep v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep)
+        Checking workflow-cli v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow-cli)
+        Checking hubbard_u_sweep_slurm v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm)
+    error[E0583]: file not found for module `job_script`
+     --> examples/hubbard_u_sweep_slurm/src/main.rs:2:1
+      |
+    2 | mod job_script;
+      | ^^^^^^^^^^^^^^^
+      |
+      = help: to create the module `job_script`, create file "examples/hubbard_u_sweep_slurm/src/job_script.rs" or "examples/hubbard_u_sweep_slurm/src/job_script/mod.rs"
+      = note: if there is a `mod job_script` elsewhere in the crate already, import it with `use crate::...` instead
+    
+    error: couldn't read `examples/hubbard_u_sweep_slurm/src/../seeds/ZnO.cell`: No such file or directory (os error 2)
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:27:21
+       |
+    27 |     let seed_cell = include_str!("../seeds/ZnO.cell");
+       |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    error: couldn't read `examples/hubbard_u_sweep_slurm/src/../seeds/ZnO.param`: No such file or directory (os error 2)
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:28:22
+       |
+    28 |     let seed_param = include_str!("../seeds/ZnO.param");
+       |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    For more information about this error, try `rustc --explain E0583`.
+    error: could not compile `hubbard_u_sweep_slurm` (bin "hubbard_u_sweep_slurm") due to 3 previous errors
+    ```
+  - `cargo clippy --workspace -- -D warnings`: FAILED (exit 101)
+    ```
+    Checking hubbard_u_sweep v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep)
+        Checking workflow-cli v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow-cli)
+        Checking hubbard_u_sweep_slurm v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm)
+    error[E0583]: file not found for module `job_script`
+     --> examples/hubbard_u_sweep_slurm/src/main.rs:2:1
+      |
+    2 | mod job_script;
+      | ^^^^^^^^^^^^^^^
+      |
+      = help: to create the module `job_script`, create file "examples/hubbard_u_sweep_slurm/src/job_script.rs" or "examples/hubbard_u_sweep_slurm/src/job_script/mod.rs"
+      = note: if there is a `mod job_script` elsewhere in the crate already, import it with `use crate::...` instead
+    
+    error: couldn't read `examples/hubbard_u_sweep_slurm/src/../seeds/ZnO.cell`: No such file or directory (os error 2)
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:27:21
+       |
+    27 |     let seed_cell = include_str!("../seeds/ZnO.cell");
+       |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    error: couldn't read `examples/hubbard_u_sweep_slurm/src/../seeds/ZnO.param`: No such file or directory (os error 2)
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:28:22
+       |
+    28 |     let seed_param = include_str!("../seeds/ZnO.param");
+       |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    For more information about this error, try `rustc --explain E0583`.
+    error: could not compile `hubbard_u_sweep_slurm` (bin "hubbard_u_sweep_slurm") due to 3 previous errors
+    ```
+  - `cargo test --workspace`: FAILED (exit 101)
+    ```
+    Compiling workflow_core v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_core)
+       Compiling clap v4.6.0
+       Compiling workflow_utils v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_utils)
+       Compiling workflow-cli v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow-cli)
+       Compiling hubbard_u_sweep v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep)
+       Compiling hubbard_u_sweep_slurm v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm)
+    error[E0583]: file not found for module `job_script`
+     --> examples/hubbard_u_sweep_slurm/src/main.rs:2:1
+      |
+    2 | mod job_script;
+      | ^^^^^^^^^^^^^^^
+      |
+      = help: to create the module `job_script`, create file "examples/hubbard_u_sweep_slurm/src/job_script.rs" or "examples/hubbard_u_sweep_slurm/src/job_script/mod.rs"
+      = note: if there is a `mod job_script` elsewhere in the crate already, import it with `use crate::...` instead
+    
+    error: couldn't read `examples/hubbard_u_sweep_slurm/src/../seeds/ZnO.cell`: No such file or directory (os error 2)
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:27:21
+       |
+    27 |     let seed_cell = include_str!("../seeds/ZnO.cell");
+       |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    error: couldn't read `examples/hubbard_u_sweep_slurm/src/../seeds/ZnO.param`: No such file or directory (os error 2)
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:28:22
+       |
+    28 |     let seed_param = include_str!("../seeds/ZnO.param");
+       |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    For more information about this error, try `rustc --explain E0583`.
+    error: could not compile `hubbard_u_sweep_slurm` (bin "hubbard_u_sweep_slurm" test) due to 3 previous errors
+    warning: build failed, waiting for other jobs to finish...
+    ```
+
