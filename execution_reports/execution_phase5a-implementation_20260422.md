@@ -16,3 +16,18 @@
 - **Validation output**:
   - `rg 'hubbard_u_sweep_slurm' Cargo.toml`: PASSED
 
+### TASK-3: Create examples/hubbard_u_sweep_slurm/Cargo.toml and seed files
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `test -f examples/hubbard_u_sweep_slurm/Cargo.toml`: PASSED
+  - `test -f examples/hubbard_u_sweep_slurm/seeds/ZnO.cell`: FAILED (exit 1)
+  - `test -f examples/hubbard_u_sweep_slurm/seeds/ZnO.param`: FAILED (exit 1)
+  - `diff examples/hubbard_u_sweep/seeds/ZnO.cell examples/hubbard_u_sweep_slurm/seeds/ZnO.cell`: FAILED (exit 2)
+    ```
+    diff: examples/hubbard_u_sweep_slurm/seeds/ZnO.cell: No such file or directory
+    ```
+  - `diff examples/hubbard_u_sweep/seeds/ZnO.param examples/hubbard_u_sweep_slurm/seeds/ZnO.param`: FAILED (exit 2)
+    ```
+    diff: examples/hubbard_u_sweep_slurm/seeds/ZnO.param: No such file or directory
+    ```
+
