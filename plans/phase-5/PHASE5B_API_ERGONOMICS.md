@@ -197,6 +197,53 @@ Do this **last** so docs reflect all B.1-B.4 changes.
 
 ---
 
+## B.6 Runtime Mode Switching
+
+**Problem:** Binaries like `hubbard_u_sweep_slurm` hard-code `ExecutionMode::Queued`. There is no way to run the same binary locally for testing without modifying source.
+
+**Pattern (application-level, no core change needed):**
+
+Add a `--local` flag (or `--mode direct|queued`) to the binary's `SweepConfig`:
+
+```rust
+/// Run locally using Direct execution instead of submitting to SLURM
+#[arg(long, default_value_t = false)]
+pub local: bool,
+```
+
+Construct the mode in the task loop:
+
+```rust
+let mode = if config.local {
+    ExecutionMode::direct(&config.castep_command, &[&config.seed_name])
+} else {
+    ExecutionMode::Queued
+};
+let task = Task::new(&task_id, mode)
+    .setup(move |workdir| {
+        // ... always write .cell and .param ...
+        if !local {
+            write_file(workdir.join("job.sh"), &job_script)?;
+        }
+        Ok(())
+    });
+```
+
+Conditionally attach the submitter:
+
+```rust
+let mut workflow = Workflow::new("hubbard_u_sweep_slurm")
+    .with_max_parallel(config.max_parallel)?
+    .with_log_dir("logs");
+if !config.local {
+    workflow = workflow.with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));
+}
+```
+
+**Scope:** Apply this pattern to `examples/hubbard_u_sweep_slurm` (added in Phase 5A). No changes to `workflow_core` or `workflow_utils` required — `ExecutionMode::direct()` from B.1 makes the Direct arm concise enough.
+
+---
+
 ## Sequencing
 
 ```
@@ -205,6 +252,7 @@ B.4.2  Fix downstream_of signature                       (1 function)
 B.1    Add ExecutionMode::direct()                       (1 method)
 B.2    Add prelude modules                               (2 new files + 2 lib.rs edits)
 B.3    Add run_default()                                 (1 function)
+B.6    Add --local flag to hubbard_u_sweep_slurm         (pattern, example only)
 B.5    Update ARCHITECTURE.md + ARCHITECTURE_STATUS.md   (docs last)
 ```
 
@@ -238,6 +286,8 @@ B.4.3 (guidelines) is absorbed into B.5 since they go into ARCHITECTURE.md.
 | `workflow_utils/src/prelude.rs` | New file |
 | `workflow_utils/src/lib.rs` | Add `pub mod prelude` + `run_default()` |
 | `workflow-cli/src/main.rs` | Remove extra blank line ~line 71 |
+| `examples/hubbard_u_sweep_slurm/src/config.rs` | Add `--local` flag |
+| `examples/hubbard_u_sweep_slurm/src/main.rs` | Conditional mode, submitter, job.sh |
 | `ARCHITECTURE.md` | Full update for Phases 3-5 |
 | `ARCHITECTURE_STATUS.md` | Update phase completion status |
 
