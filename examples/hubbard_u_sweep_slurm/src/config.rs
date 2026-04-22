@@ -49,10 +49,14 @@ pub struct SweepConfig {
 }
 
 impl SweepConfig {
-    pub fn parse_u_values(&self) -> Vec<f64> {
+    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
         self.u_values
             .split(',')
-            .filter_map(|s| s.trim().parse::<f64>().ok())
-            .collect()
+            .map(|s| {
+                s.trim()
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid U value '{}': {}", s.trim(), e))
+            })
+            .collect::<Result<Vec<_>, _>>()
     }
 }
