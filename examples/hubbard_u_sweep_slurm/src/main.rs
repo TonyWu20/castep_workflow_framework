@@ -43,7 +43,7 @@ fn main() -> Result<()> {
         let orbital = config.orbital;
         let seed_name_setup = seed_name.clone();
         let seed_name_collect = seed_name.clone();
-        let job_script = generate_job_script(&config, &task_id);
+        let job_script = generate_job_script(&config, &task_id, &seed_name);
 
         let task = Task::new(&task_id, ExecutionMode::Queued)
             .workdir(workdir.clone())
@@ -134,3 +134,4 @@ fn main() -> Result<()> {
     );
     Ok(())
 }
+

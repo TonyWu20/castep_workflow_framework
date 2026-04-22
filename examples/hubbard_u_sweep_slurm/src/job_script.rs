@@ -1,6 +1,6 @@
 use crate::config::SweepConfig;
 
-pub fn generate_job_script(config: &SweepConfig, task_id: &str) -> String {
+pub fn generate_job_script(config: &SweepConfig, task_id: &str, seed_name: &str) -> String {
     format!(
         "#!/usr/bin/env bash\n\
 #SBATCH --job-name=\"{task_id}\"\n\
@@ -10,6 +10,7 @@ pub fn generate_job_script(config: &SweepConfig, task_id: &str) -> String {
 #SBATCH --ntasks-per-node={ntasks}\n\
 #SBATCH --cpus-per-task=1\n\
 #SBATCH --mem=30000m\n\
+#SBATCH --nodelist=nixos
 nix develop {nix_flake} --command bash -c \\\n\
     \"mpirun --mca plm slurm \\\n\
         -x OMPI_MCA_btl_tcp_if_include={mpi_if} \\\n\
@@ -17,7 +18,7 @@ nix develop {nix_flake} --command bash -c \\\n\
        --mca pmix s1 \\\n\
        --mca btl tcp,self \\\n\
 \t--map-by numa --bind-to numa \\\n\
-    castep.mpi {task_id}\"\n",
+    castep.mpi {seed_name}\"\n",
         task_id = task_id,
         partition = config.partition,
         ntasks = config.ntasks,
