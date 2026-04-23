@@ -1,0 +1,312 @@
+[meta]
+title = "Phase 5B: Fix Plan"
+source_branch = "phase-5b"
+created = "2026-04-23"
+
+[dependencies]
+TASK-2 = ["TASK-1"]
+TASK-3 = []
+TASK-4 = []
+TASK-5 = ["TASK-3", "TASK-4"]
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-1: Fix ambiguous .into() in downstream_of tests
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-1]
+description = "Fix 6 test call sites in state.rs that use .into() with downstream_of — now ambiguous because S: AsRef<str> conflicts with tracing_core::Field. Replace &[\"a\".into()] with &[\"a\"] (string slice literals, which was the goal of the ergonomic improvement)."
+type = "replace"
+acceptance = [
+    "cargo test -p workflow_core",
+    "cargo check -p workflow-cli",
+]
+
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+        let result = succ.downstream_of(&["a".into()]);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_diamond() {
+        // a -> b, a -> c, b -> d, c -> d: start [a] returns {b, c, d}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into(), "c".into()]);
+        map.insert("b".into(), vec!["d".into()]);
+        map.insert("c".into(), vec!["d".into()]);
+        map.insert("d".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+        assert!(result.contains("d"));
+    }
+
+    #[test]
+    fn downstream_of_start_not_in_map() {
+        let succ = TaskSuccessors::new(HashMap::new());
+        let result = succ.downstream_of(&["x".into()]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_empty_start() {
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_multiple_starts() {
+        // a -> c, b -> c: start [a, b] returns {c}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["c".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into(), "b".into()]);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_cycle_terminates() {
+        // a -> b -> a (cycle): BFS must terminate; visited set prevents re-enqueue
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["a".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a".into()]);
+        assert!(result.contains("b"));
+        assert!(result.contains("a"));
+    }
+'''
+after = '''
+        let result = succ.downstream_of(&["a"]);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_diamond() {
+        // a -> b, a -> c, b -> d, c -> d: start [a] returns {b, c, d}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into(), "c".into()]);
+        map.insert("b".into(), vec!["d".into()]);
+        map.insert("c".into(), vec!["d".into()]);
+        map.insert("d".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a"]);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains("b"));
+        assert!(result.contains("c"));
+        assert!(result.contains("d"));
+    }
+
+    #[test]
+    fn downstream_of_start_not_in_map() {
+        let succ = TaskSuccessors::new(HashMap::new());
+        let result = succ.downstream_of(&["x"]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_empty_start() {
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn downstream_of_multiple_starts() {
+        // a -> c, b -> c: start [a, b] returns {c}
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["c".into()]);
+        map.insert("b".into(), vec!["c".into()]);
+        map.insert("c".into(), vec![]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a", "b"]);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("c"));
+    }
+
+    #[test]
+    fn downstream_of_cycle_terminates() {
+        // a -> b -> a (cycle): BFS must terminate; visited set prevents re-enqueue
+        let mut map = HashMap::new();
+        map.insert("a".into(), vec!["b".into()]);
+        map.insert("b".into(), vec!["a".into()]);
+        let succ = TaskSuccessors::new(map);
+        let result = succ.downstream_of(&["a"]);
+        assert!(result.contains("b"));
+        assert!(result.contains("a"));
+    }
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-2: Remove unused HashMap import from task.rs tests
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-2]
+description = "Remove the unused `use std::collections::HashMap` from the task.rs test module — it was left over from before tests were updated to use ExecutionMode::direct()."
+type = "replace"
+acceptance = [
+    "cargo test -p workflow_core",
+    "cargo clippy -p workflow_core -- -W clippy::unused_imports 2>&1 | grep -v 'unused_imports' | head -5",
+]
+
+[[tasks.TASK-2.changes]]
+file = "workflow_core/src/task.rs"
+before = '''
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+'''
+after = '''
+#[cfg(test)]
+mod tests {
+    use super::*;
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-3: Register workflow_core prelude module in lib.rs
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-3]
+description = "Declare `pub mod prelude` in workflow_core/src/lib.rs — the prelude.rs file exists but is unreachable because lib.rs has no module declaration for it."
+type = "replace"
+acceptance = [
+    "cargo check -p workflow_core",
+    "cargo doc -p workflow_core",
+]
+
+[[tasks.TASK-3.changes]]
+file = "workflow_core/src/lib.rs"
+before = '''
+pub mod dag;
+pub mod error;
+mod monitoring;
+pub mod process;
+pub mod state;
+pub mod task;
+pub mod workflow;
+'''
+after = '''
+pub mod dag;
+pub mod error;
+mod monitoring;
+pub mod prelude;
+pub mod process;
+pub mod state;
+pub mod task;
+pub mod workflow;
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-4: Create workflow_utils prelude module and register it
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-4]
+description = "Create workflow_utils/src/prelude.rs (re-exporting workflow_core::prelude::* plus workflow_utils types) and register it in workflow_utils/src/lib.rs."
+type = "create"
+acceptance = [
+    "cargo check -p workflow_utils",
+    "cargo doc -p workflow_utils",
+]
+
+[[tasks.TASK-4.changes]]
+file = "workflow_utils/src/prelude.rs"
+before = ''
+after = '''
+//! Convenience re-exports for common types from both workflow_core and workflow_utils.
+//!
+//! ```
+//! use workflow_utils::prelude::*;
+//! ```
+
+// Re-export everything from workflow_core::prelude
+pub use workflow_core::prelude::*;
+
+// workflow_utils types
+pub use crate::{
+    copy_file, create_dir, exists, read_file, remove_dir, run_default, write_file,
+    QueuedRunner, SchedulerKind, ShellHookExecutor, SystemProcessRunner, JOB_SCRIPT_NAME,
+};
+'''
+
+[[tasks.TASK-4.changes]]
+file = "workflow_utils/src/lib.rs"
+before = '''
+mod executor;
+mod files;
+mod monitoring;
+mod queued;
+'''
+after = '''
+mod executor;
+mod files;
+mod monitoring;
+pub mod prelude;
+mod queued;
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-5: Fix remaining uninlined_format_args warnings (TASK-10)
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-5]
+description = "Fix remaining uninlined_format_args clippy warnings in touched files: hubbard_u_sweep/main.rs lines 19-20 (format!(\"scf_U{:.1}\", u)), task.rs line 138 (format!(\"{:?}\", mode)), and job_script.rs test line 85 (format!(\"...{}\", config.mpi_if)). Also fix 3.14 approx_constant warning in config.rs tests."
+type = "replace"
+acceptance = [
+    "cargo clippy -p workflow_core -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+    "cargo clippy -p hubbard_u_sweep -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+    "cargo clippy -p hubbard_u_sweep_slurm -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+    "cargo test --workspace",
+]
+
+[[tasks.TASK-5.changes]]
+file = "examples/hubbard_u_sweep/src/main.rs"
+before = '''
+        let task_id = format!("scf_U{:.1}", u);
+        let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+'''
+after = '''
+        let task_id = format!("scf_U{u:.1}");
+        let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}"));
+'''
+
+[[tasks.TASK-5.changes]]
+file = "workflow_core/src/task.rs"
+before = '''
+        let dbg = format!("{:?}", mode);
+'''
+after = '''
+        let dbg = format!("{mode:?}");
+'''
+
+[[tasks.TASK-5.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/job_script.rs"
+before = '''
+        assert!(script.contains(&format!("OMPI_MCA_btl_tcp_if_include={}", config.mpi_if)));
+'''
+after = '''
+        assert!(script.contains(&format!("OMPI_MCA_btl_tcp_if_include={mpi_if}", mpi_if = config.mpi_if)));
+'''
+
+[[tasks.TASK-5.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/config.rs"
+before = '''
+    fn parse_single_value() {
+        let vals = parse_u_values("3.14").unwrap();
+        assert_eq!(vals, vec![3.14]);
+'''
+after = '''
+    fn parse_single_value() {
+        let vals = parse_u_values("2.71828").unwrap();
+        assert_eq!(vals, vec![2.71828]);
+'''
