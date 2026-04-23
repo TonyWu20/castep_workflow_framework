@@ -68,3 +68,38 @@ impl SweepConfig {
         parse_u_values(&self.u_values)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_basic_values() {
+        let vals = parse_u_values("0.0,1.0,2.0").unwrap();
+        assert_eq!(vals, vec![0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn parse_with_whitespace() {
+        let vals = parse_u_values("  0.0 , 1.0 , 2.0  ").unwrap();
+        assert_eq!(vals, vec![0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn parse_single_value() {
+        let vals = parse_u_values("3.14").unwrap();
+        assert_eq!(vals, vec![3.14]);
+    }
+
+    #[test]
+    fn parse_invalid_token() {
+        let err = parse_u_values("1.0,abc,2.0").unwrap_err();
+        assert!(err.contains("abc"), "error should mention the invalid token: {}", err);
+    }
+
+    #[test]
+    fn parse_empty_token() {
+        let err = parse_u_values("1.0,,2.0").unwrap_err();
+        assert!(err.contains("invalid"), "error should report parse failure: {}", err);
+    }
+}

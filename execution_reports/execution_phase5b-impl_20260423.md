@@ -126,3 +126,13 @@
 - **Validation output**:
   - `cargo check -p hubbard_u_sweep_slurm`: PASSED
 
+### TASK-4: Add unit tests for the free function parse_u_values covering happy path, whitespace, empty token, and invalid input
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p hubbard_u_sweep_slurm`: PASSED
+
+### TASK-6: Add unit tests for generate_job_script verifying SBATCH directives, seed name substitution, and absence of literal tabs
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p hubbard_u_sweep_slurm`: PASSED
+
