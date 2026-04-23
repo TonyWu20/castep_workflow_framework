@@ -60,3 +60,9 @@
   - `cargo check -p hubbard_u_sweep_slurm`: PASSED
   - `cargo test -p hubbard_u_sweep_slurm`: PASSED
 
+### TASK-2: Use JOB_SCRIPT_NAME constant instead of hardcoded 'job.sh' in queued integration tests
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+  - `cargo test -p workflow_utils`: PASSED
+
