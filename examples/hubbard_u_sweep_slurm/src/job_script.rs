@@ -82,6 +82,6 @@ mod tests {
     fn contains_mpi_interface() {
         let config = default_config();
         let script = generate_job_script(&config, "scf_U0.0", "ZnO");
-        assert!(script.contains(&format!("OMPI_MCA_btl_tcp_if_include={}", config.mpi_if)));
+        assert!(script.contains(&format!("OMPI_MCA_btl_tcp_if_include={mpi_if}", mpi_if = config.mpi_if)));
     }
 }

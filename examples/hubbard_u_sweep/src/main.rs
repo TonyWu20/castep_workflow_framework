@@ -16,8 +16,8 @@ fn main() -> Result<()> {
 
     // Loop through U values: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
     for u in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
-        let task_id = format!("scf_U{:.1}", u);
-        let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+        let task_id = format!("scf_U{u:.1}");
+        let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}"));
         let seed_cell = seed_cell.to_owned();
         let seed_param = seed_param.to_owned();
 

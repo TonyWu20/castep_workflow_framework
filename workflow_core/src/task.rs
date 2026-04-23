@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn execution_mode_debug() {
         let mode = ExecutionMode::direct("echo", &[]);
-        let dbg = format!("{:?}", mode);
+        let dbg = format!("{mode:?}");
         assert!(dbg.contains("Direct"));
     }
 

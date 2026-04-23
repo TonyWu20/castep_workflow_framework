@@ -162,3 +162,43 @@
   - `cargo check -p workflow_utils`: PASSED
   - `cargo doc -p workflow_utils`: PASSED
 
+### TASK-5: Fix remaining uninlined_format_args clippy warnings in touched files: hubbard_u_sweep/main.rs lines 19-20 (format!("scf_U{:.1}", u)), task.rs line 138 (format!("{:?}", mode)), and job_script.rs test line 85 (format!("...{}", config.mpi_if)). Also fix 3.14 approx_constant warning in config.rs tests.
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo clippy -p workflow_core -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'`: FAILED (exit 1)
+  - `cargo clippy -p hubbard_u_sweep -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'`: FAILED (exit 1)
+  - `cargo clippy -p hubbard_u_sweep_slurm -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'`: FAILED (exit 1)
+  - `cargo test --workspace`: FAILED (exit 101)
+    ```
+    0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_core)
+       Compiling workflow_utils v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_utils)
+       Compiling workflow-cli v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow-cli)
+       Compiling hubbard_u_sweep v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep)
+       Compiling hubbard_u_sweep_slurm v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm)
+    error[E0283]: type annotations needed
+       --> workflow_core/src/state.rs:510:27
+        |
+    510 |         let result = succ.downstream_of(&[]);
+        |                           ^^^^^^^^^^^^^ --- type must be known at this point
+        |                           |
+        |                           cannot infer type of the type parameter `S` declared on the method `downstream_of`
+        |
+        = note: multiple `impl`s satisfying `_: AsRef<str>` found in the following crates: `alloc`, `core`, `tracing_core`, `tracing_subscriber`:
+                - impl AsRef<str> for filter::env::field::MatchDebug;
+                - impl AsRef<str> for filter::env::field::MatchPattern;
+                - impl AsRef<str> for std::string::String;
+                - impl AsRef<str> for str;
+                - impl AsRef<str> for tracing::field::Field;
+    note: required by a bound in `state::TaskSuccessors::downstream_of`
+       --> workflow_core/src/state.rs:152:29
+        |
+    152 |     pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> std::collections::HashSet<String> {
+        |                             ^^^^^^^^^^ required by this bound in `TaskSuccessors::downstream_of`
+    help: consider specifying the generic argument
+        |
+    510 |         let result = succ.downstream_of::<S>(&[]);
+        |                                        +++++
+    
+    For more information about this error, try `rustc --explain E0283`.
+    ```
+
