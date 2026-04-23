@@ -18,3 +18,9 @@
   - `cargo clippy -p hubbard_u_sweep_slurm --all-targets -- -D warnings 2>&1 | grep -qv 'approx_constant'`: PASSED
   - `cargo test -p hubbard_u_sweep_slurm`: PASSED
 
+### TASK-7: Fix uninlined_format_args: change format!("Failed to initialize logging: {}", e) to format!("Failed to initialize logging: {e}") in init_default_logging.
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo clippy -p workflow_core --all-targets -- -D warnings 2>&1 | grep -qv 'uninlined_format_args'`: PASSED
+  - `cargo check -p workflow_core`: PASSED
+
