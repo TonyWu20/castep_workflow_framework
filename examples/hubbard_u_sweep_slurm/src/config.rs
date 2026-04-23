@@ -99,12 +99,12 @@ mod tests {
     #[test]
     fn parse_invalid_token() {
         let err = parse_u_values("1.0,abc,2.0").unwrap_err();
-        assert!(err.contains("abc"), "error should mention the invalid token: {}", err);
+        assert!(err.contains("abc"), "error should mention the invalid token: {err}");
     }
 
     #[test]
     fn parse_empty_token() {
         let err = parse_u_values("1.0,,2.0").unwrap_err();
-        assert!(err.contains("invalid"), "error should report parse failure: {}", err);
+        assert!(err.contains("invalid"), "error should report parse failure: {err}");
     }
 }
