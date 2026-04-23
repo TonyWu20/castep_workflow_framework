@@ -79,11 +79,11 @@ fn build_one_task(
 
             let cell_text = to_string_many_spaced(&cell_doc.to_cell_file());
             write_file(
-                workdir.join(format!("{}.cell", seed_name_setup)),
+                workdir.join(format!("{seed_name_setup}.cell")),
                 &cell_text,
             )?;
             write_file(
-                workdir.join(format!("{}.param", seed_name_setup)),
+                workdir.join(format!("{seed_name_setup}.param")),
                 &seed_param,
             )?;
             // Only write job script for SLURM mode
@@ -147,7 +147,7 @@ fn main() -> Result<()> {
         let order = workflow.dry_run()?;
         println!("Dry-run topological order:");
         for task_id in &order {
-            println!("  {}", task_id);
+            println!("  {task_id}");
         }
         return Ok(());
     }

@@ -66,16 +66,13 @@ pub fn parse_u_values(s: &str) -> Result<Vec<f64>, String> {
             let trimmed = segment.trim();
             trimmed
                 .parse::<f64>()
-                .map_err(|e| format!("invalid U value '{}': {}", trimmed, e))
+                .map_err(|e| format!("invalid U value '{trimmed}': {e}"))
         })
         .collect::<Result<Vec<_>, _>>()
 }
 
-impl SweepConfig {
-    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
-        parse_u_values(&self.u_values)
-    }
-}
+// Note: parse_u_values(&self) was removed as dead code. Callers invoke
+// the free function directly: `parse_u_values(&config.u_values)`.
 
 #[cfg(test)]
 mod tests {
