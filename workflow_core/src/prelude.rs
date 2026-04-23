@@ -1,4 +1,4 @@
-//! Convenience re-exports for common workflow_core types.
+//! Convenience re-exports for common `workflow_core` types.
 //!
 //! ```
 //! use workflow_core::prelude::*;

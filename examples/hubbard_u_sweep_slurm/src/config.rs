@@ -92,8 +92,8 @@ mod tests {
 
     #[test]
     fn parse_single_value() {
-        let vals = parse_u_values("2.71828").unwrap();
-        assert_eq!(vals, vec![2.71828]);
+        let vals = parse_u_values("42.0").unwrap();
+        assert_eq!(vals, vec![42.0]);
     }
 
     #[test]
