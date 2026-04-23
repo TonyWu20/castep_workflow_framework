@@ -1,8 +1,8 @@
 # Workflow Framework Architecture
 
 **Version:** 5.0 (Utilities-Based)
-**Last Updated:** 2026-04-22
-**Status:** Phase 5 In Progress (1.1 + 1.2 + 1.3 + 2.1 + 2.2 + 3 + 4 complete; 5A in progress, 5B planned)
+**Last Updated:** 2026-04-23
+**Status:** Phases 1–5 Complete (1.1 + 1.2 + 1.3 + 2.1 + 2.2 + 3 + 4 + 5A + 5B complete)
 
 ## Executive Summary
 
@@ -388,14 +388,9 @@ User's research workflow logic. Uses parser libs directly, uses Layer 2 utils fo
 ### Example: Direct Mode (hubbard_u_sweep)
 
 ```rust
-use workflow_core::task::{ExecutionMode, Task};
-use workflow_core::workflow::Workflow;
-use workflow_core::state::JsonStateStore;
-use workflow_core::{HookExecutor, ProcessRunner};
-use workflow_utils::{create_dir, write_file, SystemProcessRunner, ShellHookExecutor};
+use workflow_utils::prelude::*;
 use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
 use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
-use std::sync::Arc;
 use anyhow::Result;
 
 fn main() -> Result<()> {
@@ -410,8 +405,8 @@ fn main() -> Result<()> {
 
     for u in &u_values {
         let u = *u;
-        let task_id = format!("scf_U{:.1}", u);
-        let workdir = PathBuf::from(format!("runs/U{:.1}", u));
+        let task_id = format!("scf_U{u:.1}");
+        let workdir = PathBuf::from(format!("runs/U{u:.1}"));
         let seed_cell = seed_cell.to_owned();
         let seed_param = seed_param.to_owned();
 
@@ -432,10 +427,7 @@ fn main() -> Result<()> {
 
     let state_path = PathBuf::from(".workflow.json");
     let mut state = JsonStateStore::new("hubbard_u_sweep", state_path);
-    // Phase 5B: replace these 3 lines with workflow_utils::run_default(&mut workflow, &mut state)?;
-    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
-    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
-    let summary = workflow.run(&mut state, runner, executor)?;
+    let summary = run_default(&mut workflow, &mut state)?;
     println!("{} succeeded, {} failed", summary.succeeded.len(), summary.failed.len());
     Ok(())
 }
@@ -636,7 +628,7 @@ castep_workflow_framework/
 - `SystemProcessRunner::default()` via derive
 - CLI `retry` skips already-successful downstream tasks
 
-### Phase 5A: In Progress 📋 (2026-04-22)
+### Phase 5A: Production SLURM Sweep ✅ (2026-04-22)
 
 - New workspace member: `examples/hubbard_u_sweep_slurm/`
 - `clap` CLI with env-var config (`CASTEP_SLURM_ACCOUNT`, `CASTEP_SLURM_PARTITION`, etc.)
@@ -645,15 +637,16 @@ castep_workflow_framework/
 - `--dry-run` flag support
 - Implementation plan: `plans/phase-5/phase5a_implementation.toml`
 
-### Phase 5B: Planned 📋
+### Phase 5B: API Ergonomics ✅ (2026-04-23)
 
 - `ExecutionMode::direct(cmd, &[args])` convenience constructor
-- `workflow_core::prelude` and `workflow_utils::prelude` modules
-- `run_default(workflow, state)` in workflow_utils
-- `downstream_of<S: AsRef<str>>` generic signature
-- Whitespace cleanup (workflow-cli ~line 71)
-- Full ARCHITECTURE.md + ARCHITECTURE_STATUS.md update
-- Implementation plan: `plans/phase-5/PHASE5B_API_ERGONOMICS.md`
+- `workflow_core::prelude` module: re-exports all commonly used types
+- `workflow_utils::prelude` module: re-exports all commonly used types from both crates; used in Layer 3 binaries with `use workflow_utils::prelude::*`
+- `run_default(&mut workflow, &mut state)` in `workflow_utils`: eliminates repeated `Arc` wiring in binaries
+- `downstream_of<S: AsRef<str>>` generic signature (callers pass `&[&str]` without allocating)
+- Whitespace cleanup (workflow-cli)
+- `init_default_logging()` exposed in `workflow_core::lib`; inlined format args throughout
+- Full ARCHITECTURE.md + ARCHITECTURE_STATUS.md update (this round)
 
 ## Dependencies
 

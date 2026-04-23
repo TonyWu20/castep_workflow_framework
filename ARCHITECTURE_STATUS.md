@@ -4,7 +4,7 @@
 
 **Architecture:** Utilities-based (no traits, no adapters)
 
-**Status:** Phase 5 In Progress (as of 2026-04-22)
+**Status:** Phases 1–5 Complete (as of 2026-04-23)
 
 ### Implemented Components
 
@@ -71,7 +71,7 @@
 - CLI `retry` skips already-successful downstream tasks; `downstream_tasks(id)` helper
 - `SystemProcessRunner::default()` via derive
 
-#### Phase 5A: Production SLURM Sweep 📋 In Progress (2026-04-22)
+#### Phase 5A: Production SLURM Sweep ✅ (2026-04-22)
 
 - New workspace member: `examples/hubbard_u_sweep_slurm/`
 - `clap` CLI binary with env-var support:
@@ -83,16 +83,17 @@
 - `--dry-run` flag: prints topological order and exits without submitting
 - Implementation plan: `plans/phase-5/phase5a_implementation.toml` (7 tasks)
 
-#### Phase 5B: API Ergonomics 📋 Planned (precondition: 5A on-cluster validation)
+#### Phase 5B: API Ergonomics ✅ (2026-04-23)
 
 - `ExecutionMode::direct(cmd, &[args])` convenience constructor (eliminates struct literal boilerplate)
-- `workflow_core::prelude` module: re-exports all commonly used types
-- `workflow_utils::prelude` module: re-exports all commonly used types from both crates
-- `run_default(workflow, state)` in `workflow_utils`: eliminates repeated Arc wiring in binaries
-- `downstream_of<S: AsRef<str>>` generic signature (callers pass `&[&str]` without allocating)
-- Whitespace cleanup: extra blank line in `workflow-cli/src/main.rs` ~line 71
-- Documentation update: ARCHITECTURE.md + ARCHITECTURE_STATUS.md (this file)
-- Plan: `plans/phase-5/PHASE5B_API_ERGONOMICS.md`
+- `workflow_core::prelude` module: re-exports all commonly used types from `workflow_core`
+- `workflow_utils::prelude` module: re-exports all commonly used types from both crates; Layer 3 binaries now use `use workflow_utils::prelude::*`
+- `run_default(&mut workflow, &mut state)` in `workflow_utils`: eliminates repeated Arc wiring (`SystemProcessRunner` + `ShellHookExecutor`) in binaries
+- `downstream_of<S: AsRef<str>>` generic signature — callers pass `&[&str]` without allocating
+- `hubbard_u_sweep_slurm`: local mode now uses `run_default()`; SLURM mode keeps manual Arc wiring
+- Inlined format args throughout (`{e}` instead of `{}`, e`)
+- `init_default_logging()` exposed in `workflow_core` crate root
+- `doc_markdown` fix on `workflow_core::prelude` doc comment
 
 ### Architecture Documents
 
@@ -134,12 +135,11 @@ Parser Libraries: castep-cell-io, castep-cell-fmt, etc.
 
 ## Next Steps
 
-**Phase 5A completion:** Build, local dry-run validation, on-cluster SLURM submission test
+**Phases 1–5 are complete.** The framework is ready for production use on HPC clusters with both direct and SLURM queued execution modes. Future work may include:
 
-**Phase 5B (after cluster validation):**
-- Convenience API additions (prelude, run_default, ExecutionMode::direct)
-- downstream_of signature fix
-- Documentation final update
+- On-cluster SLURM submission validation with real CASTEP jobs
+- Additional scheduler backends (PBS via `SchedulerKind::Pbs`)
+- TUI/interactive monitoring interface
 
 ## Key Design Decisions
 
