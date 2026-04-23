@@ -46,6 +46,14 @@ pub struct SweepConfig {
     /// Dry-run mode: print topological order and exit without submitting
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Run tasks locally via direct process execution instead of SLURM
+    #[arg(long)]
+    pub local: bool,
+
+    /// CASTEP binary name or path (used in --local mode)
+    #[arg(long, default_value = "castep")]
+    pub castep_command: String,
 }
 
 /// Parses a comma-separated string of f64 values.

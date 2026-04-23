@@ -136,3 +136,8 @@
 - **Validation output**:
   - `cargo test -p hubbard_u_sweep_slurm`: PASSED
 
+### TASK-7: Restructure hubbard_u_sweep_slurm/main.rs: extract build_one_task + build_sweep_tasks functions, add --local flag + castep_command to SweepConfig, use iterator chain, fix anyhow conversion
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p hubbard_u_sweep_slurm`: PASSED
+
