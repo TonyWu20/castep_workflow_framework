@@ -1,0 +1,153 @@
+{
+  "plan": "/Users/tony/programming/castep_workflow_framework/plans/phase-5/PHASE5B_IMPL.toml",
+  "compiled_at": "2026-04-23T10:52:44.977112+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "script": "TASK-1.sh",
+      "runner": "TASK-1.py",
+      "file": "workflow_core/src/state.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Change TaskSuccessors::downstream_of to accept &[S] where S: AsRef<str> instead of &[String]",
+      "acceptance": [
+        "cargo check -p workflow_core",
+        "cargo test -p workflow_core",
+        "cargo check -p workflow-cli",
+        "cargo test -p workflow-cli"
+      ]
+    },
+    {
+      "id": "TASK-2",
+      "script": "TASK-2.sh",
+      "runner": "TASK-2.py",
+      "file": "workflow_core/src/task.rs",
+      "type": "replace",
+      "changes": 3,
+      "description": "Add ExecutionMode::direct() convenience constructor and derive Debug on ExecutionMode",
+      "acceptance": [
+        "cargo check -p workflow_core",
+        "cargo test -p workflow_core"
+      ]
+    },
+    {
+      "id": "TASK-3",
+      "script": "TASK-3.sh",
+      "runner": "TASK-3.py",
+      "file": "examples/hubbard_u_sweep_slurm/src/config.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Extract a free function parse_u_values(s: &str) from SweepConfig::parse_u_values, fix double trim, and have the method delegate to it",
+      "acceptance": [
+        "cargo check -p hubbard_u_sweep_slurm"
+      ]
+    },
+    {
+      "id": "TASK-4",
+      "script": "TASK-4.sh",
+      "runner": "TASK-4.py",
+      "file": "examples/hubbard_u_sweep_slurm/src/config.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add unit tests for the free function parse_u_values covering happy path, whitespace, empty token, and invalid input",
+      "acceptance": [
+        "cargo test -p hubbard_u_sweep_slurm"
+      ]
+    },
+    {
+      "id": "TASK-5",
+      "script": "TASK-5.sh",
+      "runner": "TASK-5.py",
+      "file": "examples/hubbard_u_sweep_slurm/src/job_script.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Fix generate_job_script formatting: replace literal tabs with spaces, use consistent indentation",
+      "acceptance": [
+        "cargo check -p hubbard_u_sweep_slurm"
+      ]
+    },
+    {
+      "id": "TASK-6",
+      "script": "TASK-6.sh",
+      "runner": "TASK-6.py",
+      "file": "examples/hubbard_u_sweep_slurm/src/job_script.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add unit tests for generate_job_script verifying SBATCH directives, seed name substitution, and absence of literal tabs",
+      "acceptance": [
+        "cargo test -p hubbard_u_sweep_slurm"
+      ]
+    },
+    {
+      "id": "TASK-7",
+      "script": "TASK-7.sh",
+      "runner": "TASK-7.py",
+      "file": "examples/hubbard_u_sweep_slurm/src/config.rs",
+      "type": "replace",
+      "changes": 2,
+      "description": "Restructure hubbard_u_sweep_slurm/main.rs: extract build_one_task + build_sweep_tasks functions, add --local flag + castep_command to SweepConfig, use iterator chain, fix anyhow conversion",
+      "acceptance": [
+        "cargo check -p hubbard_u_sweep_slurm"
+      ]
+    },
+    {
+      "id": "TASK-8",
+      "script": "TASK-8.sh",
+      "runner": "TASK-8.py",
+      "file": "workflow_utils/src/lib.rs",
+      "type": "replace",
+      "changes": 2,
+      "description": "Add run_default() convenience function to workflow_utils and update both example binaries to use it",
+      "acceptance": [
+        "cargo check -p workflow_utils",
+        "cargo check -p hubbard_u_sweep_slurm",
+        "cargo check -p hubbard_u_sweep"
+      ]
+    },
+    {
+      "id": "TASK-9",
+      "script": "TASK-9.sh",
+      "runner": "TASK-9.py",
+      "file": "workflow_core/src/prelude.rs",
+      "type": "create",
+      "changes": 6,
+      "description": "Create prelude modules for workflow_core and workflow_utils, then update both examples to use them",
+      "acceptance": [
+        "cargo check -p workflow_core",
+        "cargo check -p workflow_utils",
+        "cargo check -p hubbard_u_sweep_slurm",
+        "cargo check -p hubbard_u_sweep"
+      ]
+    },
+    {
+      "id": "TASK-10",
+      "script": "TASK-10.sh",
+      "runner": "TASK-10.py",
+      "file": "examples/hubbard_u_sweep_slurm/src/main.rs",
+      "type": "replace",
+      "changes": 3,
+      "description": "Fix uninlined_format_args pedantic clippy warnings in touched files only. Run clippy per crate, inline format arguments (e.g. format!(\"{}\", x) -> format!(\"{x}\")), skip needless_pass_by_value on Workflow::run(). Scope: config.rs, job_script.rs, main.rs in hubbard_u_sweep_slurm; main.rs in hubbard_u_sweep; state.rs, task.rs in workflow_core.",
+      "acceptance": [
+        "cargo clippy -p workflow_core -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+        "cargo clippy -p hubbard_u_sweep_slurm -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+        "cargo clippy -p hubbard_u_sweep -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+        "cargo test --workspace"
+      ]
+    },
+    {
+      "id": "TASK-11",
+      "script": "TASK-11.sh",
+      "runner": "TASK-11.py",
+      "file": "ARCHITECTURE_STATUS.md",
+      "type": "replace",
+      "changes": 9,
+      "description": "Update ARCHITECTURE.md and ARCHITECTURE_STATUS.md to reflect all Phase 5B changes (prelude, run_default, ExecutionMode::direct, downstream_of generic, --local flag)",
+      "acceptance": [
+        "# Documentation-only task: verify files exist and are non-empty",
+        "test -s ARCHITECTURE.md",
+        "test -s ARCHITECTURE_STATUS.md"
+      ]
+    }
+  ],
+  "skipped": []
+}

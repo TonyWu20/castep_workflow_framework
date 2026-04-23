@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""TASK-2: Add ExecutionMode::direct() convenience constructor and derive Debug on ExecutionMode"""
+import base64, json, subprocess, sys
+
+TASK_ID = "TASK-2"
+STEPS = json.loads('[{"before_b64": "I1tkZXJpdmUoQ2xvbmUpXQpwdWIgZW51bSBFeGVjdXRpb25Nb2RlIHsKICAgIERpcmVjdCB7CiAgICAgICAgY29tbWFuZDogU3RyaW5nLAogICAgICAgIGFyZ3M6IFZlYzxTdHJpbmc+LAogICAgICAgIGVudjogSGFzaE1hcDxTdHJpbmcsIFN0cmluZz4sCiAgICAgICAgdGltZW91dDogT3B0aW9uPER1cmF0aW9uPiwKICAgIH0sCiAgICAvLy8gUXVldWVkIGV4ZWN1dGlvbiB2aWEgYW4gSFBDIHNjaGVkdWxlciAoU0xVUk0vUEJTKS4KICAgIC8vLyBUaGUgYWN0dWFsIHN1Ym1pdC9wb2xsL2NhbmNlbCBjb21tYW5kcyBhcmUgb3duZWQgYnkgdGhlIGBRdWV1ZWRTdWJtaXR0ZXJgCiAgICAvLy8gaW1wbGVtZW50YXRpb24gc2V0IHZpYSBgV29ya2Zsb3c6OndpdGhfcXVldWVkX3N1Ym1pdHRlcigpYC4KICAgIFF1ZXVlZCwKfQ==", "after_b64": "I1tkZXJpdmUoRGVidWcsIENsb25lKV0KcHViIGVudW0gRXhlY3V0aW9uTW9kZSB7CiAgICBEaXJlY3QgewogICAgICAgIGNvbW1hbmQ6IFN0cmluZywKICAgICAgICBhcmdzOiBWZWM8U3RyaW5nPiwKICAgICAgICBlbnY6IEhhc2hNYXA8U3RyaW5nLCBTdHJpbmc+LAogICAgICAgIHRpbWVvdXQ6IE9wdGlvbjxEdXJhdGlvbj4sCiAgICB9LAogICAgLy8vIFF1ZXVlZCBleGVjdXRpb24gdmlhIGFuIEhQQyBzY2hlZHVsZXIgKFNMVVJNL1BCUykuCiAgICAvLy8gVGhlIGFjdHVhbCBzdWJtaXQvcG9sbC9jYW5jZWwgY29tbWFuZHMgYXJlIG93bmVkIGJ5IHRoZSBgUXVldWVkU3VibWl0dGVyYAogICAgLy8vIGltcGxlbWVudGF0aW9uIHNldCB2aWEgYFdvcmtmbG93Ojp3aXRoX3F1ZXVlZF9zdWJtaXR0ZXIoKWAuCiAgICBRdWV1ZWQsCn0KCmltcGwgRXhlY3V0aW9uTW9kZSB7CiAgICAvLy8gQ29udmVuaWVuY2UgY29uc3RydWN0b3IgZm9yIGBEaXJlY3RgIG1vZGUgd2l0aCBubyBlbnYgdmFycyBvciB0aW1lb3V0LgogICAgLy8vCiAgICAvLy8gIyBFeGFtcGxlcwogICAgLy8vIGBgYAogICAgLy8vICMgdXNlIHdvcmtmbG93X2NvcmU6OnRhc2s6OkV4ZWN1dGlvbk1vZGU7CiAgICAvLy8gbGV0IG1vZGUgPSBFeGVjdXRpb25Nb2RlOjpkaXJlY3QoImNhc3RlcCIsICZbIlpuTyJdKTsKICAgIC8vLyBgYGAKICAgIHB1YiBmbiBkaXJlY3QoY29tbWFuZDogaW1wbCBJbnRvPFN0cmluZz4sIGFyZ3M6ICZbJnN0cl0pIC0+IFNlbGYgewogICAgICAgIFNlbGY6OkRpcmVjdCB7CiAgICAgICAgICAgIGNvbW1hbmQ6IGNvbW1hbmQuaW50bygpLAogICAgICAgICAgICBhcmdzOiBhcmdzLml0ZXIoKS5tYXAofHN8ICgqcykudG9fb3duZWQoKSkuY29sbGVjdCgpLAogICAgICAgICAgICBlbnY6IEhhc2hNYXA6Om5ldygpLAogICAgICAgICAgICB0aW1lb3V0OiBOb25lLAogICAgICAgIH0KICAgIH0KfQ==", "target": "workflow_core/src/task.rs", "index": 0}, {"before_b64": "ICAgICNbdGVzdF0KICAgIGZuIHRhc2tfYnVpbGRlcigpIHsKICAgICAgICBsZXQgdCA9IFRhc2s6Om5ldygKICAgICAgICAgICAgIm15X3Rhc2siLAogICAgICAgICAgICBFeGVjdXRpb25Nb2RlOjpEaXJlY3QgewogICAgICAgICAgICAgICAgY29tbWFuZDogImVjaG8iLmludG8oKSwKICAgICAgICAgICAgICAgIGFyZ3M6IHZlYyFbInRlc3QiLmludG8oKV0sCiAgICAgICAgICAgICAgICBlbnY6IEhhc2hNYXA6Om5ldygpLAogICAgICAgICAgICAgICAgdGltZW91dDogTm9uZSwKICAgICAgICAgICAgfSwKICAgICAgICApOwogICAgICAgIGFzc2VydF9lcSEodC5pZCwgIm15X3Rhc2siKTsKICAgICAgICBhc3NlcnQhKHQuZGVwZW5kZW5jaWVzLmlzX2VtcHR5KCkpOwogICAgICAgIGFzc2VydCEodC5tb25pdG9ycy5pc19lbXB0eSgpKTsKICAgIH0=", "after_b64": "ICAgICNbdGVzdF0KICAgIGZuIHRhc2tfYnVpbGRlcigpIHsKICAgICAgICBsZXQgdCA9IFRhc2s6Om5ldygibXlfdGFzayIsIEV4ZWN1dGlvbk1vZGU6OmRpcmVjdCgiZWNobyIsICZbInRlc3QiXSkpOwogICAgICAgIGFzc2VydF9lcSEodC5pZCwgIm15X3Rhc2siKTsKICAgICAgICBhc3NlcnQhKHQuZGVwZW5kZW5jaWVzLmlzX2VtcHR5KCkpOwogICAgICAgIGFzc2VydCEodC5tb25pdG9ycy5pc19lbXB0eSgpKTsKICAgIH0KCiAgICAjW3Rlc3RdCiAgICBmbiBkaXJlY3RfY29uc3RydWN0b3JfZmllbGRzKCkgewogICAgICAgIGxldCBtb2RlID0gRXhlY3V0aW9uTW9kZTo6ZGlyZWN0KCJjYXN0ZXAiLCAmWyJabk8iLCAiLS1mbGFnIl0pOwogICAgICAgIG1hdGNoIG1vZGUgewogICAgICAgICAgICBFeGVjdXRpb25Nb2RlOjpEaXJlY3QgeyBjb21tYW5kLCBhcmdzLCBlbnYsIHRpbWVvdXQgfSA9PiB7CiAgICAgICAgICAgICAgICBhc3NlcnRfZXEhKGNvbW1hbmQsICJjYXN0ZXAiKTsKICAgICAgICAgICAgICAgIGFzc2VydF9lcSEoYXJncywgdmVjIVsiWm5PIi50b19zdHJpbmcoKSwgIi0tZmxhZyIudG9fc3RyaW5nKCldKTsKICAgICAgICAgICAgICAgIGFzc2VydCEoZW52LmlzX2VtcHR5KCkpOwogICAgICAgICAgICAgICAgYXNzZXJ0ISh0aW1lb3V0LmlzX25vbmUoKSk7CiAgICAgICAgICAgIH0KICAgICAgICAgICAgXyA9PiBwYW5pYyEoImV4cGVjdGVkIERpcmVjdCB2YXJpYW50IiksCiAgICAgICAgfQogICAgfQoKICAgICNbdGVzdF0KICAgIGZuIGV4ZWN1dGlvbl9tb2RlX2RlYnVnKCkgewogICAgICAgIGxldCBtb2RlID0gRXhlY3V0aW9uTW9kZTo6ZGlyZWN0KCJlY2hvIiwgJltdKTsKICAgICAgICBsZXQgZGJnID0gZm9ybWF0ISgiezo/fSIsIG1vZGUpOwogICAgICAgIGFzc2VydCEoZGJnLmNvbnRhaW5zKCJEaXJlY3QiKSk7CiAgICB9", "target": "workflow_core/src/task.rs", "index": 1}, {"before_b64": "ICAgICNbdGVzdF0KICAgIGZuIGRlcGVuZHNfb25fY2hhaW5pbmcoKSB7CiAgICAgICAgbGV0IHQgPSBUYXNrOjpuZXcoCiAgICAgICAgICAgICJ0IiwKICAgICAgICAgICAgRXhlY3V0aW9uTW9kZTo6RGlyZWN0IHsKICAgICAgICAgICAgICAgIGNvbW1hbmQ6ICJ0cnVlIi5pbnRvKCksCiAgICAgICAgICAgICAgICBhcmdzOiB2ZWMhW10sCiAgICAgICAgICAgICAgICBlbnY6IEhhc2hNYXA6Om5ldygpLAogICAgICAgICAgICAgICAgdGltZW91dDogTm9uZSwKICAgICAgICAgICAgfSwKICAgICAgICApCiAgICAgICAgLmRlcGVuZHNfb24oImEiKQogICAgICAgIC5kZXBlbmRzX29uKCJiIik7CiAgICAgICAgYXNzZXJ0X2VxISh0LmRlcGVuZGVuY2llcywgdmVjIVsiYSIsICJiIl0pOwogICAgfQ==", "after_b64": "ICAgICNbdGVzdF0KICAgIGZuIGRlcGVuZHNfb25fY2hhaW5pbmcoKSB7CiAgICAgICAgbGV0IHQgPSBUYXNrOjpuZXcoInQiLCBFeGVjdXRpb25Nb2RlOjpkaXJlY3QoInRydWUiLCAmW10pKQogICAgICAgICAgICAuZGVwZW5kc19vbigiYSIpCiAgICAgICAgICAgIC5kZXBlbmRzX29uKCJiIik7CiAgICAgICAgYXNzZXJ0X2VxISh0LmRlcGVuZGVuY2llcywgdmVjIVsiYSIsICJiIl0pOwogICAgfQ==", "target": "workflow_core/src/task.rs", "index": 2}]')
+
+for step in STEPS:
+    before = base64.b64decode(step["before_b64"]).decode()
+    after = base64.b64decode(step["after_b64"]).decode()
+    target = step["target"]
+    idx = step["index"]
+
+    content = open(target).read()
+    if before not in content:
+        print(f"FAILED {TASK_ID} change {idx}: pattern not found in {target}", file=sys.stderr)
+        print(f"Expected (first 200 chars): {repr(before[:200])}", file=sys.stderr)
+        sys.exit(1)
+
+    result = subprocess.run(
+        ["sd", "-F", "-A", "-n", "1", before, after, target],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"FAILED {TASK_ID} change {idx}: sd error: {result.stderr}", file=sys.stderr)
+        sys.exit(result.returncode)
+
+    new_content = open(target).read()
+    if after and after not in new_content:
+        print(f"FAILED {TASK_ID} change {idx}: replacement not found after apply", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"OK {TASK_ID} change {idx}: applied to {target}")
+
+print(f"OK {TASK_ID}: all changes applied")

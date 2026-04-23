@@ -48,15 +48,23 @@ pub struct SweepConfig {
     pub dry_run: bool,
 }
 
+/// Parses a comma-separated string of f64 values.
+///
+/// Each segment is trimmed before parsing.
+/// Returns an error string identifying the offending token on failure.
+pub fn parse_u_values(s: &str) -> Result<Vec<f64>, String> {
+    s.split(',')
+        .map(|segment| {
+            let trimmed = segment.trim();
+            trimmed
+                .parse::<f64>()
+                .map_err(|e| format!("invalid U value '{}': {}", trimmed, e))
+        })
+        .collect::<Result<Vec<_>, _>>()
+}
+
 impl SweepConfig {
     pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
-        self.u_values
-            .split(',')
-            .map(|s| {
-                s.trim()
-                    .parse::<f64>()
-                    .map_err(|e| format!("invalid U value '{}': {}", s.trim(), e))
-            })
-            .collect::<Result<Vec<_>, _>>()
+        parse_u_values(&self.u_values)
     }
 }

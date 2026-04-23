@@ -149,9 +149,10 @@ impl TaskSuccessors {
     ///
     /// The starting task IDs themselves are NOT included in the result.
     /// Cycle-safe: the visited set prevents re-enqueuing.
-    pub fn downstream_of(&self, start: &[String]) -> std::collections::HashSet<String> {
+    pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> std::collections::HashSet<String> {
         let mut visited = std::collections::HashSet::new();
-        let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+        let mut queue: std::collections::VecDeque<String> =
+            start.iter().map(|s| s.as_ref().to_owned()).collect();
         while let Some(id) = queue.pop_front() {
             if let Some(deps) = self.get(&id) {
                 for dep in deps {
