@@ -12,3 +12,9 @@
   - `cargo clippy -p workflow_core --all-targets -- -D warnings 2>&1 | grep -qv 'doc_markdown'`: PASSED
   - `test "$(tail -c 1 workflow_core/src/prelude.rs | wc -l)" -eq 1`: FAILED (exit 1)
 
+### TASK-1: Change 2.71828 to 42.0 in parse_single_value test to avoid clippy treating it as std::f64::consts::E (approx_constant lint).
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo clippy -p hubbard_u_sweep_slurm --all-targets -- -D warnings 2>&1 | grep -qv 'approx_constant'`: PASSED
+  - `cargo test -p hubbard_u_sweep_slurm`: PASSED
+

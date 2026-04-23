@@ -1,7 +1,9 @@
 {
   "plan": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-5b/fix-plan-compilable.toml",
   "base_commit": "551f4afc87572a9b9521f66b8343f58abf1a36ff",
-  "completed": [],
+  "completed": [
+    "TASK-1"
+  ],
   "failed": [
     "TASK-4"
   ],

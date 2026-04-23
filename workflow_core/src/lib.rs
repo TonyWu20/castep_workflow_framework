@@ -28,5 +28,5 @@ pub fn init_default_logging() -> Result<(), Box<dyn std::error::Error>> {
                 .add_directive(tracing::Level::INFO.into()),
         )
         .try_init()
-        .map_err(|e| format!("Failed to initialize logging: {}", e).into())
+        .map_err(|e| format!("Failed to initialize logging: {e}").into())
 }
