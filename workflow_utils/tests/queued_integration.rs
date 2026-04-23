@@ -6,7 +6,7 @@
 
 use serial_test::serial;
 use workflow_core::process::QueuedSubmitter;
-use workflow_utils::{QueuedRunner, SchedulerKind};
+use workflow_utils::{QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME};
 
 /// Compile-time verification that `QueuedRunner` implements `QueuedSubmitter`.
 #[test]
@@ -36,7 +36,7 @@ fn submit_returns_err_when_sbatch_unavailable() {
     std::fs::create_dir_all(&log_dir).unwrap();
     let workdir = dir.path().join("work");
     std::fs::create_dir_all(&workdir).unwrap();
-    std::fs::write(workdir.join("job.sh"), "#!/bin/sh\necho hello\n").unwrap();
+    std::fs::write(workdir.join(JOB_SCRIPT_NAME), "#!/bin/sh\necho hello\n").unwrap();
 
     // Restrict PATH to an empty directory so `sbatch` cannot be found.
     let empty_bin = dir.path().join("empty_bin");
@@ -77,7 +77,7 @@ fn submit_with_mock_sbatch_returns_on_disk_handle() {
     std::fs::create_dir_all(&log_dir).unwrap();
     let workdir = dir.path().join("work");
     std::fs::create_dir_all(&workdir).unwrap();
-    std::fs::write(workdir.join("job.sh"), "#!/bin/sh\necho hello\n").unwrap();
+    std::fs::write(workdir.join(JOB_SCRIPT_NAME), "#!/bin/sh\necho hello\n").unwrap();
 
     // Mock `sbatch` that prints a SLURM-style submission line and exits 0.
     let mock_dir = dir.path().join("mock_bin");

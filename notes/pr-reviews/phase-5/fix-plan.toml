@@ -1,0 +1,79 @@
+# Phase 5 Fix Plan — compilable-plan-spec v2
+# Generated: 2026-04-23 (re-review round)
+
+[tasks.TASK-1]
+description = "Use JOB_SCRIPT_NAME constant instead of hardcoded 'job.sh' in hubbard_u_sweep_slurm consumer"
+type = "replace"
+acceptance = ["cargo check -p hubbard_u_sweep_slurm", "cargo test -p hubbard_u_sweep_slurm"]
+
+[[tasks.TASK-1.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+use workflow_utils::{
+    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
+    SystemProcessRunner,
+};
+'''
+after = '''
+use workflow_utils::{
+    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
+    SystemProcessRunner, JOB_SCRIPT_NAME,
+};
+'''
+
+[[tasks.TASK-1.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+                write_file(workdir.join("job.sh"), &job_script)?;
+'''
+after = '''
+                write_file(workdir.join(JOB_SCRIPT_NAME), &job_script)?;
+'''
+
+[tasks.TASK-2]
+description = "Use JOB_SCRIPT_NAME constant instead of hardcoded 'job.sh' in queued integration tests"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils", "cargo test -p workflow_utils"]
+
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/tests/queued_integration.rs"
+before = '''
+use workflow_utils::{QueuedRunner, SchedulerKind};
+'''
+after = '''
+use workflow_utils::{QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME};
+'''
+
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/tests/queued_integration.rs"
+before = '''
+    let workdir = dir.path().join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::write(workdir.join("job.sh"), "#!/bin/sh\necho hello\n").unwrap();
+
+    // Restrict PATH to an empty directory so `sbatch` cannot be found.
+'''
+after = '''
+    let workdir = dir.path().join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::write(workdir.join(JOB_SCRIPT_NAME), "#!/bin/sh\necho hello\n").unwrap();
+
+    // Restrict PATH to an empty directory so `sbatch` cannot be found.
+'''
+
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/tests/queued_integration.rs"
+before = '''
+    let workdir = dir.path().join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::write(workdir.join("job.sh"), "#!/bin/sh\necho hello\n").unwrap();
+
+    // Mock `sbatch` that prints a SLURM-style submission line and exits 0.
+'''
+after = '''
+    let workdir = dir.path().join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::write(workdir.join(JOB_SCRIPT_NAME), "#!/bin/sh\necho hello\n").unwrap();
+
+    // Mock `sbatch` that prints a SLURM-style submission line and exits 0.
+'''

@@ -1,0 +1,520 @@
+# Phase 5A: Production Hubbard U Sweep on SLURM — Implementation Plan
+#
+# This plan creates a new workspace member binary (examples/hubbard_u_sweep_slurm/)
+# that reuses the existing framework to submit CASTEP Hubbard U sweep jobs via SLURM.
+# It is the first end-to-end consumer of Queued execution mode.
+#
+# Dependency graph (Mermaid):
+#   graph TD
+#     TASK-1 --> TASK-5
+#     TASK-2 --> TASK-5
+#     TASK-3 --> TASK-5
+#     TASK-4 --> TASK-5
+#     TASK-5 --> TASK-6
+#     TASK-6 --> TASK-7
+#
+# Execution phases:
+#   Phase 1 (parallel): TASK-1, TASK-2, TASK-3, TASK-4
+#   Phase 2:            TASK-5
+#   Phase 3:            TASK-6
+#   Phase 4:            TASK-7
+
+[meta]
+title = "Phase 5A: Production Hubbard U Sweep on SLURM"
+source_branch = "phase-5"
+created = "2026-04-22"
+
+[dependencies]
+TASK-5 = ["TASK-1", "TASK-2", "TASK-3", "TASK-4"]
+TASK-6 = ["TASK-5"]
+TASK-7 = ["TASK-6"]
+
+
+# ---------------------------------------------------------------------------
+# TASK-1: Enable clap `env` feature in workspace Cargo.toml
+# ---------------------------------------------------------------------------
+# The plan uses #[arg(env = "SLURM_ACCOUNT")] and similar attributes throughout
+# SweepConfig. These require clap's `env` feature, which is not currently enabled.
+# Without this change, the build fails on every #[arg(env = "...")] attribute.
+#
+# LSP hints: Not needed — this is a TOML edit only.
+[tasks.TASK-1]
+description = "Add clap `env` feature to workspace Cargo.toml"
+type = "replace"
+acceptance = [
+    "rg 'features.*env' Cargo.toml  # verify clap line contains env feature",
+]
+
+[[tasks.TASK-1.changes]]
+file = "Cargo.toml"
+before = '''
+clap = { version = "4", features = ["derive"] }
+'''
+after = '''
+clap = { version = "4", features = ["derive", "env"] }
+'''
+
+
+# ---------------------------------------------------------------------------
+# TASK-2: Add hubbard_u_sweep_slurm to workspace members
+# ---------------------------------------------------------------------------
+# Register the new example crate as a workspace member so cargo recognizes it.
+#
+# LSP hints: Not needed — this is a TOML edit only.
+[tasks.TASK-2]
+description = "Add examples/hubbard_u_sweep_slurm to workspace members list"
+type = "replace"
+acceptance = [
+    "rg 'hubbard_u_sweep_slurm' Cargo.toml",
+]
+
+[[tasks.TASK-2.changes]]
+file = "Cargo.toml"
+before = '''
+[workspace]
+members = [
+    "workflow_core",
+    "workflow_utils",
+    "examples/hubbard_u_sweep",
+    "workflow-cli",
+]
+'''
+after = '''
+[workspace]
+members = [
+    "workflow_core",
+    "workflow_utils",
+    "examples/hubbard_u_sweep",
+    "examples/hubbard_u_sweep_slurm",
+    "workflow-cli",
+]
+'''
+
+
+# ---------------------------------------------------------------------------
+# TASK-3: Create crate Cargo.toml and copy seed files
+# ---------------------------------------------------------------------------
+# Create the crate manifest and copy seed input files from the existing example.
+#
+# LSP hints: Not needed — file creation only (TOML + data files).
+[tasks.TASK-3]
+description = "Create examples/hubbard_u_sweep_slurm/Cargo.toml and seed files"
+type = "create"
+acceptance = [
+    "test -f examples/hubbard_u_sweep_slurm/Cargo.toml",
+    "test -f examples/hubbard_u_sweep_slurm/seeds/ZnO.cell",
+    "test -f examples/hubbard_u_sweep_slurm/seeds/ZnO.param",
+    "diff examples/hubbard_u_sweep/seeds/ZnO.cell examples/hubbard_u_sweep_slurm/seeds/ZnO.cell",
+    "diff examples/hubbard_u_sweep/seeds/ZnO.param examples/hubbard_u_sweep_slurm/seeds/ZnO.param",
+]
+
+[[tasks.TASK-3.changes]]
+file = "examples/hubbard_u_sweep_slurm/Cargo.toml"
+before = ''
+after = '''
+[package]
+name = "hubbard_u_sweep_slurm"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "hubbard_u_sweep_slurm"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+castep-cell-fmt = "0.1.0"
+castep-cell-io = "0.4.0"
+workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
+workflow_utils = { path = "../../workflow_utils" }
+'''
+
+[[tasks.TASK-3.changes]]
+file = "examples/hubbard_u_sweep_slurm/seeds/ZnO.cell"
+before = ''
+after = '''
+%BLOCK LATTICE_CART
+  3.25 0.0 0.0
+  0.0 3.25 0.0
+  0.0 0.0 5.21
+%ENDBLOCK LATTICE_CART
+
+%BLOCK POSITIONS_FRAC
+Zn  0.333333  0.666667  0.0
+Zn  0.666667  0.333333  0.5
+O   0.333333  0.666667  0.375
+O   0.666667  0.333333  0.875
+%ENDBLOCK POSITIONS_FRAC
+
+'''
+
+[[tasks.TASK-3.changes]]
+file = "examples/hubbard_u_sweep_slurm/seeds/ZnO.param"
+before = ''
+after = '''
+task : SinglePoint
+'''
+
+
+# ---------------------------------------------------------------------------
+# TASK-4: Fix deferred whitespace artifact in workflow-cli/src/main.rs
+# ---------------------------------------------------------------------------
+# Remove the extra blank line between cmd_inspect and cmd_retry (lines 71-73).
+# This was flagged as a deferred improvement from a prior phase.
+#
+# LSP hints: Use `LSP documentSymbol` on workflow-cli/src/main.rs to locate
+# `cmd_inspect` and `cmd_retry` functions before editing.
+[tasks.TASK-4]
+description = "Remove extra blank line between cmd_inspect and cmd_retry in workflow-cli/src/main.rs"
+type = "replace"
+acceptance = [
+    "cargo check -p workflow-cli",
+    "cargo test -p workflow-cli",
+]
+
+[[tasks.TASK-4.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''
+    }
+}
+
+
+
+fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<()> {
+'''
+after = '''
+    }
+}
+
+fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<()> {
+'''
+
+
+# ---------------------------------------------------------------------------
+# TASK-5: Create config.rs and job_script.rs source modules
+# ---------------------------------------------------------------------------
+# Create the two support modules:
+#   - config.rs: SweepConfig struct with clap derive and env-var support
+#   - job_script.rs: generate_job_script function for SLURM batch scripts
+#
+# Uses prefixed env var names (CASTEP_SLURM_ACCOUNT, CASTEP_SLURM_PARTITION)
+# to avoid collision with SLURM's own environment variables set inside jobs.
+#
+# LSP hints: After creation, use `LSP documentSymbol` on each file to verify
+# the struct/function names. Use `LSP hover` on `Parser` derive to confirm
+# clap integration.
+[tasks.TASK-5]
+description = "Create config.rs (SweepConfig) and job_script.rs (generate_job_script)"
+type = "create"
+acceptance = [
+    "test -f examples/hubbard_u_sweep_slurm/src/config.rs",
+    "test -f examples/hubbard_u_sweep_slurm/src/job_script.rs",
+]
+
+[[tasks.TASK-5.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/config.rs"
+before = ''
+after = '''
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(name = "hubbard_u_sweep_slurm")]
+pub struct SweepConfig {
+    /// SLURM account name
+    #[arg(long, env = "CASTEP_SLURM_ACCOUNT")]
+    pub account: String,
+
+    /// SLURM partition
+    #[arg(long, env = "CASTEP_SLURM_PARTITION", default_value = "standard")]
+    pub partition: String,
+
+    /// Number of MPI tasks (cores) per job
+    #[arg(long, default_value_t = 16)]
+    pub ntasks: u32,
+
+    /// Walltime per job (HH:MM:SS)
+    #[arg(long, default_value = "01:00:00")]
+    pub walltime: String,
+
+    /// Module load commands, comma-separated (e.g. "castep/24.1,intel/2024")
+    #[arg(long, env = "CASTEP_MODULES", value_delimiter = ',')]
+    pub modules: Vec<String>,
+
+    /// CASTEP executable command (e.g. "castep.mpi" or "mpirun -np 16 castep.mpi")
+    #[arg(long, env = "CASTEP_COMMAND", default_value = "castep.mpi")]
+    pub castep_command: String,
+
+    /// Seed name (CASTEP input file prefix, without extension)
+    #[arg(long, default_value = "ZnO")]
+    pub seed_name: String,
+
+    /// U values to sweep, comma-separated (eV)
+    #[arg(long, default_value = "0.0,1.0,2.0,3.0,4.0,5.0")]
+    pub u_values: String,
+
+    /// Maximum number of concurrent SLURM jobs
+    #[arg(long, default_value_t = 4)]
+    pub max_parallel: usize,
+
+    /// Element to apply Hubbard U to
+    #[arg(long, default_value = "Zn")]
+    pub element: String,
+
+    /// Orbital for Hubbard U: 'd' or 'f'
+    #[arg(long, default_value = "d")]
+    pub orbital: char,
+
+    /// Dry-run mode: print topological order and exit without submitting
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+impl SweepConfig {
+    pub fn parse_u_values(&self) -> Vec<f64> {
+        self.u_values
+            .split(',')
+            .filter_map(|s| s.trim().parse::<f64>().ok())
+            .collect()
+    }
+
+    pub fn module_load_lines(&self) -> String {
+        self.modules
+            .iter()
+            .map(|m| format!("module load {}", m))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+'''
+
+[[tasks.TASK-5.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/job_script.rs"
+before = ''
+after = '''
+use crate::config::SweepConfig;
+
+pub fn generate_job_script(config: &SweepConfig, task_id: &str) -> String {
+    format!(
+        "#!/bin/bash\n\
+         #SBATCH --job-name={task_id}\n\
+         #SBATCH --account={account}\n\
+         #SBATCH --partition={partition}\n\
+         #SBATCH --ntasks={ntasks}\n\
+         #SBATCH --time={walltime}\n\
+         \n\
+         {modules}\n\
+         \n\
+         {command} {seed}\n",
+        task_id = task_id,
+        account = config.account,
+        partition = config.partition,
+        ntasks = config.ntasks,
+        walltime = config.walltime,
+        modules = config.module_load_lines(),
+        command = config.castep_command,
+        seed = config.seed_name,
+    )
+}
+'''
+
+
+# ---------------------------------------------------------------------------
+# TASK-6: Create main.rs with corrected closure ownership and API usage
+# ---------------------------------------------------------------------------
+# This is the primary workflow wiring file. Key corrections applied vs. the
+# original plan:
+#   - init_default_logging() return handled with .ok()
+#   - seed_name cloned twice: once for setup closure, once for collect closure
+#   - collect closure uses workflow_utils::read_file instead of std::fs
+#   - dry_run flag support added
+#
+# Notes for subagent:
+#   - The `runner` (SystemProcessRunner) is required by workflow.run() signature
+#     even though all tasks use ExecutionMode::Queued. It is a no-op dummy.
+#   - The collect closure fires only when QueuedProcessHandle reports exit code 0
+#     (job leaves SLURM queue). If collect returns Err, the framework logs a
+#     warning but keeps the task Completed — this is a known framework limitation.
+#   - WorkflowError::InvalidConfig is used for runtime failures in collect because
+#     no CollectFailed variant exists yet. Acceptable for Phase 5A.
+#
+# LSP hints: Use `LSP hover` on Workflow::new, Task::new, QueuedRunner::new to
+# verify signatures. Use `LSP references` on `init_default_logging` to confirm
+# the return type. Use `LSP documentSymbol` on config.rs and job_script.rs to
+# verify the symbols imported via `mod config` and `mod job_script`.
+[tasks.TASK-6]
+description = "Create main.rs with workflow wiring, corrected closure ownership, and dry-run support"
+type = "create"
+acceptance = [
+    "cargo check -p hubbard_u_sweep_slurm",
+    "cargo clippy -p hubbard_u_sweep_slurm -- -D warnings",
+]
+
+[[tasks.TASK-6.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = ''
+after = '''
+mod config;
+mod job_script;
+
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use clap::Parser;
+use std::sync::Arc;
+use workflow_core::state::JsonStateStore;
+use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::workflow::Workflow;
+use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
+use workflow_utils::{
+    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
+    SystemProcessRunner,
+};
+
+use config::SweepConfig;
+use job_script::generate_job_script;
+
+fn main() -> Result<()> {
+    workflow_core::init_default_logging().ok();
+    let config = SweepConfig::parse();
+    let u_values = config.parse_u_values();
+
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+    let seed_name = config.seed_name.clone();
+
+    let mut workflow = Workflow::new("hubbard_u_sweep_slurm")
+        .with_max_parallel(config.max_parallel)?
+        .with_log_dir("logs")
+        .with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));
+
+    for u in &u_values {
+        let u = *u;
+        let task_id = format!("scf_U{:.1}", u);
+        let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+        let seed_cell = seed_cell.to_owned();
+        let seed_param = seed_param.to_owned();
+        let element = config.element.clone();
+        let orbital = config.orbital;
+        let seed_name_setup = seed_name.clone();
+        let seed_name_collect = seed_name.clone();
+        let job_script = generate_job_script(&config, &task_id);
+
+        let task = Task::new(&task_id, ExecutionMode::Queued)
+            .workdir(workdir.clone())
+            .setup(move |workdir| -> Result<(), WorkflowError> {
+                create_dir(workdir)?;
+
+                // Parse seed cell and inject HubbardU
+                let mut cell_doc: CellDocument =
+                    parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+                let orbital_u = match orbital {
+                    'd' => OrbitalU::D(u),
+                    'f' => OrbitalU::F(u),
+                    c => {
+                        return Err(WorkflowError::InvalidConfig(format!(
+                            "unsupported orbital '{}'",
+                            c
+                        )))
+                    }
+                };
+                let atom_u = AtomHubbardU::builder()
+                    .species(Species::Symbol(element.clone()))
+                    .orbitals(vec![orbital_u])
+                    .build();
+                let hubbard_u = HubbardU::builder()
+                    .unit(HubbardUUnit::ElectronVolt)
+                    .atom_u_values(vec![atom_u])
+                    .build();
+                cell_doc.hubbard_u = Some(hubbard_u);
+
+                let cell_text = to_string_many_spaced(&cell_doc.to_cell_file());
+                write_file(
+                    workdir.join(format!("{}.cell", seed_name_setup)),
+                    &cell_text,
+                )?;
+                write_file(
+                    workdir.join(format!("{}.param", seed_name_setup)),
+                    &seed_param,
+                )?;
+                write_file(workdir.join("job.sh"), &job_script)?;
+                Ok(())
+            })
+            .collect(move |workdir| -> Result<(), WorkflowError> {
+                // Verify CASTEP completed successfully.
+                // Note: WorkflowError::InvalidConfig is reused here because no
+                // CollectFailed variant exists yet. Migrate when Phase 5B adds one.
+                let castep_out = workdir.join(format!("{}.castep", seed_name_collect));
+                if !castep_out.exists() {
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "missing output: {}",
+                        castep_out.display()
+                    )));
+                }
+                let content = read_file(&castep_out)?;
+                if !content.contains("Total time") {
+                    return Err(WorkflowError::InvalidConfig(
+                        "CASTEP output appears incomplete (no 'Total time' marker)".into(),
+                    ));
+                }
+                Ok(())
+            });
+
+        workflow.add_task(task)?;
+    }
+
+    // Dry-run mode: print topological order and exit
+    if config.dry_run {
+        let order = workflow.dry_run()?;
+        println!("Dry-run topological order:");
+        for task_id in &order {
+            println!("  {}", task_id);
+        }
+        return Ok(());
+    }
+
+    let state_path = std::path::PathBuf::from(".hubbard_u_sweep_slurm.workflow.json");
+    let mut state = JsonStateStore::new("hubbard_u_sweep_slurm", state_path);
+    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+
+    let summary = workflow.run(&mut state, runner, executor)?;
+    println!(
+        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
+        summary.succeeded.len(),
+        summary.failed.len(),
+        summary.skipped.len(),
+        summary.duration.as_secs_f64(),
+    );
+    Ok(())
+}
+'''
+
+
+# ---------------------------------------------------------------------------
+# TASK-7: Full workspace build and clippy validation
+# ---------------------------------------------------------------------------
+# Final verification that the entire workspace builds clean with clippy.
+# This catches any cross-crate regressions from the clap env feature addition.
+#
+# Notes for subagent: If clippy warnings appear from the env feature addition
+# in other crates, they must be addressed before marking complete.
+[tasks.TASK-7]
+description = "Verify full workspace builds and passes clippy"
+type = "create"
+acceptance = [
+    "cargo check --workspace",
+    "cargo clippy --workspace -- -D warnings",
+    "cargo test --workspace",
+]
+
+# Sentinel file to give the executor a concrete create target.
+# The real work of this task is running the acceptance commands above.
+[[tasks.TASK-7.changes]]
+file = "examples/hubbard_u_sweep_slurm/.validation-complete"
+before = ''
+after = '''
+Phase 5A workspace validation passed.
+'''

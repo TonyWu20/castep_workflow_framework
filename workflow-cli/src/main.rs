@@ -69,8 +69,6 @@ fn cmd_inspect(state: &dyn StateStore, task_id: Option<&str>) -> anyhow::Result<
     }
 }
 
-
-
 fn cmd_retry(state: &mut JsonStateStore, task_ids: &[String]) -> anyhow::Result<()> {
     for id in task_ids {
         if state.get_status(id).is_none() {

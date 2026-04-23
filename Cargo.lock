@@ -494,6 +494,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hubbard_u_sweep_slurm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "castep-cell-fmt",
+ "castep-cell-io",
+ "clap",
+ "workflow_core",
+ "workflow_utils",
+]
+
+[[package]]
 name = "id-arena"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

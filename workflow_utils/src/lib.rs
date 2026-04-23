@@ -7,5 +7,5 @@ pub use executor::{ExecutionHandle, ExecutionResult, OutputLocation, TaskExecuto
 pub use files::{copy_file, create_dir, exists, read_file, remove_dir, write_file};
 // Re-export hook types from workflow_core for backward compatibility
 pub use monitoring::ShellHookExecutor;
-pub use queued::{QueuedRunner, SchedulerKind};
+pub use queued::{QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME};
 pub use workflow_core::{HookContext, HookResult, HookTrigger, MonitoringHook};
