@@ -137,17 +137,17 @@ impl Workflow {
 
 /// Task: execution unit with setup/collect closures
 pub struct Task {
-    id: String,
-    dependencies: Vec<String>,
-    execution_mode: ExecutionMode,
-    workdir: Option<PathBuf>,
-    setup: Option<TaskClosure>,
-    collect: Option<TaskClosure>,
-    monitors: Vec<MonitoringHook>,
+    pub id: String,
+    pub dependencies: Vec<String>,
+    pub mode: ExecutionMode,
+    pub workdir: PathBuf,
+    pub setup: Option<TaskClosure>,
+    pub collect: Option<TaskClosure>,
+    pub monitors: Vec<MonitoringHook>,
 }
 
 /// Closure type alias to avoid type_complexity lint
-pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>;
+pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static>;
 
 impl Task {
     /// Create task with execution mode
@@ -209,28 +209,41 @@ pub struct WorkflowSummary {
 }
 
 /// State storage trait (I/O boundary abstraction)
-pub trait StateStore {
-    fn load(&mut self) -> Result<(), WorkflowError>;       // crash-recovery (resets Failed/Running → Pending)
-    fn load_raw(&self) -> Result<WorkflowState, WorkflowError>; // read-only, no resets
-    fn save(&mut self) -> Result<(), WorkflowError>;
+pub trait StateStore: Send + Sync {
     fn get_status(&self, id: &str) -> Option<TaskStatus>;
     fn set_status(&mut self, id: &str, status: TaskStatus);
+    fn all_tasks(&self) -> Vec<(String, TaskStatus)>;
+    fn save(&self) -> Result<(), WorkflowError>;
 }
 
+/// Extension trait providing convenience wrappers (blanket-implemented over StateStore)
 pub trait StateStoreExt: StateStore {
-    /// BFS over task_successors graph from given start nodes (Phase 5B: generic S)
-    fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> Vec<String>;
+    fn mark_running(&mut self, id: &str);
+    fn mark_completed(&mut self, id: &str);
+    fn mark_failed(&mut self, id: &str, error: String);
+    // ... other convenience methods
 }
 
-/// JSON-backed state store with atomic writes
-pub struct JsonStateStore {
-    name: String,
-    path: PathBuf,
-    state: Option<WorkflowState>,
-}
+/// JSON-backed state store with atomic writes (write-to-temp + rename)
+pub struct JsonStateStore { /* ... */ }
 
 impl JsonStateStore {
     pub fn new(name: impl Into<String>, path: PathBuf) -> Self;
+
+    // crash-recovery: resets Failed/Running/SkippedDueToDependencyFailure → Pending
+    pub fn load(&mut self) -> Result<(), WorkflowError>;
+
+    // read-only inspection without crash-recovery resets (used by CLI status/inspect)
+    pub fn load_raw(&self) -> Result<WorkflowState, WorkflowError>;
+}
+
+/// Persisted successor graph for graph-aware retry (Phase 4+)
+pub struct TaskSuccessors { /* ... */ }
+
+impl TaskSuccessors {
+    /// BFS from given start IDs; returns all transitively reachable downstream IDs.
+    /// Starting IDs are NOT included. Accepts &[&str] or &[String] (Phase 5B ergonomics).
+    pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> HashSet<String>;
 }
 
 /// Error type

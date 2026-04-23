@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""TASK-1: Fix ARCHITECTURE.md code blocks to match actual API (Task 11 completion: code examples were left inaccurate)"""
+import base64, json, subprocess, sys
+
+TASK_ID = "TASK-1"
+STEPS = json.loads('[{"before_b64": "Ly8vIFRhc2s6IGV4ZWN1dGlvbiB1bml0IHdpdGggc2V0dXAvY29sbGVjdCBjbG9zdXJlcwpwdWIgc3RydWN0IFRhc2sgewogICAgaWQ6IFN0cmluZywKICAgIGRlcGVuZGVuY2llczogVmVjPFN0cmluZz4sCiAgICBleGVjdXRpb25fbW9kZTogRXhlY3V0aW9uTW9kZSwKICAgIHdvcmtkaXI6IE9wdGlvbjxQYXRoQnVmPiwKICAgIHNldHVwOiBPcHRpb248VGFza0Nsb3N1cmU+LAogICAgY29sbGVjdDogT3B0aW9uPFRhc2tDbG9zdXJlPiwKICAgIG1vbml0b3JzOiBWZWM8TW9uaXRvcmluZ0hvb2s+LAp9CgovLy8gQ2xvc3VyZSB0eXBlIGFsaWFzIHRvIGF2b2lkIHR5cGVfY29tcGxleGl0eSBsaW50CnB1YiB0eXBlIFRhc2tDbG9zdXJlID0gQm94PGR5biBGbigmUGF0aCkgLT4gUmVzdWx0PCgpLCBXb3JrZmxvd0Vycm9yPiArIFNlbmQgKyBTeW5jPjs=", "after_b64": "Ly8vIFRhc2s6IGV4ZWN1dGlvbiB1bml0IHdpdGggc2V0dXAvY29sbGVjdCBjbG9zdXJlcwpwdWIgc3RydWN0IFRhc2sgewogICAgcHViIGlkOiBTdHJpbmcsCiAgICBwdWIgZGVwZW5kZW5jaWVzOiBWZWM8U3RyaW5nPiwKICAgIHB1YiBtb2RlOiBFeGVjdXRpb25Nb2RlLAogICAgcHViIHdvcmtkaXI6IFBhdGhCdWYsCiAgICBwdWIgc2V0dXA6IE9wdGlvbjxUYXNrQ2xvc3VyZT4sCiAgICBwdWIgY29sbGVjdDogT3B0aW9uPFRhc2tDbG9zdXJlPiwKICAgIHB1YiBtb25pdG9yczogVmVjPE1vbml0b3JpbmdIb29rPiwKfQoKLy8vIENsb3N1cmUgdHlwZSBhbGlhcyB0byBhdm9pZCB0eXBlX2NvbXBsZXhpdHkgbGludApwdWIgdHlwZSBUYXNrQ2xvc3VyZSA9IEJveDxkeW4gRm4oJlBhdGgpIC0+IFJlc3VsdDwoKSwgQm94PGR5biBzdGQ6OmVycm9yOjpFcnJvciArIFNlbmQgKyBTeW5jPj4gKyBTZW5kICsgU3luYyArICdzdGF0aWM+Ow==", "target": "ARCHITECTURE.md", "index": 0}, {"before_b64": "Ly8vIFN0YXRlIHN0b3JhZ2UgdHJhaXQgKEkvTyBib3VuZGFyeSBhYnN0cmFjdGlvbikKcHViIHRyYWl0IFN0YXRlU3RvcmUgewogICAgZm4gbG9hZCgmbXV0IHNlbGYpIC0+IFJlc3VsdDwoKSwgV29ya2Zsb3dFcnJvcj47ICAgICAgIC8vIGNyYXNoLXJlY292ZXJ5IChyZXNldHMgRmFpbGVkL1J1bm5pbmcg4oaSIFBlbmRpbmcpCiAgICBmbiBsb2FkX3Jhdygmc2VsZikgLT4gUmVzdWx0PFdvcmtmbG93U3RhdGUsIFdvcmtmbG93RXJyb3I+OyAvLyByZWFkLW9ubHksIG5vIHJlc2V0cwogICAgZm4gc2F2ZSgmbXV0IHNlbGYpIC0+IFJlc3VsdDwoKSwgV29ya2Zsb3dFcnJvcj47CiAgICBmbiBnZXRfc3RhdHVzKCZzZWxmLCBpZDogJnN0cikgLT4gT3B0aW9uPFRhc2tTdGF0dXM+OwogICAgZm4gc2V0X3N0YXR1cygmbXV0IHNlbGYsIGlkOiAmc3RyLCBzdGF0dXM6IFRhc2tTdGF0dXMpOwp9CgpwdWIgdHJhaXQgU3RhdGVTdG9yZUV4dDogU3RhdGVTdG9yZSB7CiAgICAvLy8gQkZTIG92ZXIgdGFza19zdWNjZXNzb3JzIGdyYXBoIGZyb20gZ2l2ZW4gc3RhcnQgbm9kZXMgKFBoYXNlIDVCOiBnZW5lcmljIFMpCiAgICBmbiBkb3duc3RyZWFtX29mPFM6IEFzUmVmPHN0cj4+KCZzZWxmLCBzdGFydDogJltTXSkgLT4gVmVjPFN0cmluZz47Cn0KCi8vLyBKU09OLWJhY2tlZCBzdGF0ZSBzdG9yZSB3aXRoIGF0b21pYyB3cml0ZXMKcHViIHN0cnVjdCBKc29uU3RhdGVTdG9yZSB7CiAgICBuYW1lOiBTdHJpbmcsCiAgICBwYXRoOiBQYXRoQnVmLAogICAgc3RhdGU6IE9wdGlvbjxXb3JrZmxvd1N0YXRlPiwKfQoKaW1wbCBKc29uU3RhdGVTdG9yZSB7CiAgICBwdWIgZm4gbmV3KG5hbWU6IGltcGwgSW50bzxTdHJpbmc+LCBwYXRoOiBQYXRoQnVmKSAtPiBTZWxmOwp9", "after_b64": "Ly8vIFN0YXRlIHN0b3JhZ2UgdHJhaXQgKEkvTyBib3VuZGFyeSBhYnN0cmFjdGlvbikKcHViIHRyYWl0IFN0YXRlU3RvcmU6IFNlbmQgKyBTeW5jIHsKICAgIGZuIGdldF9zdGF0dXMoJnNlbGYsIGlkOiAmc3RyKSAtPiBPcHRpb248VGFza1N0YXR1cz47CiAgICBmbiBzZXRfc3RhdHVzKCZtdXQgc2VsZiwgaWQ6ICZzdHIsIHN0YXR1czogVGFza1N0YXR1cyk7CiAgICBmbiBhbGxfdGFza3MoJnNlbGYpIC0+IFZlYzwoU3RyaW5nLCBUYXNrU3RhdHVzKT47CiAgICBmbiBzYXZlKCZzZWxmKSAtPiBSZXN1bHQ8KCksIFdvcmtmbG93RXJyb3I+Owp9CgovLy8gRXh0ZW5zaW9uIHRyYWl0IHByb3ZpZGluZyBjb252ZW5pZW5jZSB3cmFwcGVycyAoYmxhbmtldC1pbXBsZW1lbnRlZCBvdmVyIFN0YXRlU3RvcmUpCnB1YiB0cmFpdCBTdGF0ZVN0b3JlRXh0OiBTdGF0ZVN0b3JlIHsKICAgIGZuIG1hcmtfcnVubmluZygmbXV0IHNlbGYsIGlkOiAmc3RyKTsKICAgIGZuIG1hcmtfY29tcGxldGVkKCZtdXQgc2VsZiwgaWQ6ICZzdHIpOwogICAgZm4gbWFya19mYWlsZWQoJm11dCBzZWxmLCBpZDogJnN0ciwgZXJyb3I6IFN0cmluZyk7CiAgICAvLyAuLi4gb3RoZXIgY29udmVuaWVuY2UgbWV0aG9kcwp9CgovLy8gSlNPTi1iYWNrZWQgc3RhdGUgc3RvcmUgd2l0aCBhdG9taWMgd3JpdGVzICh3cml0ZS10by10ZW1wICsgcmVuYW1lKQpwdWIgc3RydWN0IEpzb25TdGF0ZVN0b3JlIHsgLyogLi4uICovIH0KCmltcGwgSnNvblN0YXRlU3RvcmUgewogICAgcHViIGZuIG5ldyhuYW1lOiBpbXBsIEludG88U3RyaW5nPiwgcGF0aDogUGF0aEJ1ZikgLT4gU2VsZjsKCiAgICAvLyBjcmFzaC1yZWNvdmVyeTogcmVzZXRzIEZhaWxlZC9SdW5uaW5nL1NraXBwZWREdWVUb0RlcGVuZGVuY3lGYWlsdXJlIOKGkiBQZW5kaW5nCiAgICBwdWIgZm4gbG9hZCgmbXV0IHNlbGYpIC0+IFJlc3VsdDwoKSwgV29ya2Zsb3dFcnJvcj47CgogICAgLy8gcmVhZC1vbmx5IGluc3BlY3Rpb24gd2l0aG91dCBjcmFzaC1yZWNvdmVyeSByZXNldHMgKHVzZWQgYnkgQ0xJIHN0YXR1cy9pbnNwZWN0KQogICAgcHViIGZuIGxvYWRfcmF3KCZzZWxmKSAtPiBSZXN1bHQ8V29ya2Zsb3dTdGF0ZSwgV29ya2Zsb3dFcnJvcj47Cn0KCi8vLyBQZXJzaXN0ZWQgc3VjY2Vzc29yIGdyYXBoIGZvciBncmFwaC1hd2FyZSByZXRyeSAoUGhhc2UgNCspCnB1YiBzdHJ1Y3QgVGFza1N1Y2Nlc3NvcnMgeyAvKiAuLi4gKi8gfQoKaW1wbCBUYXNrU3VjY2Vzc29ycyB7CiAgICAvLy8gQkZTIGZyb20gZ2l2ZW4gc3RhcnQgSURzOyByZXR1cm5zIGFsbCB0cmFuc2l0aXZlbHkgcmVhY2hhYmxlIGRvd25zdHJlYW0gSURzLgogICAgLy8vIFN0YXJ0aW5nIElEcyBhcmUgTk9UIGluY2x1ZGVkLiBBY2NlcHRzICZbJnN0cl0gb3IgJltTdHJpbmddIChQaGFzZSA1QiBlcmdvbm9taWNzKS4KICAgIHB1YiBmbiBkb3duc3RyZWFtX29mPFM6IEFzUmVmPHN0cj4+KCZzZWxmLCBzdGFydDogJltTXSkgLT4gSGFzaFNldDxTdHJpbmc+Owp9", "target": "ARCHITECTURE.md", "index": 1}]')
+
+for step in STEPS:
+    before = base64.b64decode(step["before_b64"]).decode()
+    after = base64.b64decode(step["after_b64"]).decode()
+    target = step["target"]
+    idx = step["index"]
+
+    content = open(target).read()
+    if before not in content:
+        print(f"FAILED {TASK_ID} change {idx}: pattern not found in {target}", file=sys.stderr)
+        print(f"Expected (first 200 chars): {repr(before[:200])}", file=sys.stderr)
+        sys.exit(1)
+
+    result = subprocess.run(
+        ["sd", "-F", "-A", "-n", "1", before, after, target],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"FAILED {TASK_ID} change {idx}: sd error: {result.stderr}", file=sys.stderr)
+        sys.exit(result.returncode)
+
+    new_content = open(target).read()
+    if after and after not in new_content:
+        print(f"FAILED {TASK_ID} change {idx}: replacement not found after apply", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"OK {TASK_ID} change {idx}: applied to {target}")
+
+print(f"OK {TASK_ID}: all changes applied")
