@@ -57,3 +57,21 @@ Items identified during PR review v1, classified as `[Improvement]` -- better de
 **Candidate for:** Phase 5B or Phase 6
 
 **Precondition:** A second false-success case is observed, or the collect-vs-exit-code wiring in `workflow.rs` is confirmed to be bypassable.
+
+---
+
+## Round 2 items (2026-04-23)
+
+## D.8: Double `s.trim()` call in `parse_u_values`
+
+**Source:** Round 2 review
+**Rationale:** In `config.rs`, the `parse_u_values` closure calls `s.trim()` once for `parse::<f64>()` and again in the `map_err` format string. Extracting to `let trimmed = s.trim();` would eliminate the redundant call and improve readability.
+**Candidate for:** Phase 5B or any touch to `config.rs`
+**Precondition:** Next edit to `config.rs`
+
+## D.9: `anyhow::anyhow!(e)` vs `anyhow::Error::msg(e)` at `parse_u_values` call site
+
+**Source:** Round 2 review
+**Rationale:** `main.rs` uses `.map_err(|e| anyhow::anyhow!(e))` to convert a `String` error. The `anyhow!` macro is intended for format strings; the idiomatic form for wrapping an existing `Display` value is `.map_err(anyhow::Error::msg)`. Style-only, no correctness impact.
+**Candidate for:** Phase 5B or any touch to `main.rs`
+**Precondition:** Next edit to `main.rs`

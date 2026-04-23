@@ -1,106 +1,79 @@
 # Phase 5 Fix Plan — compilable-plan-spec v2
-# Generated: 2026-04-23
+# Generated: 2026-04-23 (re-review round)
 
 [tasks.TASK-1]
-description = "Extract hardcoded 'job.sh' literal into a pub const JOB_SCRIPT_NAME in queued module"
-type = "replace"
-acceptance = ["cargo check -p workflow_utils", "cargo test -p workflow_utils"]
-
-[[tasks.TASK-1.changes]]
-file = "workflow_utils/src/queued.rs"
-before = '''
-use workflow_core::error::WorkflowError;
-use workflow_core::process::{OutputLocation, ProcessHandle, ProcessResult};
-
-/// The type of HPC job scheduler to target.
-#[derive(Debug, Clone, Copy)]
-pub enum SchedulerKind {
-'''
-after = '''
-use workflow_core::error::WorkflowError;
-use workflow_core::process::{OutputLocation, ProcessHandle, ProcessResult};
-
-/// Default job script filename used by [`QueuedRunner::submit`].
-pub const JOB_SCRIPT_NAME: &str = "job.sh";
-
-/// The type of HPC job scheduler to target.
-#[derive(Debug, Clone, Copy)]
-pub enum SchedulerKind {
-'''
-
-[[tasks.TASK-1.changes]]
-file = "workflow_utils/src/queued.rs"
-before = '''
-        .args(["-o", &stdout_path.to_string_lossy(), "-e", &stderr_path.to_string_lossy()])
-        .arg("job.sh")
-        .current_dir(workdir)
-'''
-after = '''
-        .args(["-o", &stdout_path.to_string_lossy(), "-e", &stderr_path.to_string_lossy()])
-        .arg(JOB_SCRIPT_NAME)
-        .current_dir(workdir)
-'''
-
-[tasks.TASK-2]
-description = "Re-export JOB_SCRIPT_NAME from workflow_utils top-level lib.rs"
-type = "replace"
-acceptance = ["cargo check -p workflow_utils"]
-
-[[tasks.TASK-2.changes]]
-file = "workflow_utils/src/lib.rs"
-before = '''
-pub use queued::{QueuedRunner, SchedulerKind};
-'''
-after = '''
-pub use queued::{QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME};
-'''
-
-[tasks.TASK-3]
-description = "Make parse_u_values return Result<Vec<f64>, String> instead of silently dropping unparseable values"
-type = "replace"
-acceptance = ["cargo check -p hubbard_u_sweep_slurm"]
-
-[[tasks.TASK-3.changes]]
-file = "examples/hubbard_u_sweep_slurm/src/config.rs"
-before = '''
-impl SweepConfig {
-    pub fn parse_u_values(&self) -> Vec<f64> {
-        self.u_values
-            .split(',')
-            .filter_map(|s| s.trim().parse::<f64>().ok())
-            .collect()
-    }
-}
-'''
-after = '''
-impl SweepConfig {
-    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
-        self.u_values
-            .split(',')
-            .map(|s| {
-                s.trim()
-                    .parse::<f64>()
-                    .map_err(|e| format!("invalid U value '{}': {}", s.trim(), e))
-            })
-            .collect::<Result<Vec<_>, _>>()
-    }
-}
-'''
-
-[tasks.TASK-4]
-description = "Update parse_u_values call site in main.rs to propagate the error"
+description = "Use JOB_SCRIPT_NAME constant instead of hardcoded 'job.sh' in hubbard_u_sweep_slurm consumer"
 type = "replace"
 acceptance = ["cargo check -p hubbard_u_sweep_slurm", "cargo test -p hubbard_u_sweep_slurm"]
 
-[[tasks.TASK-4.changes]]
+[[tasks.TASK-1.changes]]
 file = "examples/hubbard_u_sweep_slurm/src/main.rs"
 before = '''
-    let u_values = config.parse_u_values();
+use workflow_utils::{
+    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
+    SystemProcessRunner,
+};
 '''
 after = '''
-    let u_values = config.parse_u_values().map_err(|e| anyhow::anyhow!(e))?;
+use workflow_utils::{
+    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
+    SystemProcessRunner, JOB_SCRIPT_NAME,
+};
 '''
 
-[dependencies]
-TASK-2 = ["TASK-1"]
-TASK-4 = ["TASK-3"]
+[[tasks.TASK-1.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+                write_file(workdir.join("job.sh"), &job_script)?;
+'''
+after = '''
+                write_file(workdir.join(JOB_SCRIPT_NAME), &job_script)?;
+'''
+
+[tasks.TASK-2]
+description = "Use JOB_SCRIPT_NAME constant instead of hardcoded 'job.sh' in queued integration tests"
+type = "replace"
+acceptance = ["cargo check -p workflow_utils", "cargo test -p workflow_utils"]
+
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/tests/queued_integration.rs"
+before = '''
+use workflow_utils::{QueuedRunner, SchedulerKind};
+'''
+after = '''
+use workflow_utils::{QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME};
+'''
+
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/tests/queued_integration.rs"
+before = '''
+    let workdir = dir.path().join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::write(workdir.join("job.sh"), "#!/bin/sh\necho hello\n").unwrap();
+
+    // Restrict PATH to an empty directory so `sbatch` cannot be found.
+'''
+after = '''
+    let workdir = dir.path().join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::write(workdir.join(JOB_SCRIPT_NAME), "#!/bin/sh\necho hello\n").unwrap();
+
+    // Restrict PATH to an empty directory so `sbatch` cannot be found.
+'''
+
+[[tasks.TASK-2.changes]]
+file = "workflow_utils/tests/queued_integration.rs"
+before = '''
+    let workdir = dir.path().join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::write(workdir.join("job.sh"), "#!/bin/sh\necho hello\n").unwrap();
+
+    // Mock `sbatch` that prints a SLURM-style submission line and exits 0.
+'''
+after = '''
+    let workdir = dir.path().join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::write(workdir.join(JOB_SCRIPT_NAME), "#!/bin/sh\necho hello\n").unwrap();
+
+    // Mock `sbatch` that prints a SLURM-style submission line and exits 0.
+'''
