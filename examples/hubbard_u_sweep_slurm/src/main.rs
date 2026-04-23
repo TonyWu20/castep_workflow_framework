@@ -147,10 +147,15 @@ fn main() -> Result<()> {
 
     let state_path = std::path::PathBuf::from(".hubbard_u_sweep_slurm.workflow.json");
     let mut state = JsonStateStore::new("hubbard_u_sweep_slurm", state_path);
-    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
-    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
 
-    let summary = workflow.run(&mut state, runner, executor)?;
+    let summary = if config.local {
+        run_default(&mut workflow, &mut state)?
+    } else {
+        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        workflow.run(&mut state, runner, executor)?
+    };
+
     println!(
         "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
         summary.succeeded.len(),

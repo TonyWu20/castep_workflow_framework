@@ -129,3 +129,73 @@
     help: consider giving this closure parameter an explicit type
     ```
 
+### TASK-6: Branch on config.local at the run site: local mode uses run_default(&mut workflow, &mut state), SLURM mode keeps manual Arc wiring.
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo check -p hubbard_u_sweep_slurm`: FAILED (exit 101)
+    ```
+    Checking hubbard_u_sweep_slurm v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm)
+    error[E0432]: unresolved import `workflow_utils::prelude`
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:10:21
+       |
+    10 | use workflow_utils::prelude::*;
+       |                     ^^^^^^^ could not find `prelude` in `workflow_utils`
+    
+    error[E0282]: type annotations needed
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:47:22
+       |
+    47 |         .setup(move |workdir| -> Result<(), WorkflowError> {
+       |                      ^^^^^^^
+    ...
+    75 |                 workdir.join(format!("{seed_name_setup}.cell")),
+       |                 ------- type must be known at this point
+       |
+    help: consider giving this closure parameter an explicit type
+       |
+    47 |         .setup(move |workdir: /* Type */| -> Result<(), WorkflowError> {
+       |                             ++++++++++++
+    
+    error[E0282]: type annotations needed
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:88:24
+       |
+    88 |         .collect(move |workdir| -> Result<(), WorkflowError> {
+       |                        ^^^^^^^
+    89 |             let castep_out = workdir.join(format!("{seed_name_collect}.castep"));
+       |                              ------- type must be known at this point
+       |
+    help: consider giving this closure parameter an explicit type
+    ```
+  - `cargo clippy -p hubbard_u_sweep_slurm --all-targets -- -D warnings`: FAILED (exit 101)
+    ```
+    Checking hubbard_u_sweep_slurm v0.1.0 (/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm)
+    error[E0432]: unresolved import `workflow_utils::prelude`
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:10:21
+       |
+    10 | use workflow_utils::prelude::*;
+       |                     ^^^^^^^ could not find `prelude` in `workflow_utils`
+    
+    error[E0282]: type annotations needed
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:47:22
+       |
+    47 |         .setup(move |workdir| -> Result<(), WorkflowError> {
+       |                      ^^^^^^^
+    ...
+    75 |                 workdir.join(format!("{seed_name_setup}.cell")),
+       |                 ------- type must be known at this point
+       |
+    help: consider giving this closure parameter an explicit type
+       |
+    47 |         .setup(move |workdir: /* Type */| -> Result<(), WorkflowError> {
+       |                             ++++++++++++
+    
+    error[E0282]: type annotations needed
+      --> examples/hubbard_u_sweep_slurm/src/main.rs:88:24
+       |
+    88 |         .collect(move |workdir| -> Result<(), WorkflowError> {
+       |                        ^^^^^^^
+    89 |             let castep_out = workdir.join(format!("{seed_name_collect}.castep"));
+       |                              ------- type must be known at this point
+       |
+    help: consider giving this closure parameter an explicit type
+    ```
+
