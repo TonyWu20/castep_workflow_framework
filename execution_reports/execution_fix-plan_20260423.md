@@ -150,3 +150,9 @@
     For more information about this error, try `rustc --explain E0602`.
     ```
 
+### TASK-3: Declare `pub mod prelude` in workflow_core/src/lib.rs — the prelude.rs file exists but is unreachable because lib.rs has no module declaration for it.
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+  - `cargo doc -p workflow_core`: PASSED
+
