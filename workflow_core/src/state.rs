@@ -507,7 +507,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("a".into(), vec!["b".into()]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&[]);
+        let result = succ.downstream_of(&[] as &[&str]);
         assert!(result.is_empty());
     }
 
