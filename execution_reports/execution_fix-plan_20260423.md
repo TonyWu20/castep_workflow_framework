@@ -109,3 +109,44 @@
         Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.26s
     ```
 
+### TASK-2: Remove the unused `use std::collections::HashMap` from the task.rs test module — it was left over from before tests were updated to use ExecutionMode::direct().
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo test -p workflow_core`: FAILED (exit 101)
+    ```
+    Compiling workflow_core v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_core)
+       Compiling workflow_utils v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_utils)
+    error[E0283]: type annotations needed
+       --> workflow_core/src/state.rs:510:27
+        |
+    510 |         let result = succ.downstream_of(&[]);
+        |                           ^^^^^^^^^^^^^ --- type must be known at this point
+        |                           |
+        |                           cannot infer type of the type parameter `S` declared on the method `downstream_of`
+        |
+        = note: multiple `impl`s satisfying `_: AsRef<str>` found in the following crates: `alloc`, `core`, `tracing_core`:
+                - impl AsRef<str> for std::string::String;
+                - impl AsRef<str> for str;
+                - impl AsRef<str> for tracing::field::Field;
+    note: required by a bound in `state::TaskSuccessors::downstream_of`
+       --> workflow_core/src/state.rs:152:29
+        |
+    152 |     pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> std::collections::HashSet<String> {
+        |                             ^^^^^^^^^^ required by this bound in `TaskSuccessors::downstream_of`
+    help: consider specifying the generic argument
+        |
+    510 |         let result = succ.downstream_of::<S>(&[]);
+        |                                        +++++
+    
+    For more information about this error, try `rustc --explain E0283`.
+    error: could not compile `workflow_core` (lib test) due to 1 previous error
+    ```
+  - `cargo clippy -p workflow_core -- -W clippy::unused_imports 2>&1 | grep -v 'unused_imports' | head -5`: PASSED
+    ```
+    Checking workflow_core v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_core)
+      |
+      = note: `#[warn(unknown_lints)]` on by default
+    
+    For more information about this error, try `rustc --explain E0602`.
+    ```
+

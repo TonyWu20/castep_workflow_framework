@@ -108,7 +108,6 @@ impl Task {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn task_builder() {
