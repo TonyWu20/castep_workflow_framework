@@ -7,7 +7,8 @@
   ],
   "failed": [
     "TASK-4",
-    "TASK-5"
+    "TASK-5",
+    "TASK-3"
   ],
   "blocked": []
 }
