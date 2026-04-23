@@ -1,54 +1,53 @@
-# Branch Status: `phase-5b` — 2026-04-23
+# Branch Status: `phase-5b` — 2026-04-23 (v2 review)
 
 ## Baseline
 
 - **Baseline commit**: `68da603` review(phase-5b): update fix plan
-- **Current HEAD**: `7499bb0` fix: correct empty slice type annotation for downstream_of test
-- **Commits ahead**: 6
+- **Current HEAD**: `040bc83` review(phase-5b): update fix plan (v2)
+- **Commits ahead of baseline**: 7
 
-## Commits Since Baseline
+## Commits Since Baseline (v1 fix round)
 
 | # | Commit | Description |
 |---|--------|-------------|
-| 1 | `501970b` | TASK-1: Fix 6 test call sites in state.rs using `.into()` with `downstream_of` — replace `&["a".into()]` with `&["a"]` |
+| 1 | `501970b` | TASK-1: Fix 6 test call sites in state.rs using `.into()` with `downstream_of` |
 | 2 | `b75fde9` | TASK-2: Remove unused `use std::collections::HashMap` from task.rs test module |
 | 3 | `27cda16` | TASK-3: Declare `pub mod prelude` in workflow_core/src/lib.rs |
 | 4 | `d17394b` | TASK-4: Create workflow_utils/src/prelude.rs and register it in lib.rs |
 | 5 | `42268d2` | TASK-5: Fix remaining uninlined_format_args clippy warnings |
-| 6 | `7499bb0` | Fix: correct empty slice type annotation for downstream_of test |
+| 6 | `7499bb0` | fix: correct empty slice type annotation for downstream_of test |
+| 7 | `040bc83` | review(phase-5b): update fix plan (v2) |
 
-## Applied Fix Tasks
+## Build / Test / Clippy (post v1 fix round)
 
-- **Fix document**: `notes/pr-reviews/phase-5b/review-v1.md`
-- **Compiled scripts**: `notes/pr-reviews/phase-5b/compiled/` (manifest.json: 5 tasks)
-- **Execution report**: `execution_reports/execution_fix-plan_20260423.md`
-- **Tasks applied**: 5 (TASK-1 through TASK-5)
+- **cargo check**: Passed (workspace, 0 errors)
+- **cargo test**: Passed (108 passed, 1 ignored)
+- **cargo clippy (pedantic)**: FAILS — 1 error (`approx_constant` in config.rs:96), many pedantic warnings
 
-## Build Status
+## Outstanding Issues (v2 fix plan)
 
-- **cargo check**: Passed (workspace)
-- **cargo clippy**: Untested (needs `cargo clippy` run)
-- **cargo test**: Untested (needs `cargo test` run)
+| TASK | Severity | Description |
+|------|----------|-------------|
+| TASK-1 | Blocking | `2.71828` triggers `approx_constant` for E — change to `42.0` |
+| TASK-2 | Blocking | ARCHITECTURE.md / ARCHITECTURE_STATUS.md not updated |
+| TASK-3 | Major | `uninlined_format_args` in config.rs test module lines 102, 108 |
+| TASK-4 | Major | `doc_markdown` on prelude.rs:1, missing trailing newline |
+| TASK-5 | Minor | Examples not using prelude imports |
+| TASK-6 | Minor | `run_default()` not used in `hubbard_u_sweep_slurm` local mode |
+| TASK-7 | Minor | `uninlined_format_args` in `workflow_core/src/lib.rs:31` |
 
-## Files Changed Since Baseline
+## Files Changed Since Last Review
 
-### Source code
+### Source code (v1 fixes applied)
 - `workflow_core/src/lib.rs` — added `pub mod prelude`
 - `workflow_core/src/state.rs` — fixed 6 `.into()` call sites for `downstream_of`
-- `workflow_core/src/task.rs` — minor fix
+- `workflow_core/src/task.rs` — removed unused `HashMap` import from test module
 - `workflow_utils/src/prelude.rs` — new file (re-exports)
 - `workflow_utils/src/lib.rs` — registered prelude
-- `examples/hubbard_u_sweep/src/main.rs` — clippy fix
-- `examples/hubbard_u_sweep_slurm/src/config.rs` — clippy fix
+- `examples/hubbard_u_sweep/src/main.rs` — clippy fix (uninlined_format_args)
+- `examples/hubbard_u_sweep_slurm/src/config.rs` — 3.14→2.71828 (still broken), job_script.rs clippy fix
 - `examples/hubbard_u_sweep_slurm/src/job_script.rs` — clippy fix
 
-### Documentation / scripts
-- `notes/pr-reviews/phase-5b/review-v1.md` — review output
+### Notes / review
+- `notes/pr-reviews/phase-5b/fix-plan.toml` — v2 fix plan (this review round)
 - `notes/pr-reviews/phase-5b/status.md` — this file
-- `notes/pr-reviews/phase-5b/compiled/` — 5 TASK scripts + manifest
-- `execution_reports/execution_fix-plan_20260423.md` — execution report
-- `flake.nix` — updated
-
-## Summary
-
-Six commits since baseline `68da603`: five fix-plan tasks (TASK-1 through TASK-5) plus a follow-up fix. All changes compile cleanly (`cargo check` passes). Remaining work: run `cargo clippy` and `cargo test` to verify.
