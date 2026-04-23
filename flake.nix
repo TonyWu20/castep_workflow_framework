@@ -72,6 +72,17 @@
                 '';
               }
               {
+                name = "claude-qwen3.6-nix";
+                command = ''
+                  ANTHROPIC_BASE_URL=http://localhost:8001 \
+                  CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
+                  ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.6 \
+                  ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.6 \
+                  ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6 \
+                  claude
+                '';
+              }
+              {
                 name = "claude-fox";
                 command = ''
                   ANTHROPIC_BASE_URL=$FOXCODE_BASE_URL \

@@ -473,7 +473,7 @@ mod tests {
         map.insert("b".into(), vec!["c".into()]);
         map.insert("c".into(), vec![]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&["a".into()]);
+        let result = succ.downstream_of(&["a"]);
         assert_eq!(result.len(), 2);
         assert!(result.contains("b"));
         assert!(result.contains("c"));
@@ -488,7 +488,7 @@ mod tests {
         map.insert("c".into(), vec!["d".into()]);
         map.insert("d".into(), vec![]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&["a".into()]);
+        let result = succ.downstream_of(&["a"]);
         assert_eq!(result.len(), 3);
         assert!(result.contains("b"));
         assert!(result.contains("c"));
@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn downstream_of_start_not_in_map() {
         let succ = TaskSuccessors::new(HashMap::new());
-        let result = succ.downstream_of(&["x".into()]);
+        let result = succ.downstream_of(&["x"]);
         assert!(result.is_empty());
     }
 
@@ -519,7 +519,7 @@ mod tests {
         map.insert("b".into(), vec!["c".into()]);
         map.insert("c".into(), vec![]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&["a".into(), "b".into()]);
+        let result = succ.downstream_of(&["a", "b"]);
         assert_eq!(result.len(), 1);
         assert!(result.contains("c"));
     }
@@ -531,7 +531,7 @@ mod tests {
         map.insert("a".into(), vec!["b".into()]);
         map.insert("b".into(), vec!["a".into()]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&["a".into()]);
+        let result = succ.downstream_of(&["a"]);
         assert!(result.contains("b"));
         assert!(result.contains("a"));
     }

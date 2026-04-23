@@ -66,3 +66,46 @@
   - `cargo check -p workflow_utils`: PASSED
   - `cargo test -p workflow_utils`: PASSED
 
+### TASK-1: Fix 6 test call sites in state.rs that use .into() with downstream_of — now ambiguous because S: AsRef<str> conflicts with tracing_core::Field. Replace &["a".into()] with &["a"] (string slice literals, which was the goal of the ergonomic improvement).
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo test -p workflow_core`: FAILED (exit 101)
+    ```
+    Compiling workflow_core v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_core)
+       Compiling workflow_utils v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_utils)
+    warning: unused import: `std::collections::HashMap`
+       --> workflow_core/src/task.rs:111:9
+        |
+    111 |     use std::collections::HashMap;
+        |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+        |
+        = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+    
+    error[E0283]: type annotations needed
+       --> workflow_core/src/state.rs:510:27
+        |
+    510 |         let result = succ.downstream_of(&[]);
+        |                           ^^^^^^^^^^^^^ --- type must be known at this point
+        |                           |
+        |                           cannot infer type of the type parameter `S` declared on the method `downstream_of`
+        |
+        = note: multiple `impl`s satisfying `_: AsRef<str>` found in the following crates: `alloc`, `core`, `tracing_core`:
+                - impl AsRef<str> for std::string::String;
+                - impl AsRef<str> for str;
+                - impl AsRef<str> for tracing::field::Field;
+    note: required by a bound in `state::TaskSuccessors::downstream_of`
+       --> workflow_core/src/state.rs:152:29
+        |
+    152 |     pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> std::collections::HashSet<String> {
+        |                             ^^^^^^^^^^ required by this bound in `TaskSuccessors::downstream_of`
+    help: consider specifying the generic argument
+        |
+    510 |         let result = succ.downstream_of::<S>(&[]);
+    ```
+  - `cargo check -p workflow-cli`: PASSED
+    ```
+    Checking workflow_core v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow_core)
+        Checking workflow-cli v0.1.0 (/Users/tony/programming/castep_workflow_framework/workflow-cli)
+        Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.26s
+    ```
+
