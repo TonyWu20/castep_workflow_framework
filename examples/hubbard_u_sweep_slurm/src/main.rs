@@ -13,7 +13,7 @@ use workflow_core::workflow::Workflow;
 use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
 use workflow_utils::{
     create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
-    SystemProcessRunner,
+    SystemProcessRunner, JOB_SCRIPT_NAME,
 };
 
 use config::SweepConfig;
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
                     workdir.join(format!("{}.param", seed_name_setup)),
                     &seed_param,
                 )?;
-                write_file(workdir.join("job.sh"), &job_script)?;
+                write_file(workdir.join(JOB_SCRIPT_NAME), &job_script)?;
                 Ok(())
             })
             .collect(move |workdir| -> Result<(), WorkflowError> {

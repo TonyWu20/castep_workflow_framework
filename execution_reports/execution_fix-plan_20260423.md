@@ -54,3 +54,9 @@
        |                            |
     ```
 
+### TASK-1: Use JOB_SCRIPT_NAME constant instead of hardcoded 'job.sh' in hubbard_u_sweep_slurm consumer
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p hubbard_u_sweep_slurm`: PASSED
+  - `cargo test -p hubbard_u_sweep_slurm`: PASSED
+

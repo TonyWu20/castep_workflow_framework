@@ -1,0 +1,33 @@
+{
+  "plan": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-5/fix-plan.toml",
+  "compiled_at": "2026-04-23T07:26:39.303221+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "script": "TASK-1.sh",
+      "runner": "TASK-1.py",
+      "file": "examples/hubbard_u_sweep_slurm/src/main.rs",
+      "type": "replace",
+      "changes": 2,
+      "description": "Use JOB_SCRIPT_NAME constant instead of hardcoded 'job.sh' in hubbard_u_sweep_slurm consumer",
+      "acceptance": [
+        "cargo check -p hubbard_u_sweep_slurm",
+        "cargo test -p hubbard_u_sweep_slurm"
+      ]
+    },
+    {
+      "id": "TASK-2",
+      "script": "TASK-2.sh",
+      "runner": "TASK-2.py",
+      "file": "workflow_utils/tests/queued_integration.rs",
+      "type": "replace",
+      "changes": 3,
+      "description": "Use JOB_SCRIPT_NAME constant instead of hardcoded 'job.sh' in queued integration tests",
+      "acceptance": [
+        "cargo check -p workflow_utils",
+        "cargo test -p workflow_utils"
+      ]
+    }
+  ],
+  "skipped": []
+}
