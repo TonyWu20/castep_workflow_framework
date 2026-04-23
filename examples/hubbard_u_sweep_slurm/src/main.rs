@@ -26,8 +26,8 @@ fn build_one_task(
     seed_cell: &str,
     seed_param: &str,
 ) -> Result<Task, WorkflowError> {
-    let task_id = format!("scf_U{:.1}", u);
-    let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+    let task_id = format!("scf_U{u:.1}");
+    let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}"));
     let seed_cell = seed_cell.to_owned();
     let seed_param = seed_param.to_owned();
     let element = config.element.clone();
@@ -63,8 +63,7 @@ fn build_one_task(
                 'f' => OrbitalU::F(u),
                 c => {
                     return Err(WorkflowError::InvalidConfig(format!(
-                        "unsupported orbital '{}'",
-                        c
+                        "unsupported orbital '{c}'"
                     )))
                 }
             };
@@ -94,7 +93,7 @@ fn build_one_task(
             Ok(())
         })
         .collect(move |workdir| -> Result<(), WorkflowError> {
-            let castep_out = workdir.join(format!("{}.castep", seed_name_collect));
+            let castep_out = workdir.join(format!("{seed_name_collect}.castep"));
             if !castep_out.exists() {
                 return Err(WorkflowError::InvalidConfig(format!(
                     "missing output: {}",

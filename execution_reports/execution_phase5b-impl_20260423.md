@@ -156,3 +156,43 @@
   - `cargo check -p hubbard_u_sweep_slurm`: PASSED
   - `cargo check -p hubbard_u_sweep`: PASSED
 
+### TASK-10: Fix uninlined_format_args pedantic clippy warnings in touched files only. Run clippy per crate, inline format arguments (e.g. format!("{}", x) -> format!("{x}")), skip needless_pass_by_value on Workflow::run(). Scope: config.rs, job_script.rs, main.rs in hubbard_u_sweep_slurm; main.rs in hubbard_u_sweep; state.rs, task.rs in workflow_core.
+- **Status**: ✗ Failed
+- **Validation output**:
+  - `cargo clippy -p workflow_core -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'`: FAILED (exit 1)
+  - `cargo clippy -p hubbard_u_sweep_slurm -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'`: FAILED (exit 1)
+  - `cargo clippy -p hubbard_u_sweep -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'`: FAILED (exit 1)
+  - `cargo test --workspace`: FAILED (exit 101)
+    ```
+    cessors::downstream_of`
+       --> workflow_core/src/state.rs:152:29
+        |
+    152 |     pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> std::collections::HashSet<String> {
+        |                             ^^^^^^^^^^ required by this bound in `TaskSuccessors::downstream_of`
+    help: consider specifying the generic argument
+        |
+    522 |         let result = succ.downstream_of::<S>(&["a".into(), "b".into()]);
+        |                                        +++++
+    
+    error[E0283]: type annotations needed
+       --> workflow_core/src/state.rs:534:27
+        |
+    534 |         let result = succ.downstream_of(&["a".into()]);
+        |                           ^^^^^^^^^^^^^ ------------- type must be known at this point
+        |                           |
+        |                           cannot infer type of the type parameter `S` declared on the method `downstream_of`
+        |
+        = note: multiple `impl`s satisfying `_: AsRef<str>` found in the following crates: `alloc`, `core`, `tracing_core`, `tracing_subscriber`:
+                - impl AsRef<str> for filter::env::field::MatchDebug;
+                - impl AsRef<str> for filter::env::field::MatchPattern;
+                - impl AsRef<str> for std::string::String;
+                - impl AsRef<str> for str;
+                - impl AsRef<str> for tracing::field::Field;
+    note: required by a bound in `state::TaskSuccessors::downstream_of`
+       --> workflow_core/src/state.rs:152:29
+        |
+    152 |     pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> std::collections::HashSet<String> {
+        |                             ^^^^^^^^^^ required by this bound in `TaskSuccessors::downstream_of`
+    help: consider specifying the generic argument
+    ```
+
