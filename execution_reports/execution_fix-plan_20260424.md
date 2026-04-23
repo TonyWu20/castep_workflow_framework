@@ -12,3 +12,9 @@
   - `cargo check --workspace`: PASSED
   - `cargo check --workspace 2>&1`: PASSED
 
+### TASK-2: Add 2 missing parse_u_values test cases specified in plan D.3a: empty string and negative values
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo test -p hubbard_u_sweep_slurm`: PASSED
+  - `cargo check --workspace 2>&1`: PASSED
+

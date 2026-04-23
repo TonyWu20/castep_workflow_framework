@@ -107,4 +107,17 @@ mod tests {
         let err = parse_u_values("1.0,,2.0").unwrap_err();
         assert!(err.contains("invalid"), "error should report parse failure: {err}");
     }
+
+    #[test]
+    fn parse_empty_string() {
+        // The whole input is empty (distinct from an empty token in the middle)
+        let err = parse_u_values("").unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn parse_negative_values() {
+        let vals = parse_u_values("-1.0,2.0").unwrap();
+        assert_eq!(vals, vec![-1.0, 2.0]);
+    }
 }
