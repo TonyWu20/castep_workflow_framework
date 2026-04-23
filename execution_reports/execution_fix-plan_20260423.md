@@ -156,3 +156,9 @@
   - `cargo check -p workflow_core`: PASSED
   - `cargo doc -p workflow_core`: PASSED
 
+### TASK-4: Create workflow_utils/src/prelude.rs (re-exporting workflow_core::prelude::* plus workflow_utils types) and register it in workflow_utils/src/lib.rs.
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+  - `cargo doc -p workflow_utils`: PASSED
+
