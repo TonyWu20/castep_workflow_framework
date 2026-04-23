@@ -141,3 +141,10 @@
 - **Validation output**:
   - `cargo check -p hubbard_u_sweep_slurm`: PASSED
 
+### TASK-8: Add run_default() convenience function to workflow_utils and update both example binaries to use it
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_utils`: PASSED
+  - `cargo check -p hubbard_u_sweep_slurm`: PASSED
+  - `cargo check -p hubbard_u_sweep`: PASSED
+

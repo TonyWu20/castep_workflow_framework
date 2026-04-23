@@ -2,13 +2,11 @@ use anyhow::Result;
 use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
 use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
 use castep_cell_io::CellDocument;
-use std::collections::HashMap;
-use std::sync::Arc;
 use workflow_core::state::JsonStateStore;
 use workflow_core::task::{ExecutionMode, Task};
 use workflow_core::workflow::Workflow;
-use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
-use workflow_utils::{create_dir, write_file, ShellHookExecutor, SystemProcessRunner};
+use workflow_core::WorkflowError;
+use workflow_utils::{create_dir, write_file};
 
 fn main() -> Result<()> {
     let seed_cell = include_str!("../seeds/ZnO.cell");
@@ -23,48 +21,35 @@ fn main() -> Result<()> {
         let seed_cell = seed_cell.to_owned();
         let seed_param = seed_param.to_owned();
 
-        let task = Task::new(
-            &task_id,
-            ExecutionMode::Direct {
-                command: "castep".into(),
-                args: vec!["ZnO".into()],
-                env: HashMap::new(),
-                timeout: None,
-            },
-        )
-        .workdir(workdir.clone())
-        .setup(move |workdir| -> Result<(), WorkflowError> {
-            create_dir(workdir.to_str().unwrap())?;
+        let task = Task::new(&task_id, ExecutionMode::direct("castep", &["ZnO"]))
+            .workdir(workdir)
+            .setup(move |workdir| -> Result<(), WorkflowError> {
+                create_dir(workdir)?;
 
-            let mut cell_doc: CellDocument =
-                parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+                let mut cell_doc: CellDocument =
+                    parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
 
-            let atom_u = AtomHubbardU::builder()
-                .species(Species::Symbol("Zn".to_string()))
-                .orbitals(vec![OrbitalU::D(u)])
-                .build();
-            let hubbard_u = HubbardU::builder()
-                .unit(HubbardUUnit::ElectronVolt)
-                .atom_u_values(vec![atom_u])
-                .build();
-            cell_doc.hubbard_u = Some(hubbard_u);
+                let atom_u = AtomHubbardU::builder()
+                    .species(Species::Symbol("Zn".to_string()))
+                    .orbitals(vec![OrbitalU::D(u)])
+                    .build();
+                let hubbard_u = HubbardU::builder()
+                    .unit(HubbardUUnit::ElectronVolt)
+                    .atom_u_values(vec![atom_u])
+                    .build();
+                cell_doc.hubbard_u = Some(hubbard_u);
 
-            let output = to_string_many_spaced(&cell_doc.to_cell_file());
-            write_file(format!("{}/ZnO.cell", workdir.display()), &output)
-                .map_err(|e| WorkflowError::Io(std::io::Error::other(e.to_string())))?;
-            write_file(format!("{}/ZnO.param", workdir.display()), &seed_param)
-                .map_err(|e| WorkflowError::Io(std::io::Error::other(e.to_string())))?;
-            Ok(())
-        });
+                let output = to_string_many_spaced(&cell_doc.to_cell_file());
+                write_file(workdir.join("ZnO.cell"), &output)?;
+                write_file(workdir.join("ZnO.param"), &seed_param)?;
+                Ok(())
+            });
 
         workflow.add_task(task)?;
     }
 
     let state_path = std::path::PathBuf::from(".hubbard_u_sweep.workflow.json");
     let mut state = JsonStateStore::new("hubbard_u_sweep", state_path);
-    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
-    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
-
-    workflow.run(&mut state, runner, executor)?;
+    workflow_utils::run_default(&mut workflow, &mut state)?;
     Ok(())
 }
