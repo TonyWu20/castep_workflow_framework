@@ -56,11 +56,11 @@ Step 11: B.5    ARCHITECTURE.md + STATUS.md           (docs last)
 
 Change signature from:
 ```rust
-pub fn downstream_of(&self, start: &[String]) -> Vec<String>
+pub fn downstream_of(&self, start: &[String]) -> HashSet<String>
 ```
 to:
 ```rust
-pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> Vec<String>
+pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> HashSet<String>
 ```
 
 Update internal BFS to use `s.as_ref().to_owned()` where it currently calls `.to_owned()` on `String`. Allows callers to pass `&[&str]` or `&[String]` without pre-allocating owned strings.
@@ -170,6 +170,8 @@ fn build_one_task(config: &SweepConfig, u: f64) -> anyhow::Result<Task> {
 }
 ```
 
+> **Closure lifetime note:** `TaskClosure = Box<dyn Fn(&Path) -> ... + Send + Sync + 'static>`. Inside `build_one_task`, any config fields moved into a closure must be cloned before the `move` capture (e.g., `let seed_name = config.seed_name.clone()`). The function signature `fn build_one_task(config: &SweepConfig, u: f64)` is correct — this mirrors the existing for-loop body pattern.
+
 `fn main()` becomes:
 ```rust
 fn main() -> anyhow::Result<()> {
@@ -210,6 +212,8 @@ if !config.local {
 
 In local mode, skip writing `job.sh` in the setup closure.
 
+**`--local` + `--dry-run` interaction:** `--local` has no effect in `--dry-run` mode. Dry-run exits before any tasks execute, so the mode flag is irrelevant. No special handling needed.
+
 ### D.9: `anyhow::Error::msg` at call site
 
 **File:** `examples/hubbard_u_sweep_slurm/src/main.rs`
@@ -230,6 +234,8 @@ with:
 ## B.3 `run_default()` Convenience Function
 
 **File:** `workflow_utils/src/lib.rs` (or `workflow_utils/src/runner.rs` re-exported from lib.rs)
+
+> **New imports required in `workflow_utils/src/lib.rs`:** `Arc`, `workflow_core::{Workflow, WorkflowSummary, WorkflowError, StateStore, ProcessRunner, HookExecutor}`. These are not currently imported at the lib.rs level.
 
 ```rust
 /// Runs a workflow with the default SystemProcessRunner and ShellHookExecutor.
@@ -289,6 +295,8 @@ pub use crate::{
 };
 pub use workflow_core::prelude::*;
 ```
+
+> **Note:** The explicit `use crate::{...}` list is additive to `workflow_core::prelude::*`. Types like `HookExecutor`, `ProcessRunner`, `WorkflowError`, `Workflow`, etc. are covered by the glob re-export — they do not need to be listed again here.
 
 Add to `workflow_utils/src/lib.rs`:
 ```rust
