@@ -1,6 +1,7 @@
 mod executor;
 mod files;
 mod monitoring;
+pub mod prelude;
 mod queued;
 
 pub use executor::{ExecutionHandle, ExecutionResult, OutputLocation, TaskExecutor, SystemProcessRunner};
