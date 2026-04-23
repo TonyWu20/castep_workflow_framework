@@ -1,215 +1,134 @@
-[meta]
-title = "Phase 5B: Fix Plan v2"
-source_branch = "phase-5b"
-created = "2026-04-23"
-updated = "2026-04-23"
-supersedes = "fix-plan v1 (TASK-1..5 applied)"
+# Fix Plan: phase-5b — Round 2 (v3)
+# Generated: 2026-04-24
+# Issues: 2 Minor defects from spec compliance re-review
 
-[dependencies]
-TASK-1 = []
-TASK-2 = []
-TASK-3 = ["TASK-1"]
-TASK-4 = []
-TASK-5 = ["TASK-4"]
-TASK-6 = ["TASK-5"]
-TASK-7 = []
-
-# ─────────────────────────────────────────────────────────────────
-# TASK-1: Fix approx_constant clippy error — 2.71828 approximates E
-# ─────────────────────────────────────────────────────────────────
 [tasks.TASK-1]
-description = "Change 2.71828 to 42.0 in parse_single_value test to avoid clippy treating it as std::f64::consts::E (approx_constant lint)."
+description = "Fix ARCHITECTURE.md code blocks to match actual API (Task 11 completion: code examples were left inaccurate)"
 type = "replace"
-severity = "blocking"
-acceptance = [
-    "cargo clippy -p hubbard_u_sweep_slurm --all-targets -- -D warnings 2>&1 | grep -qv 'approx_constant'",
-    "cargo test -p hubbard_u_sweep_slurm",
-]
+acceptance = ["cargo check --workspace"]
 
 [[tasks.TASK-1.changes]]
-file = "examples/hubbard_u_sweep_slurm/src/config.rs"
-before = '''
-        let vals = parse_u_values("2.71828").unwrap();
-        assert_eq!(vals, vec![2.71828]);'''
-after = '''
-        let vals = parse_u_values("42.0").unwrap();
-        assert_eq!(vals, vec![42.0]);'''
+file = "ARCHITECTURE.md"
+before = '''/// Task: execution unit with setup/collect closures
+pub struct Task {
+    id: String,
+    dependencies: Vec<String>,
+    execution_mode: ExecutionMode,
+    workdir: Option<PathBuf>,
+    setup: Option<TaskClosure>,
+    collect: Option<TaskClosure>,
+    monitors: Vec<MonitoringHook>,
+}
 
-# ─────────────────────────────────────────────────────────────────
-# TASK-2: Update ARCHITECTURE.md and ARCHITECTURE_STATUS.md
-# ─────────────────────────────────────────────────────────────────
+/// Closure type alias to avoid type_complexity lint
+pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>;'''
+after = '''/// Task: execution unit with setup/collect closures
+pub struct Task {
+    pub id: String,
+    pub dependencies: Vec<String>,
+    pub mode: ExecutionMode,
+    pub workdir: PathBuf,
+    pub setup: Option<TaskClosure>,
+    pub collect: Option<TaskClosure>,
+    pub monitors: Vec<MonitoringHook>,
+}
+
+/// Closure type alias to avoid type_complexity lint
+pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static>;'''
+
+[[tasks.TASK-1.changes]]
+file = "ARCHITECTURE.md"
+before = '''/// State storage trait (I/O boundary abstraction)
+pub trait StateStore {
+    fn load(&mut self) -> Result<(), WorkflowError>;       // crash-recovery (resets Failed/Running → Pending)
+    fn load_raw(&self) -> Result<WorkflowState, WorkflowError>; // read-only, no resets
+    fn save(&mut self) -> Result<(), WorkflowError>;
+    fn get_status(&self, id: &str) -> Option<TaskStatus>;
+    fn set_status(&mut self, id: &str, status: TaskStatus);
+}
+
+pub trait StateStoreExt: StateStore {
+    /// BFS over task_successors graph from given start nodes (Phase 5B: generic S)
+    fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> Vec<String>;
+}
+
+/// JSON-backed state store with atomic writes
+pub struct JsonStateStore {
+    name: String,
+    path: PathBuf,
+    state: Option<WorkflowState>,
+}
+
+impl JsonStateStore {
+    pub fn new(name: impl Into<String>, path: PathBuf) -> Self;
+}'''
+after = '''/// State storage trait (I/O boundary abstraction)
+pub trait StateStore: Send + Sync {
+    fn get_status(&self, id: &str) -> Option<TaskStatus>;
+    fn set_status(&mut self, id: &str, status: TaskStatus);
+    fn all_tasks(&self) -> Vec<(String, TaskStatus)>;
+    fn save(&self) -> Result<(), WorkflowError>;
+}
+
+/// Extension trait providing convenience wrappers (blanket-implemented over StateStore)
+pub trait StateStoreExt: StateStore {
+    fn mark_running(&mut self, id: &str);
+    fn mark_completed(&mut self, id: &str);
+    fn mark_failed(&mut self, id: &str, error: String);
+    // ... other convenience methods
+}
+
+/// JSON-backed state store with atomic writes (write-to-temp + rename)
+pub struct JsonStateStore { /* ... */ }
+
+impl JsonStateStore {
+    pub fn new(name: impl Into<String>, path: PathBuf) -> Self;
+
+    // crash-recovery: resets Failed/Running/SkippedDueToDependencyFailure → Pending
+    pub fn load(&mut self) -> Result<(), WorkflowError>;
+
+    // read-only inspection without crash-recovery resets (used by CLI status/inspect)
+    pub fn load_raw(&self) -> Result<WorkflowState, WorkflowError>;
+}
+
+/// Persisted successor graph for graph-aware retry (Phase 4+)
+pub struct TaskSuccessors { /* ... */ }
+
+impl TaskSuccessors {
+    /// BFS from given start IDs; returns all transitively reachable downstream IDs.
+    /// Starting IDs are NOT included. Accepts &[&str] or &[String] (Phase 5B ergonomics).
+    pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> HashSet<String>;
+}'''
+
 [tasks.TASK-2]
-description = """Update both documentation files to reflect Phases 3-5 completion:
-- ARCHITECTURE.md: document current three-layer architecture (workflow_core, workflow_utils, examples),
-  prelude modules, run_default convenience function, ExecutionMode enum (Direct/Queued),
-  QueuedRunner/SchedulerKind, monitoring hooks (HookExecutor, ShellHookExecutor),
-  DAG-based workflow engine, state store (JsonStateStore), init_default_logging.
-- ARCHITECTURE_STATUS.md: mark Phases 3-5 as complete, update API surface list,
-  note current examples (hubbard_u_sweep, hubbard_u_sweep_slurm), update implementation guidelines.
-Read each file's current content before making changes. This is freeform content authoring."""
-type = "manual"
-severity = "blocking"
-acceptance = [
-    "grep -q 'workflow_core' ARCHITECTURE.md",
-    "grep -q 'workflow_utils' ARCHITECTURE.md",
-    "grep -q 'prelude' ARCHITECTURE.md",
-    "grep -q 'run_default' ARCHITECTURE.md",
-    "grep -qi 'phase.*[345]' ARCHITECTURE_STATUS.md",
-]
-
-# ─────────────────────────────────────────────────────────────────
-# TASK-3: Fix uninlined_format_args in config.rs test module
-# ─────────────────────────────────────────────────────────────────
-[tasks.TASK-3]
-description = "Inline format args on lines 102 and 108 of config.rs: change '\"... {}\", err' to '\"... {err}\"' in assert! messages."
+description = "Add 2 missing parse_u_values test cases specified in plan D.3a: empty string and negative values"
 type = "replace"
-severity = "major"
-depends_on = ["TASK-1"]
-acceptance = [
-    "cargo clippy -p hubbard_u_sweep_slurm --all-targets -- -D warnings 2>&1 | grep -qv 'uninlined_format_args'",
-    "cargo test -p hubbard_u_sweep_slurm",
-]
+acceptance = ["cargo test -p hubbard_u_sweep_slurm"]
 
-[[tasks.TASK-3.changes]]
+[[tasks.TASK-2.changes]]
 file = "examples/hubbard_u_sweep_slurm/src/config.rs"
-before = '''assert!(err.contains("abc"), "error should mention the invalid token: {}", err);'''
-after = '''assert!(err.contains("abc"), "error should mention the invalid token: {err}");'''
+before = '''    #[test]
+    fn parse_empty_token() {
+        let err = parse_u_values("1.0,,2.0").unwrap_err();
+        assert!(err.contains("invalid"), "error should report parse failure: {err}");
+    }
+}'''
+after = '''    #[test]
+    fn parse_empty_token() {
+        let err = parse_u_values("1.0,,2.0").unwrap_err();
+        assert!(err.contains("invalid"), "error should report parse failure: {err}");
+    }
 
-[[tasks.TASK-3.changes]]
-file = "examples/hubbard_u_sweep_slurm/src/config.rs"
-before = '''assert!(err.contains("invalid"), "error should report parse failure: {}", err);'''
-after = '''assert!(err.contains("invalid"), "error should report parse failure: {err}");'''
+    #[test]
+    fn parse_empty_string() {
+        // The whole input is empty (distinct from an empty token in the middle)
+        let err = parse_u_values("").unwrap_err();
+        assert!(!err.is_empty());
+    }
 
-# ─────────────────────────────────────────────────────────────────
-# TASK-4: Fix doc_markdown warning on workflow_core/src/prelude.rs
-# ─────────────────────────────────────────────────────────────────
-[tasks.TASK-4]
-description = "Wrap 'workflow_core' in backticks in the doc comment (line 1) and ensure file ends with trailing newline."
-type = "replace"
-severity = "major"
-acceptance = [
-    "cargo clippy -p workflow_core --all-targets -- -D warnings 2>&1 | grep -qv 'doc_markdown'",
-    "test \"$(tail -c 1 workflow_core/src/prelude.rs | wc -l)\" -eq 1",
-]
-
-[[tasks.TASK-4.changes]]
-file = "workflow_core/src/prelude.rs"
-before = '''//! Convenience re-exports for common workflow_core types.'''
-after = '''//! Convenience re-exports for common `workflow_core` types.'''
-
-[[tasks.TASK-4.changes]]
-file = "workflow_core/src/prelude.rs"
-type = "append"
-before = '''pub use crate::{HookExecutor, ProcessRunner};'''
-after = '''pub use crate::{HookExecutor, ProcessRunner};
-'''
-
-# ─────────────────────────────────────────────────────────────────
-# TASK-5: Adopt prelude imports in both examples
-# ─────────────────────────────────────────────────────────────────
-[tasks.TASK-5]
-description = """Replace individual workflow_core/workflow_utils imports with
-use workflow_utils::prelude::*; in both example binaries.
-Keep crate-specific imports (castep_cell_fmt, castep_cell_io, clap, anyhow).
-For hubbard_u_sweep_slurm, keep std::sync::Arc since SLURM mode needs it for manual wiring."""
-type = "replace"
-severity = "minor"
-depends_on = ["TASK-4"]
-acceptance = [
-    "cargo check -p hubbard_u_sweep",
-    "cargo check -p hubbard_u_sweep_slurm",
-    "cargo clippy --all-targets -- -D warnings 2>&1 | grep -qv 'unused_imports'",
-]
-
-[[tasks.TASK-5.changes]]
-file = "examples/hubbard_u_sweep/src/main.rs"
-before = '''use workflow_core::state::JsonStateStore;
-use workflow_core::task::{ExecutionMode, Task};
-use workflow_core::workflow::Workflow;
-use workflow_core::WorkflowError;
-use workflow_utils::{create_dir, write_file};'''
-after = '''use workflow_utils::prelude::*;'''
-
-[[tasks.TASK-5.changes]]
-file = "examples/hubbard_u_sweep_slurm/src/main.rs"
-before = '''use std::sync::Arc;
-use workflow_core::state::JsonStateStore;
-use workflow_core::task::{ExecutionMode, Task};
-use workflow_core::workflow::Workflow;
-use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
-use workflow_utils::{
-    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
-    SystemProcessRunner, JOB_SCRIPT_NAME,
-};'''
-after = '''use std::sync::Arc;
-use workflow_utils::prelude::*;'''
-
-# ─────────────────────────────────────────────────────────────────
-# TASK-6: Use run_default() in local mode for hubbard_u_sweep_slurm
-# ─────────────────────────────────────────────────────────────────
-[tasks.TASK-6]
-description = """Branch on config.local at the run site: local mode uses
-run_default(&mut workflow, &mut state), SLURM mode keeps manual Arc wiring.
-Both branches print the WorkflowSummary. After TASK-5 prelude adoption,
-run_default, Arc, ProcessRunner, HookExecutor, SystemProcessRunner,
-ShellHookExecutor are all in scope."""
-type = "replace"
-severity = "minor"
-depends_on = ["TASK-5"]
-acceptance = [
-    "cargo check -p hubbard_u_sweep_slurm",
-    "cargo clippy -p hubbard_u_sweep_slurm --all-targets -- -D warnings",
-]
-
-[[tasks.TASK-6.changes]]
-file = "examples/hubbard_u_sweep_slurm/src/main.rs"
-before = '''    let state_path = std::path::PathBuf::from(".hubbard_u_sweep_slurm.workflow.json");
-    let mut state = JsonStateStore::new("hubbard_u_sweep_slurm", state_path);
-    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
-    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
-
-    let summary = workflow.run(&mut state, runner, executor)?;
-    println!(
-        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
-        summary.succeeded.len(),
-        summary.failed.len(),
-        summary.skipped.len(),
-        summary.duration.as_secs_f64(),
-    );
-    Ok(())'''
-after = '''    let state_path = std::path::PathBuf::from(".hubbard_u_sweep_slurm.workflow.json");
-    let mut state = JsonStateStore::new("hubbard_u_sweep_slurm", state_path);
-
-    let summary = if config.local {
-        run_default(&mut workflow, &mut state)?
-    } else {
-        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
-        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
-        workflow.run(&mut state, runner, executor)?
-    };
-
-    println!(
-        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
-        summary.succeeded.len(),
-        summary.failed.len(),
-        summary.skipped.len(),
-        summary.duration.as_secs_f64(),
-    );
-    Ok(())'''
-
-# ─────────────────────────────────────────────────────────────────
-# TASK-7: Inline format arg in workflow_core/src/lib.rs
-# ─────────────────────────────────────────────────────────────────
-[tasks.TASK-7]
-description = "Fix uninlined_format_args: change format!(\"Failed to initialize logging: {}\", e) to format!(\"Failed to initialize logging: {e}\") in init_default_logging."
-type = "replace"
-severity = "minor"
-acceptance = [
-    "cargo clippy -p workflow_core --all-targets -- -D warnings 2>&1 | grep -qv 'uninlined_format_args'",
-    "cargo check -p workflow_core",
-]
-
-[[tasks.TASK-7.changes]]
-file = "workflow_core/src/lib.rs"
-before = '''.map_err(|e| format!("Failed to initialize logging: {}", e).into())'''
-after = '''.map_err(|e| format!("Failed to initialize logging: {e}").into())'''
+    #[test]
+    fn parse_negative_values() {
+        let vals = parse_u_values("-1.0,2.0").unwrap();
+        assert_eq!(vals, vec![-1.0, 2.0]);
+    }
+}'''
