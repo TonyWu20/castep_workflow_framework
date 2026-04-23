@@ -148,3 +148,11 @@
   - `cargo check -p hubbard_u_sweep_slurm`: PASSED
   - `cargo check -p hubbard_u_sweep`: PASSED
 
+### TASK-9: Create prelude modules for workflow_core and workflow_utils, then update both examples to use them
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+  - `cargo check -p workflow_utils`: PASSED
+  - `cargo check -p hubbard_u_sweep_slurm`: PASSED
+  - `cargo check -p hubbard_u_sweep`: PASSED
+
