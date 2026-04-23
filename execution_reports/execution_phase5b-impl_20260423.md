@@ -121,3 +121,8 @@
          Running unittests src/main.rs (target/debug/deps/workflow_cli-3c46d36661226fc3)
     ```
 
+### TASK-5: Fix generate_job_script formatting: replace literal tabs with spaces, use consistent indentation
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p hubbard_u_sweep_slurm`: PASSED
+

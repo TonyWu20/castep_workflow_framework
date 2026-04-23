@@ -2,23 +2,25 @@ use crate::config::SweepConfig;
 
 pub fn generate_job_script(config: &SweepConfig, task_id: &str, seed_name: &str) -> String {
     format!(
-        "#!/usr/bin/env bash\n\
-#SBATCH --job-name=\"{task_id}\"\n\
-#SBATCH --output=slurm_output_%j.txt\n\
-#SBATCH --partition={partition}\n\
-#SBATCH --nodes=1\n\
-#SBATCH --ntasks-per-node={ntasks}\n\
-#SBATCH --cpus-per-task=1\n\
-#SBATCH --mem=30000m\n\
+        "\
+#!/usr/bin/env bash
+#SBATCH --job-name=\"{task_id}\"
+#SBATCH --output=slurm_output_%j.txt
+#SBATCH --partition={partition}
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node={ntasks}
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=30000m
 #SBATCH --nodelist=nixos
-nix develop {nix_flake} --command bash -c \\\n\
-    \"mpirun --mca plm slurm \\\n\
-        -x OMPI_MCA_btl_tcp_if_include={mpi_if} \\\n\
-        -x OMPI_MCA_orte_keep_fqdn_hostnames=true \\\n\
-       --mca pmix s1 \\\n\
-       --mca btl tcp,self \\\n\
-\t--map-by numa --bind-to numa \\\n\
-    castep.mpi {seed_name}\"\n",
+nix develop {nix_flake} --command bash -c \\
+    \"mpirun --mca plm slurm \\
+        -x OMPI_MCA_btl_tcp_if_include={mpi_if} \\
+        -x OMPI_MCA_orte_keep_fqdn_hostnames=true \\
+        --mca pmix s1 \\
+        --mca btl tcp,self \\
+        --map-by numa --bind-to numa \\
+    castep.mpi {seed_name}\"
+",
         task_id = task_id,
         partition = config.partition,
         ntasks = config.ntasks,
