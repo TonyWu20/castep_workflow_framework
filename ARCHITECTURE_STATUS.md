@@ -133,13 +133,23 @@ Layer 1: workflow_core (Foundation)
 Parser Libraries: castep-cell-io, castep-cell-fmt, etc.
 ```
 
+#### Phase 6: Reliability, Multi-Parameter Patterns, and Ergonomics 🚧 (planned 2026-04-25)
+
+- **CollectFailurePolicy** — fix correctness bug: `mark_completed` currently runs *before* collect; collect failures only warn. New: run collect before marking completed; `FailTask` (default) marks task Failed, `WarnOnly` preserves old behavior. Software-agnostic: Layer 3 defines what "success" means, framework defines the policy.
+- **Multi-parameter sweep** — build and validate on HPC cluster: product (`iproduct!`) and pairwise (`zip`) modes, dependent task chains (SCF → DOS per parameter combo). No new framework API — Layer 3 patterns with `itertools`.
+- **`--workdir` / root_dir** — `Workflow::with_root_dir()` resolves relative task workdirs against a configurable root; enables binary invocation from any directory.
+- **`retry` stdin support** — accept task IDs from stdin (`workflow-cli retry state.json -`) for Unix pipeline composition; avoids reimplementing grep with `--match` glob.
+- **Documentation accuracy sweep** — fix 6 deferred doc/test mismatches from Phase 5B.
+
 ## Next Steps
 
-**Phases 1–5 are complete.** The framework is ready for production use on HPC clusters with both direct and SLURM queued execution modes. Future work may include:
+**Phases 1–5 are complete.** Phase 6 is planned. The framework is production-ready for single-parameter CASTEP sweeps on SLURM. Phase 6 extends reliability and validates multi-parameter sweep patterns on real hardware.
 
-- On-cluster SLURM submission validation with real CASTEP jobs
+Future work beyond Phase 6:
+- Typed result collection / convergence patterns (Phase 7)
 - Additional scheduler backends (PBS via `SchedulerKind::Pbs`)
-- TUI/interactive monitoring interface
+- Tier 2 interactive CLI (guided prompts for non-Rust-savvy researchers)
+- TUI/interactive monitoring interface (Tier 3)
 
 ## Key Design Decisions
 
