@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""TASK-1: Add clap `env` feature to workspace Cargo.toml"""
+"""TASK-1: Change TaskSuccessors::downstream_of to accept &[S] where S: AsRef<str> instead of &[String]"""
 import base64, json, subprocess, sys
 
 TASK_ID = "TASK-1"
-STEPS = json.loads('[{"before_b64": "Y2xhcCA9IHsgdmVyc2lvbiA9ICI0IiwgZmVhdHVyZXMgPSBbImRlcml2ZSJdIH0=", "after_b64": "Y2xhcCA9IHsgdmVyc2lvbiA9ICI0IiwgZmVhdHVyZXMgPSBbImRlcml2ZSIsICJlbnYiXSB9", "target": "Cargo.toml", "index": 0}]')
+STEPS = json.loads('[{"before_b64": "ICAgIHB1YiBmbiBkb3duc3RyZWFtX29mKCZzZWxmLCBzdGFydDogJltTdHJpbmddKSAtPiBzdGQ6OmNvbGxlY3Rpb25zOjpIYXNoU2V0PFN0cmluZz4gewogICAgICAgIGxldCBtdXQgdmlzaXRlZCA9IHN0ZDo6Y29sbGVjdGlvbnM6Okhhc2hTZXQ6Om5ldygpOwogICAgICAgIGxldCBtdXQgcXVldWU6IHN0ZDo6Y29sbGVjdGlvbnM6OlZlY0RlcXVlPFN0cmluZz4gPSBzdGFydC5pdGVyKCkuY2xvbmVkKCkuY29sbGVjdCgpOw==", "after_b64": "ICAgIHB1YiBmbiBkb3duc3RyZWFtX29mPFM6IEFzUmVmPHN0cj4+KCZzZWxmLCBzdGFydDogJltTXSkgLT4gc3RkOjpjb2xsZWN0aW9uczo6SGFzaFNldDxTdHJpbmc+IHsKICAgICAgICBsZXQgbXV0IHZpc2l0ZWQgPSBzdGQ6OmNvbGxlY3Rpb25zOjpIYXNoU2V0OjpuZXcoKTsKICAgICAgICBsZXQgbXV0IHF1ZXVlOiBzdGQ6OmNvbGxlY3Rpb25zOjpWZWNEZXF1ZTxTdHJpbmc+ID0KICAgICAgICAgICAgc3RhcnQuaXRlcigpLm1hcCh8c3wgcy5hc19yZWYoKS50b19vd25lZCgpKS5jb2xsZWN0KCk7", "target": "workflow_core/src/state.rs", "index": 0}]')
 
 for step in STEPS:
     before = base64.b64decode(step["before_b64"]).decode()

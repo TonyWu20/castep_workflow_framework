@@ -1,0 +1,1404 @@
+[meta]
+title = "Phase 5B: API Ergonomics & Deferred Items"
+source_branch = "phase-5b"
+created = "2026-04-23"
+
+[dependencies]
+# TASK-2 = []   (independent)
+# TASK-1 = []   (independent)
+TASK-3 = []
+TASK-4 = ["TASK-3"]
+TASK-5 = []
+TASK-6 = ["TASK-5"]
+TASK-7 = ["TASK-2", "TASK-3"]
+TASK-8 = ["TASK-7"]
+TASK-9 = ["TASK-8"]
+TASK-10 = ["TASK-9"]
+TASK-11 = ["TASK-10"]
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-1: downstream_of generic signature
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-1]
+description = "Change TaskSuccessors::downstream_of to accept &[S] where S: AsRef<str> instead of &[String]"
+type = "replace"
+acceptance = [
+    "cargo check -p workflow_core",
+    "cargo test -p workflow_core",
+    "cargo check -p workflow-cli",
+    "cargo test -p workflow-cli",
+]
+
+[[tasks.TASK-1.changes]]
+file = "workflow_core/src/state.rs"
+before = '''
+    pub fn downstream_of(&self, start: &[String]) -> std::collections::HashSet<String> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+'''
+after = '''
+    pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> std::collections::HashSet<String> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<String> =
+            start.iter().map(|s| s.as_ref().to_owned()).collect();
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-2: ExecutionMode::direct() constructor + Debug derive
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-2]
+description = "Add ExecutionMode::direct() convenience constructor and derive Debug on ExecutionMode"
+type = "replace"
+acceptance = [
+    "cargo check -p workflow_core",
+    "cargo test -p workflow_core",
+]
+
+[[tasks.TASK-2.changes]]
+file = "workflow_core/src/task.rs"
+before = '''
+#[derive(Clone)]
+pub enum ExecutionMode {
+    Direct {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        timeout: Option<Duration>,
+    },
+    /// Queued execution via an HPC scheduler (SLURM/PBS).
+    /// The actual submit/poll/cancel commands are owned by the `QueuedSubmitter`
+    /// implementation set via `Workflow::with_queued_submitter()`.
+    Queued,
+}
+'''
+after = '''
+#[derive(Debug, Clone)]
+pub enum ExecutionMode {
+    Direct {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        timeout: Option<Duration>,
+    },
+    /// Queued execution via an HPC scheduler (SLURM/PBS).
+    /// The actual submit/poll/cancel commands are owned by the `QueuedSubmitter`
+    /// implementation set via `Workflow::with_queued_submitter()`.
+    Queued,
+}
+
+impl ExecutionMode {
+    /// Convenience constructor for `Direct` mode with no env vars or timeout.
+    ///
+    /// # Examples
+    /// ```
+    /// # use workflow_core::task::ExecutionMode;
+    /// let mode = ExecutionMode::direct("castep", &["ZnO"]);
+    /// ```
+    pub fn direct(command: impl Into<String>, args: &[&str]) -> Self {
+        Self::Direct {
+            command: command.into(),
+            args: args.iter().map(|s| (*s).to_owned()).collect(),
+            env: HashMap::new(),
+            timeout: None,
+        }
+    }
+}
+'''
+
+# Update tests to use the new constructor where appropriate
+[[tasks.TASK-2.changes]]
+file = "workflow_core/src/task.rs"
+before = '''
+    #[test]
+    fn task_builder() {
+        let t = Task::new(
+            "my_task",
+            ExecutionMode::Direct {
+                command: "echo".into(),
+                args: vec!["test".into()],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        );
+        assert_eq!(t.id, "my_task");
+        assert!(t.dependencies.is_empty());
+        assert!(t.monitors.is_empty());
+    }
+'''
+after = '''
+    #[test]
+    fn task_builder() {
+        let t = Task::new("my_task", ExecutionMode::direct("echo", &["test"]));
+        assert_eq!(t.id, "my_task");
+        assert!(t.dependencies.is_empty());
+        assert!(t.monitors.is_empty());
+    }
+
+    #[test]
+    fn direct_constructor_fields() {
+        let mode = ExecutionMode::direct("castep", &["ZnO", "--flag"]);
+        match mode {
+            ExecutionMode::Direct { command, args, env, timeout } => {
+                assert_eq!(command, "castep");
+                assert_eq!(args, vec!["ZnO".to_string(), "--flag".to_string()]);
+                assert!(env.is_empty());
+                assert!(timeout.is_none());
+            }
+            _ => panic!("expected Direct variant"),
+        }
+    }
+
+    #[test]
+    fn execution_mode_debug() {
+        let mode = ExecutionMode::direct("echo", &[]);
+        let dbg = format!("{:?}", mode);
+        assert!(dbg.contains("Direct"));
+    }
+'''
+
+[[tasks.TASK-2.changes]]
+file = "workflow_core/src/task.rs"
+before = '''
+    #[test]
+    fn depends_on_chaining() {
+        let t = Task::new(
+            "t",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        )
+        .depends_on("a")
+        .depends_on("b");
+        assert_eq!(t.dependencies, vec!["a", "b"]);
+    }
+'''
+after = '''
+    #[test]
+    fn depends_on_chaining() {
+        let t = Task::new("t", ExecutionMode::direct("true", &[]))
+            .depends_on("a")
+            .depends_on("b");
+        assert_eq!(t.dependencies, vec!["a", "b"]);
+    }
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-3: Extract parse_u_values free function
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-3]
+description = "Extract a free function parse_u_values(s: &str) from SweepConfig::parse_u_values, fix double trim, and have the method delegate to it"
+type = "replace"
+acceptance = [
+    "cargo check -p hubbard_u_sweep_slurm",
+]
+
+[[tasks.TASK-3.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/config.rs"
+before = '''
+impl SweepConfig {
+    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
+        self.u_values
+            .split(',')
+            .map(|s| {
+                s.trim()
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid U value '{}': {}", s.trim(), e))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    }
+}
+'''
+after = '''
+/// Parses a comma-separated string of f64 values.
+///
+/// Each segment is trimmed before parsing.
+/// Returns an error string identifying the offending token on failure.
+pub fn parse_u_values(s: &str) -> Result<Vec<f64>, String> {
+    s.split(',')
+        .map(|segment| {
+            let trimmed = segment.trim();
+            trimmed
+                .parse::<f64>()
+                .map_err(|e| format!("invalid U value '{}': {}", trimmed, e))
+        })
+        .collect::<Result<Vec<_>, _>>()
+}
+
+impl SweepConfig {
+    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
+        parse_u_values(&self.u_values)
+    }
+}
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-4: Unit tests for parse_u_values
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-4]
+description = "Add unit tests for the free function parse_u_values covering happy path, whitespace, empty token, and invalid input"
+type = "replace"
+acceptance = [
+    "cargo test -p hubbard_u_sweep_slurm",
+]
+
+# TASK-4 depends on TASK-3, so the before block must match TASK-3's after.
+# The before here captures the full file state after TASK-3 and TASK-7 have added
+# their changes. We use the impl block that TASK-3 produces (with the delegation).
+# The test module is appended after the closing brace of the impl block.
+[[tasks.TASK-4.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/config.rs"
+before = '''
+    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
+        parse_u_values(&self.u_values)
+    }
+}
+'''
+after = '''
+    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
+        parse_u_values(&self.u_values)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_basic_values() {
+        let vals = parse_u_values("0.0,1.0,2.0").unwrap();
+        assert_eq!(vals, vec![0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn parse_with_whitespace() {
+        let vals = parse_u_values("  0.0 , 1.0 , 2.0  ").unwrap();
+        assert_eq!(vals, vec![0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn parse_single_value() {
+        let vals = parse_u_values("3.14").unwrap();
+        assert_eq!(vals, vec![3.14]);
+    }
+
+    #[test]
+    fn parse_invalid_token() {
+        let err = parse_u_values("1.0,abc,2.0").unwrap_err();
+        assert!(err.contains("abc"), "error should mention the invalid token: {}", err);
+    }
+
+    #[test]
+    fn parse_empty_token() {
+        let err = parse_u_values("1.0,,2.0").unwrap_err();
+        assert!(err.contains("invalid"), "error should report parse failure: {}", err);
+    }
+}
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-5: generate_job_script formatting cleanup
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-5]
+description = "Fix generate_job_script formatting: replace literal tabs with spaces, use consistent indentation"
+type = "replace"
+acceptance = [
+    "cargo check -p hubbard_u_sweep_slurm",
+]
+
+[[tasks.TASK-5.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/job_script.rs"
+before = '''
+use crate::config::SweepConfig;
+
+pub fn generate_job_script(config: &SweepConfig, task_id: &str, seed_name: &str) -> String {
+    format!(
+        "#!/usr/bin/env bash\n\
+#SBATCH --job-name=\"{task_id}\"\n\
+#SBATCH --output=slurm_output_%j.txt\n\
+#SBATCH --partition={partition}\n\
+#SBATCH --nodes=1\n\
+#SBATCH --ntasks-per-node={ntasks}\n\
+#SBATCH --cpus-per-task=1\n\
+#SBATCH --mem=30000m\n\
+#SBATCH --nodelist=nixos
+nix develop {nix_flake} --command bash -c \\\n\
+    \"mpirun --mca plm slurm \\\n\
+        -x OMPI_MCA_btl_tcp_if_include={mpi_if} \\\n\
+        -x OMPI_MCA_orte_keep_fqdn_hostnames=true \\\n\
+       --mca pmix s1 \\\n\
+       --mca btl tcp,self \\\n\
+\t--map-by numa --bind-to numa \\\n\
+    castep.mpi {seed_name}\"\n",
+        task_id = task_id,
+        partition = config.partition,
+        ntasks = config.ntasks,
+        nix_flake = config.nix_flake,
+        mpi_if = config.mpi_if,
+    )
+}
+'''
+after = '''
+use crate::config::SweepConfig;
+
+pub fn generate_job_script(config: &SweepConfig, task_id: &str, seed_name: &str) -> String {
+    format!(
+        "\
+#!/usr/bin/env bash
+#SBATCH --job-name=\"{task_id}\"
+#SBATCH --output=slurm_output_%j.txt
+#SBATCH --partition={partition}
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node={ntasks}
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=30000m
+#SBATCH --nodelist=nixos
+nix develop {nix_flake} --command bash -c \\
+    \"mpirun --mca plm slurm \\
+        -x OMPI_MCA_btl_tcp_if_include={mpi_if} \\
+        -x OMPI_MCA_orte_keep_fqdn_hostnames=true \\
+        --mca pmix s1 \\
+        --mca btl tcp,self \\
+        --map-by numa --bind-to numa \\
+    castep.mpi {seed_name}\"
+",
+        task_id = task_id,
+        partition = config.partition,
+        ntasks = config.ntasks,
+        nix_flake = config.nix_flake,
+        mpi_if = config.mpi_if,
+    )
+}
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-6: Unit tests for generate_job_script
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-6]
+description = "Add unit tests for generate_job_script verifying SBATCH directives, seed name substitution, and absence of literal tabs"
+type = "replace"
+acceptance = [
+    "cargo test -p hubbard_u_sweep_slurm",
+]
+
+[[tasks.TASK-6.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/job_script.rs"
+before = '''
+        task_id = task_id,
+        partition = config.partition,
+        ntasks = config.ntasks,
+        nix_flake = config.nix_flake,
+        mpi_if = config.mpi_if,
+    )
+}
+'''
+after = '''
+        task_id = task_id,
+        partition = config.partition,
+        ntasks = config.ntasks,
+        nix_flake = config.nix_flake,
+        mpi_if = config.mpi_if,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::SweepConfig;
+    use clap::Parser;
+
+    fn default_config() -> SweepConfig {
+        SweepConfig::parse_from(["test"])
+    }
+
+    #[test]
+    fn contains_sbatch_directives() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U1.0", "ZnO");
+        assert!(script.contains("#SBATCH --job-name=\"scf_U1.0\""));
+        assert!(script.contains("#SBATCH --partition=debug"));
+        assert!(script.contains("#SBATCH --ntasks-per-node=16"));
+        assert!(script.contains("#SBATCH --mem=30000m"));
+    }
+
+    #[test]
+    fn contains_seed_name() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U0.0", "ZnO");
+        assert!(script.contains("castep.mpi ZnO"));
+    }
+
+    #[test]
+    fn no_literal_tabs() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U0.0", "ZnO");
+        assert!(!script.contains('\t'), "job script should not contain literal tab characters");
+    }
+
+    #[test]
+    fn starts_with_shebang() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U0.0", "ZnO");
+        assert!(script.starts_with("#!/usr/bin/env bash"));
+    }
+
+    #[test]
+    fn contains_nix_develop() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U0.0", "ZnO");
+        assert!(script.contains("nix develop"));
+        assert!(script.contains(&config.nix_flake));
+    }
+
+    #[test]
+    fn contains_mpi_interface() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U0.0", "ZnO");
+        assert!(script.contains(&format!("OMPI_MCA_btl_tcp_if_include={}", config.mpi_if)));
+    }
+}
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-7: main.rs restructuring (build_one_task, build_sweep_tasks,
+#         --local flag, castep_command field, anyhow fix)
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-7]
+description = "Restructure hubbard_u_sweep_slurm/main.rs: extract build_one_task + build_sweep_tasks functions, add --local flag + castep_command to SweepConfig, use iterator chain, fix anyhow conversion"
+type = "replace"
+acceptance = [
+    "cargo check -p hubbard_u_sweep_slurm",
+]
+
+# 7a: Add castep_command and local fields to SweepConfig
+[[tasks.TASK-7.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/config.rs"
+before = '''
+    /// Dry-run mode: print topological order and exit without submitting
+    #[arg(long)]
+    pub dry_run: bool,
+}
+'''
+after = '''
+    /// Dry-run mode: print topological order and exit without submitting
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Run tasks locally via direct process execution instead of SLURM
+    #[arg(long)]
+    pub local: bool,
+
+    /// CASTEP binary name or path (used in --local mode)
+    #[arg(long, default_value = "castep")]
+    pub castep_command: String,
+}
+'''
+
+# 7b: Rewrite main.rs with extracted functions and --local support
+[[tasks.TASK-7.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+mod config;
+mod job_script;
+
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use clap::Parser;
+use std::sync::Arc;
+use workflow_core::state::JsonStateStore;
+use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::workflow::Workflow;
+use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
+use workflow_utils::{
+    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
+    SystemProcessRunner, JOB_SCRIPT_NAME,
+};
+
+use config::SweepConfig;
+use job_script::generate_job_script;
+
+fn main() -> Result<()> {
+    workflow_core::init_default_logging().ok();
+    let config = SweepConfig::parse();
+    let u_values = config.parse_u_values().map_err(|e| anyhow::anyhow!(e))?;
+
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+    let seed_name = config.seed_name.clone();
+
+    let mut workflow = Workflow::new("hubbard_u_sweep_slurm")
+        .with_max_parallel(config.max_parallel)?
+        .with_log_dir("logs")
+        .with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));
+
+    for u in &u_values {
+        let u = *u;
+        let task_id = format!("scf_U{:.1}", u);
+        let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+        let seed_cell = seed_cell.to_owned();
+        let seed_param = seed_param.to_owned();
+        let element = config.element.clone();
+        let orbital = config.orbital;
+        let seed_name_setup = seed_name.clone();
+        let seed_name_collect = seed_name.clone();
+        let job_script = generate_job_script(&config, &task_id, &seed_name);
+
+        let task = Task::new(&task_id, ExecutionMode::Queued)
+            .workdir(workdir.clone())
+            .setup(move |workdir| -> Result<(), WorkflowError> {
+                create_dir(workdir)?;
+
+                // Parse seed cell and inject HubbardU
+                let mut cell_doc: CellDocument =
+                    parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+                let orbital_u = match orbital {
+                    'd' => OrbitalU::D(u),
+                    'f' => OrbitalU::F(u),
+                    c => {
+                        return Err(WorkflowError::InvalidConfig(format!(
+                            "unsupported orbital '{}'",
+                            c
+                        )))
+                    }
+                };
+                let atom_u = AtomHubbardU::builder()
+                    .species(Species::Symbol(element.clone()))
+                    .orbitals(vec![orbital_u])
+                    .build();
+                let hubbard_u = HubbardU::builder()
+                    .unit(HubbardUUnit::ElectronVolt)
+                    .atom_u_values(vec![atom_u])
+                    .build();
+                cell_doc.hubbard_u = Some(hubbard_u);
+
+                let cell_text = to_string_many_spaced(&cell_doc.to_cell_file());
+                write_file(
+                    workdir.join(format!("{}.cell", seed_name_setup)),
+                    &cell_text,
+                )?;
+                write_file(
+                    workdir.join(format!("{}.param", seed_name_setup)),
+                    &seed_param,
+                )?;
+                write_file(workdir.join(JOB_SCRIPT_NAME), &job_script)?;
+                Ok(())
+            })
+            .collect(move |workdir| -> Result<(), WorkflowError> {
+                // Verify CASTEP completed successfully.
+                // Note: WorkflowError::InvalidConfig is reused here because no
+                // CollectFailed variant exists yet. Migrate when Phase 5B adds one.
+                let castep_out = workdir.join(format!("{}.castep", seed_name_collect));
+                if !castep_out.exists() {
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "missing output: {}",
+                        castep_out.display()
+                    )));
+                }
+                let content = read_file(&castep_out)?;
+                if !content.contains("Total time") {
+                    return Err(WorkflowError::InvalidConfig(
+                        "CASTEP output appears incomplete (no 'Total time' marker)".into(),
+                    ));
+                }
+                Ok(())
+            });
+
+        workflow.add_task(task)?;
+    }
+
+    // Dry-run mode: print topological order and exit
+    if config.dry_run {
+        let order = workflow.dry_run()?;
+        println!("Dry-run topological order:");
+        for task_id in &order {
+            println!("  {}", task_id);
+        }
+        return Ok(());
+    }
+
+    let state_path = std::path::PathBuf::from(".hubbard_u_sweep_slurm.workflow.json");
+    let mut state = JsonStateStore::new("hubbard_u_sweep_slurm", state_path);
+    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+
+    let summary = workflow.run(&mut state, runner, executor)?;
+    println!(
+        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
+        summary.succeeded.len(),
+        summary.failed.len(),
+        summary.skipped.len(),
+        summary.duration.as_secs_f64(),
+    );
+    Ok(())
+}
+'''
+after = '''
+mod config;
+mod job_script;
+
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use clap::Parser;
+use std::sync::Arc;
+use workflow_core::state::JsonStateStore;
+use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::workflow::Workflow;
+use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
+use workflow_utils::{
+    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
+    SystemProcessRunner, JOB_SCRIPT_NAME,
+};
+
+use config::{parse_u_values, SweepConfig};
+use job_script::generate_job_script;
+
+/// Build a single Task for the given Hubbard U value.
+fn build_one_task(
+    config: &SweepConfig,
+    u: f64,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Task, WorkflowError> {
+    let task_id = format!("scf_U{:.1}", u);
+    let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+    let seed_cell = seed_cell.to_owned();
+    let seed_param = seed_param.to_owned();
+    let element = config.element.clone();
+    let orbital = config.orbital;
+    let seed_name_setup = config.seed_name.clone();
+    let seed_name_collect = config.seed_name.clone();
+    let is_local = config.local;
+
+    // Only generate job script for SLURM mode
+    let job_script = if !is_local {
+        Some(generate_job_script(config, &task_id, &config.seed_name))
+    } else {
+        None
+    };
+
+    let mode = if is_local {
+        ExecutionMode::direct(&config.castep_command, &[&config.seed_name])
+    } else {
+        ExecutionMode::Queued
+    };
+
+    let task = Task::new(&task_id, mode)
+        .workdir(workdir)
+        .setup(move |workdir| -> Result<(), WorkflowError> {
+            create_dir(workdir)?;
+
+            // Parse seed cell and inject HubbardU
+            let mut cell_doc: CellDocument =
+                parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+            let orbital_u = match orbital {
+                'd' => OrbitalU::D(u),
+                'f' => OrbitalU::F(u),
+                c => {
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "unsupported orbital '{}'",
+                        c
+                    )))
+                }
+            };
+            let atom_u = AtomHubbardU::builder()
+                .species(Species::Symbol(element.clone()))
+                .orbitals(vec![orbital_u])
+                .build();
+            let hubbard_u = HubbardU::builder()
+                .unit(HubbardUUnit::ElectronVolt)
+                .atom_u_values(vec![atom_u])
+                .build();
+            cell_doc.hubbard_u = Some(hubbard_u);
+
+            let cell_text = to_string_many_spaced(&cell_doc.to_cell_file());
+            write_file(
+                workdir.join(format!("{}.cell", seed_name_setup)),
+                &cell_text,
+            )?;
+            write_file(
+                workdir.join(format!("{}.param", seed_name_setup)),
+                &seed_param,
+            )?;
+            // Only write job script for SLURM mode
+            if let Some(ref script) = job_script {
+                write_file(workdir.join(JOB_SCRIPT_NAME), script)?;
+            }
+            Ok(())
+        })
+        .collect(move |workdir| -> Result<(), WorkflowError> {
+            let castep_out = workdir.join(format!("{}.castep", seed_name_collect));
+            if !castep_out.exists() {
+                return Err(WorkflowError::InvalidConfig(format!(
+                    "missing output: {}",
+                    castep_out.display()
+                )));
+            }
+            let content = read_file(&castep_out)?;
+            if !content.contains("Total time") {
+                return Err(WorkflowError::InvalidConfig(
+                    "CASTEP output appears incomplete (no 'Total time' marker)".into(),
+                ));
+            }
+            Ok(())
+        });
+
+    Ok(task)
+}
+
+/// Build all sweep tasks from the config.
+fn build_sweep_tasks(config: &SweepConfig) -> Result<Vec<Task>, anyhow::Error> {
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+    let u_values = parse_u_values(&config.u_values).map_err(anyhow::Error::msg)?;
+
+    u_values
+        .into_iter()
+        .map(|u| build_one_task(config, u, seed_cell, seed_param).map_err(Into::into))
+        .collect()
+}
+
+fn main() -> Result<()> {
+    workflow_core::init_default_logging().ok();
+    let config = SweepConfig::parse();
+
+    let tasks = build_sweep_tasks(&config)?;
+
+    let mut workflow = Workflow::new("hubbard_u_sweep_slurm")
+        .with_max_parallel(config.max_parallel)?
+        .with_log_dir("logs");
+
+    if !config.local {
+        workflow = workflow.with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));
+    }
+
+    for task in tasks {
+        workflow.add_task(task)?;
+    }
+
+    // Dry-run mode: print topological order and exit
+    if config.dry_run {
+        let order = workflow.dry_run()?;
+        println!("Dry-run topological order:");
+        for task_id in &order {
+            println!("  {}", task_id);
+        }
+        return Ok(());
+    }
+
+    let state_path = std::path::PathBuf::from(".hubbard_u_sweep_slurm.workflow.json");
+    let mut state = JsonStateStore::new("hubbard_u_sweep_slurm", state_path);
+    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+
+    let summary = workflow.run(&mut state, runner, executor)?;
+    println!(
+        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
+        summary.succeeded.len(),
+        summary.failed.len(),
+        summary.skipped.len(),
+        summary.duration.as_secs_f64(),
+    );
+    Ok(())
+}
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-8: run_default() helper + update both examples
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-8]
+description = "Add run_default() convenience function to workflow_utils and update both example binaries to use it"
+type = "replace"
+acceptance = [
+    "cargo check -p workflow_utils",
+    "cargo check -p hubbard_u_sweep_slurm",
+    "cargo check -p hubbard_u_sweep",
+]
+
+# 8a: Add run_default to workflow_utils/src/lib.rs
+[[tasks.TASK-8.changes]]
+file = "workflow_utils/src/lib.rs"
+before = '''
+mod executor;
+mod files;
+mod monitoring;
+mod queued;
+
+pub use executor::{ExecutionHandle, ExecutionResult, OutputLocation, TaskExecutor, SystemProcessRunner};
+pub use files::{copy_file, create_dir, exists, read_file, remove_dir, write_file};
+// Re-export hook types from workflow_core for backward compatibility
+pub use monitoring::ShellHookExecutor;
+pub use queued::{QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME};
+pub use workflow_core::{HookContext, HookResult, HookTrigger, MonitoringHook};
+'''
+after = '''
+mod executor;
+mod files;
+mod monitoring;
+mod queued;
+
+pub use executor::{ExecutionHandle, ExecutionResult, OutputLocation, TaskExecutor, SystemProcessRunner};
+pub use files::{copy_file, create_dir, exists, read_file, remove_dir, write_file};
+// Re-export hook types from workflow_core for backward compatibility
+pub use monitoring::ShellHookExecutor;
+pub use queued::{QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME};
+pub use workflow_core::{HookContext, HookResult, HookTrigger, MonitoringHook};
+
+use std::sync::Arc;
+use workflow_core::state::StateStore;
+use workflow_core::workflow::{Workflow, WorkflowSummary};
+use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
+
+/// Runs a workflow with the default `SystemProcessRunner` and `ShellHookExecutor`.
+///
+/// Eliminates the repeated `Arc` wiring boilerplate in every binary that uses
+/// direct (non-queued) process execution.
+///
+/// # Example
+/// ```ignore
+/// let mut workflow = Workflow::new("my_workflow");
+/// // ... add tasks ...
+/// let mut state = JsonStateStore::new("my_workflow", path);
+/// let summary = workflow_utils::run_default(&mut workflow, &mut state)?;
+/// ```
+pub fn run_default(
+    workflow: &mut Workflow,
+    state: &mut dyn StateStore,
+) -> Result<WorkflowSummary, WorkflowError> {
+    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+    let hook_executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+    workflow.run(state, runner, hook_executor)
+}
+'''
+
+# 8b: Update hubbard_u_sweep example to use run_default
+[[tasks.TASK-8.changes]]
+file = "examples/hubbard_u_sweep/src/main.rs"
+before = '''
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use std::collections::HashMap;
+use std::sync::Arc;
+use workflow_core::state::JsonStateStore;
+use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::workflow::Workflow;
+use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
+use workflow_utils::{create_dir, write_file, ShellHookExecutor, SystemProcessRunner};
+
+fn main() -> Result<()> {
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+
+    let mut workflow = Workflow::new("hubbard_u_sweep").with_max_parallel(4)?;
+
+    // Loop through U values: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+    for u in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
+        let task_id = format!("scf_U{:.1}", u);
+        let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+        let seed_cell = seed_cell.to_owned();
+        let seed_param = seed_param.to_owned();
+
+        let task = Task::new(
+            &task_id,
+            ExecutionMode::Direct {
+                command: "castep".into(),
+                args: vec!["ZnO".into()],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        )
+        .workdir(workdir.clone())
+        .setup(move |workdir| -> Result<(), WorkflowError> {
+            create_dir(workdir.to_str().unwrap())?;
+
+            let mut cell_doc: CellDocument =
+                parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+            let atom_u = AtomHubbardU::builder()
+                .species(Species::Symbol("Zn".to_string()))
+                .orbitals(vec![OrbitalU::D(u)])
+                .build();
+            let hubbard_u = HubbardU::builder()
+                .unit(HubbardUUnit::ElectronVolt)
+                .atom_u_values(vec![atom_u])
+                .build();
+            cell_doc.hubbard_u = Some(hubbard_u);
+
+            let output = to_string_many_spaced(&cell_doc.to_cell_file());
+            write_file(format!("{}/ZnO.cell", workdir.display()), &output)
+                .map_err(|e| WorkflowError::Io(std::io::Error::other(e.to_string())))?;
+            write_file(format!("{}/ZnO.param", workdir.display()), &seed_param)
+                .map_err(|e| WorkflowError::Io(std::io::Error::other(e.to_string())))?;
+            Ok(())
+        });
+
+        workflow.add_task(task)?;
+    }
+
+    let state_path = std::path::PathBuf::from(".hubbard_u_sweep.workflow.json");
+    let mut state = JsonStateStore::new("hubbard_u_sweep", state_path);
+    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+
+    workflow.run(&mut state, runner, executor)?;
+    Ok(())
+}
+'''
+after = '''
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use workflow_core::state::JsonStateStore;
+use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::workflow::Workflow;
+use workflow_core::WorkflowError;
+use workflow_utils::{create_dir, write_file};
+
+fn main() -> Result<()> {
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+
+    let mut workflow = Workflow::new("hubbard_u_sweep").with_max_parallel(4)?;
+
+    // Loop through U values: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+    for u in [0.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0] {
+        let task_id = format!("scf_U{:.1}", u);
+        let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+        let seed_cell = seed_cell.to_owned();
+        let seed_param = seed_param.to_owned();
+
+        let task = Task::new(&task_id, ExecutionMode::direct("castep", &["ZnO"]))
+            .workdir(workdir)
+            .setup(move |workdir| -> Result<(), WorkflowError> {
+                create_dir(workdir)?;
+
+                let mut cell_doc: CellDocument =
+                    parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+                let atom_u = AtomHubbardU::builder()
+                    .species(Species::Symbol("Zn".to_string()))
+                    .orbitals(vec![OrbitalU::D(u)])
+                    .build();
+                let hubbard_u = HubbardU::builder()
+                    .unit(HubbardUUnit::ElectronVolt)
+                    .atom_u_values(vec![atom_u])
+                    .build();
+                cell_doc.hubbard_u = Some(hubbard_u);
+
+                let output = to_string_many_spaced(&cell_doc.to_cell_file());
+                write_file(workdir.join("ZnO.cell"), &output)?;
+                write_file(workdir.join("ZnO.param"), &seed_param)?;
+                Ok(())
+            });
+
+        workflow.add_task(task)?;
+    }
+
+    let state_path = std::path::PathBuf::from(".hubbard_u_sweep.workflow.json");
+    let mut state = JsonStateStore::new("hubbard_u_sweep", state_path);
+    workflow_utils::run_default(&mut workflow, &mut state)?;
+    Ok(())
+}
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-9: Prelude modules for workflow_core and workflow_utils
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-9]
+description = "Create prelude modules for workflow_core and workflow_utils, then update both examples to use them"
+type = "create"
+acceptance = [
+    "cargo check -p workflow_core",
+    "cargo check -p workflow_utils",
+    "cargo check -p hubbard_u_sweep_slurm",
+    "cargo check -p hubbard_u_sweep",
+]
+
+# 9a: Create workflow_core/src/prelude.rs
+[[tasks.TASK-9.changes]]
+file = "workflow_core/src/prelude.rs"
+before = ''
+after = '''
+//! Convenience re-exports for common workflow_core types.
+//!
+//! ```
+//! use workflow_core::prelude::*;
+//! ```
+
+pub use crate::error::WorkflowError;
+pub use crate::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+pub use crate::task::{ExecutionMode, Task};
+pub use crate::workflow::{Workflow, WorkflowSummary};
+pub use crate::{HookExecutor, ProcessRunner};
+'''
+
+# 9b: Add prelude module to workflow_core/src/lib.rs
+[[tasks.TASK-9.changes]]
+file = "workflow_core/src/lib.rs"
+before = '''
+pub mod dag;
+pub mod error;
+mod monitoring;
+pub mod process;
+pub mod state;
+pub mod task;
+pub mod workflow;
+'''
+after = '''
+pub mod dag;
+pub mod error;
+mod monitoring;
+pub mod prelude;
+pub mod process;
+pub mod state;
+pub mod task;
+pub mod workflow;
+'''
+
+# 9c: Create workflow_utils/src/prelude.rs
+[[tasks.TASK-9.changes]]
+file = "workflow_utils/src/prelude.rs"
+before = ''
+after = '''
+//! Convenience re-exports for common types from both workflow_core and workflow_utils.
+//!
+//! ```
+//! use workflow_utils::prelude::*;
+//! ```
+
+// Re-export everything from workflow_core::prelude
+pub use workflow_core::prelude::*;
+
+// workflow_utils types
+pub use crate::{
+    create_dir, read_file, write_file,
+    run_default,
+    ShellHookExecutor, SystemProcessRunner,
+    QueuedRunner, SchedulerKind, JOB_SCRIPT_NAME,
+};
+'''
+
+# 9d: Add prelude module to workflow_utils/src/lib.rs
+[[tasks.TASK-9.changes]]
+file = "workflow_utils/src/lib.rs"
+before = '''
+mod executor;
+mod files;
+mod monitoring;
+mod queued;
+'''
+after = '''
+mod executor;
+mod files;
+mod monitoring;
+pub mod prelude;
+mod queued;
+'''
+
+# 9e: Update hubbard_u_sweep_slurm/main.rs imports to use prelude
+# NOTE: This before block matches TASK-7's after content since TASK-9 depends on TASK-8 -> TASK-7.
+[[tasks.TASK-9.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use clap::Parser;
+use std::sync::Arc;
+use workflow_core::state::JsonStateStore;
+use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::workflow::Workflow;
+use workflow_core::{HookExecutor, ProcessRunner, WorkflowError};
+use workflow_utils::{
+    create_dir, read_file, write_file, QueuedRunner, SchedulerKind, ShellHookExecutor,
+    SystemProcessRunner, JOB_SCRIPT_NAME,
+};
+
+use config::{parse_u_values, SweepConfig};
+use job_script::generate_job_script;
+'''
+after = '''
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use clap::Parser;
+use std::sync::Arc;
+use workflow_utils::prelude::*;
+
+use config::{parse_u_values, SweepConfig};
+use job_script::generate_job_script;
+'''
+
+# 9f: Update hubbard_u_sweep/main.rs imports to use prelude
+# NOTE: This before block matches TASK-8's after content since TASK-9 depends on TASK-8.
+[[tasks.TASK-9.changes]]
+file = "examples/hubbard_u_sweep/src/main.rs"
+before = '''
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use workflow_core::state::JsonStateStore;
+use workflow_core::task::{ExecutionMode, Task};
+use workflow_core::workflow::Workflow;
+use workflow_core::WorkflowError;
+use workflow_utils::{create_dir, write_file};
+'''
+after = '''
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::CellDocument;
+use workflow_utils::prelude::*;
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-10: Pedantic clippy cleanup in touched files only
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-10]
+description = "Fix uninlined_format_args pedantic clippy warnings in touched files only. Run clippy per crate, inline format arguments (e.g. format!(\"{}\", x) -> format!(\"{x}\")), skip needless_pass_by_value on Workflow::run(). Scope: config.rs, job_script.rs, main.rs in hubbard_u_sweep_slurm; main.rs in hubbard_u_sweep; state.rs, task.rs in workflow_core."
+type = "replace"
+acceptance = [
+    "cargo clippy -p workflow_core -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+    "cargo clippy -p hubbard_u_sweep_slurm -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+    "cargo clippy -p hubbard_u_sweep -- -W clippy::uninlined_format_args 2>&1 | grep -c 'uninlined_format_args' | grep -q '^0$'",
+    "cargo test --workspace",
+]
+
+# Fix uninlined_format_args in build_one_task (post-TASK-7 state of main.rs).
+# The executor must also discover and fix any remaining warnings in touched files
+# by running: cargo clippy -p <crate> -- -W clippy::uninlined_format_args
+# Do NOT fix needless_pass_by_value on Workflow::run() — that would be a breaking API change.
+[[tasks.TASK-10.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+    let task_id = format!("scf_U{:.1}", u);
+    let workdir = std::path::PathBuf::from(format!("runs/U{:.1}", u));
+'''
+after = '''
+    let task_id = format!("scf_U{u:.1}");
+    let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}"));
+'''
+
+[[tasks.TASK-10.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "unsupported orbital '{}'",
+                        c
+                    )))
+'''
+after = '''
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "unsupported orbital '{c}'"
+                    )))
+'''
+
+[[tasks.TASK-10.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''
+            let castep_out = workdir.join(format!("{}.castep", seed_name_collect));
+            if !castep_out.exists() {
+                return Err(WorkflowError::InvalidConfig(format!(
+                    "missing output: {}",
+                    castep_out.display()
+                )));
+'''
+after = '''
+            let castep_out = workdir.join(format!("{seed_name_collect}.castep"));
+            if !castep_out.exists() {
+                return Err(WorkflowError::InvalidConfig(format!(
+                    "missing output: {}",
+                    castep_out.display()
+                )));
+'''
+
+# ─────────────────────────────────────────────────────────────────
+# TASK-11: Documentation updates
+# ─────────────────────────────────────────────────────────────────
+[tasks.TASK-11]
+description = "Update ARCHITECTURE.md and ARCHITECTURE_STATUS.md to reflect all Phase 5B changes (prelude, run_default, ExecutionMode::direct, downstream_of generic, --local flag)"
+type = "replace"
+acceptance = [
+    "# Documentation-only task: verify files exist and are non-empty",
+    "test -s ARCHITECTURE.md",
+    "test -s ARCHITECTURE_STATUS.md",
+]
+
+# 11a: Update ARCHITECTURE_STATUS.md Phase 5B entry from Planned to Complete
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE_STATUS.md"
+before = '''
+#### Phase 5B: API Ergonomics 📋 Planned (precondition: 5A on-cluster validation)
+
+- `ExecutionMode::direct(cmd, &[args])` convenience constructor (eliminates struct literal boilerplate)
+- `workflow_core::prelude` module: re-exports all commonly used types
+- `workflow_utils::prelude` module: re-exports all commonly used types from both crates
+- `run_default(workflow, state)` in `workflow_utils`: eliminates repeated Arc wiring in binaries
+- `downstream_of<S: AsRef<str>>` generic signature (callers pass `&[&str]` without allocating)
+- Whitespace cleanup: extra blank line in `workflow-cli/src/main.rs` ~line 71
+- Documentation update: ARCHITECTURE.md + ARCHITECTURE_STATUS.md (this file)
+- Plan: `plans/phase-5/PHASE5B_API_ERGONOMICS.md`
+'''
+after = '''
+#### Phase 5B: API Ergonomics & Deferred Items ✅ Complete
+
+- `ExecutionMode::direct(cmd, &[args])` convenience constructor + `Debug` derive
+- `workflow_core::prelude` module: re-exports `Workflow`, `Task`, `ExecutionMode`, `JsonStateStore`, `StateStore`, `WorkflowError`, `ProcessRunner`, `HookExecutor`, etc.
+- `workflow_utils::prelude` module: re-exports all `workflow_core::prelude` + `run_default`, `create_dir`, `write_file`, `read_file`, `SystemProcessRunner`, `ShellHookExecutor`, `QueuedRunner`, `SchedulerKind`, `JOB_SCRIPT_NAME`
+- `run_default(workflow, state)` in `workflow_utils`: eliminates repeated Arc wiring in binaries
+- `downstream_of<S: AsRef<str>>` generic signature (callers pass `&[&str]` without allocating)
+- `parse_u_values` extracted as free function with unit tests
+- `generate_job_script` formatting cleanup (no literal tabs) with unit tests
+- `hubbard_u_sweep_slurm/main.rs` restructured: `build_one_task` + `build_sweep_tasks` extracted, `--local` flag added, `castep_command` config field added
+- `hubbard_u_sweep` example updated to use `ExecutionMode::direct()`, `run_default()`, and prelude
+- Pedantic clippy cleanup in touched files
+- Documentation update: ARCHITECTURE.md + ARCHITECTURE_STATUS.md
+- Plan: `plans/phase-5/PHASE5B_API_ERGONOMICS.md` + `plans/phase-5/PHASE5B_IMPL.toml`
+'''
+
+# 11b: Update ARCHITECTURE.md Phase 5B status from Planned to Complete
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE.md"
+before = '''
+### Phase 5B: Planned 📋
+
+- `ExecutionMode::direct(cmd, &[args])` convenience constructor
+- `workflow_core::prelude` and `workflow_utils::prelude` modules
+- `run_default(workflow, state)` in workflow_utils
+- `downstream_of<S: AsRef<str>>` generic signature
+- Whitespace cleanup (workflow-cli ~line 71)
+- Full ARCHITECTURE.md + ARCHITECTURE_STATUS.md update
+- Implementation plan: `plans/phase-5/PHASE5B_API_ERGONOMICS.md`
+'''
+after = '''
+### Phase 5B: Complete ✅
+
+- `ExecutionMode::direct(cmd, &[args])` convenience constructor + `Debug` derive
+- `workflow_core::prelude` and `workflow_utils::prelude` modules
+- `run_default(workflow, state)` convenience helper in `workflow_utils`
+- `downstream_of<S: AsRef<str>>` generic signature
+- `parse_u_values` extracted as free function with unit tests
+- `generate_job_script` formatting cleanup with unit tests
+- `hubbard_u_sweep_slurm/main.rs` restructured with `--local` mode
+- `hubbard_u_sweep` example modernized (direct constructor, run_default, prelude)
+- Pedantic clippy cleanup in touched files
+- Implementation plan: `plans/phase-5/PHASE5B_IMPL.toml`
+'''
+
+# 11c: Update ExecutionMode section in ARCHITECTURE.md to show the constructor exists
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE.md"
+before = '''
+impl ExecutionMode {
+    /// Convenience constructor for Direct mode (Phase 5B)
+    pub fn direct(command: impl Into<String>, args: &[&str]) -> Self;
+}
+'''
+after = '''
+impl ExecutionMode {
+    /// Convenience constructor for Direct mode with no env vars or timeout.
+    pub fn direct(command: impl Into<String>, args: &[&str]) -> Self;
+}
+'''
+
+# 11d: Update the StateStoreExt doc in ARCHITECTURE.md
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE.md"
+before = '''
+pub trait StateStoreExt: StateStore {
+    /// BFS over task_successors graph from given start nodes (Phase 5B: generic S)
+    fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> Vec<String>;
+}
+'''
+after = '''
+impl TaskSuccessors {
+    /// BFS over the successor graph from the given start nodes.
+    /// Returns all reachable task IDs (the start nodes themselves are excluded).
+    pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> HashSet<String>;
+}
+'''
+
+# 11e: Update the Direct-mode example in ARCHITECTURE.md to show run_default + prelude
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE.md"
+before = '''
+    let state_path = PathBuf::from(".workflow.json");
+    let mut state = JsonStateStore::new("hubbard_u_sweep", state_path);
+    // Phase 5B: replace these 3 lines with workflow_utils::run_default(&mut workflow, &mut state)?;
+    let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+    let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+    let summary = workflow.run(&mut state, runner, executor)?;
+    println!("{} succeeded, {} failed", summary.succeeded.len(), summary.failed.len());
+    Ok(())
+}
+'''
+after = '''
+    let state_path = PathBuf::from(".workflow.json");
+    let mut state = JsonStateStore::new("hubbard_u_sweep", state_path);
+    let summary = workflow_utils::run_default(&mut workflow, &mut state)?;
+    println!("{} succeeded, {} failed", summary.succeeded.len(), summary.failed.len());
+    Ok(())
+}
+'''
+
+# 11f: Update the run_default section to remove "(Phase 5B)" label
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE.md"
+before = '''
+### run_default: Convenience Runner (Phase 5B)
+'''
+after = '''
+### run_default: Convenience Runner
+'''
+
+# 11g: Update the prelude section to remove "(Phase 5B)" label
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE.md"
+before = '''
+### prelude: Re-exports (Phase 5B)
+'''
+after = '''
+### prelude: Re-exports
+'''
+
+# 11h: Update the ARCHITECTURE.md layer diagram annotations to remove "(Phase 5B)"
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE.md"
+before = '''
+│  - run_default(): convenience runner (Phase 5B)         │
+│  - prelude: re-exports all common types (Phase 5B)      │
+'''
+after = '''
+│  - run_default(): convenience runner                    │
+│  - prelude: re-exports all common types                 │
+'''
+
+[[tasks.TASK-11.changes]]
+file = "ARCHITECTURE.md"
+before = '''
+│  - prelude: re-exports all common types (Phase 5B)      │
+└────────────────────────┬────────────────────────────────┘
+                         │ uses
+┌────────────────────────▼────────────────────────────────┐
+│  Parser Libraries (Software-Specific)                   │
+'''
+after = '''
+│  - prelude: re-exports all common types                 │
+└────────────────────────┬────────────────────────────────┘
+                         │ uses
+┌────────────────────────▼────────────────────────────────┐
+│  Parser Libraries (Software-Specific)                   │
+'''

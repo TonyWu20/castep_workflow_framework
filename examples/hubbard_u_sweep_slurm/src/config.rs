@@ -46,17 +46,78 @@ pub struct SweepConfig {
     /// Dry-run mode: print topological order and exit without submitting
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Run tasks locally via direct process execution instead of SLURM
+    #[arg(long)]
+    pub local: bool,
+
+    /// CASTEP binary name or path (used in --local mode)
+    #[arg(long, default_value = "castep")]
+    pub castep_command: String,
 }
 
-impl SweepConfig {
-    pub fn parse_u_values(&self) -> Result<Vec<f64>, String> {
-        self.u_values
-            .split(',')
-            .map(|s| {
-                s.trim()
-                    .parse::<f64>()
-                    .map_err(|e| format!("invalid U value '{}': {}", s.trim(), e))
-            })
-            .collect::<Result<Vec<_>, _>>()
+/// Parses a comma-separated string of f64 values.
+///
+/// Each segment is trimmed before parsing.
+/// Returns an error string identifying the offending token on failure.
+pub fn parse_u_values(s: &str) -> Result<Vec<f64>, String> {
+    s.split(',')
+        .map(|segment| {
+            let trimmed = segment.trim();
+            trimmed
+                .parse::<f64>()
+                .map_err(|e| format!("invalid U value '{trimmed}': {e}"))
+        })
+        .collect::<Result<Vec<_>, _>>()
+}
+
+// Note: parse_u_values(&self) was removed as dead code. Callers invoke
+// the free function directly: `parse_u_values(&config.u_values)`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_basic_values() {
+        let vals = parse_u_values("0.0,1.0,2.0").unwrap();
+        assert_eq!(vals, vec![0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn parse_with_whitespace() {
+        let vals = parse_u_values("  0.0 , 1.0 , 2.0  ").unwrap();
+        assert_eq!(vals, vec![0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn parse_single_value() {
+        let vals = parse_u_values("42.0").unwrap();
+        assert_eq!(vals, vec![42.0]);
+    }
+
+    #[test]
+    fn parse_invalid_token() {
+        let err = parse_u_values("1.0,abc,2.0").unwrap_err();
+        assert!(err.contains("abc"), "error should mention the invalid token: {err}");
+    }
+
+    #[test]
+    fn parse_empty_token() {
+        let err = parse_u_values("1.0,,2.0").unwrap_err();
+        assert!(err.contains("invalid"), "error should report parse failure: {err}");
+    }
+
+    #[test]
+    fn parse_empty_string() {
+        // The whole input is empty (distinct from an empty token in the middle)
+        let err = parse_u_values("").unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn parse_negative_values() {
+        let vals = parse_u_values("-1.0,2.0").unwrap();
+        assert_eq!(vals, vec![-1.0, 2.0]);
     }
 }

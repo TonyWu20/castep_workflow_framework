@@ -7,7 +7,7 @@ use std::time::Duration;
 /// A closure used for task setup or result collection.
 pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static>;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ExecutionMode {
     Direct {
         command: String,
@@ -19,6 +19,24 @@ pub enum ExecutionMode {
     /// The actual submit/poll/cancel commands are owned by the `QueuedSubmitter`
     /// implementation set via `Workflow::with_queued_submitter()`.
     Queued,
+}
+
+impl ExecutionMode {
+    /// Convenience constructor for `Direct` mode with no env vars or timeout.
+    ///
+    /// # Examples
+    /// ```
+    /// # use workflow_core::task::ExecutionMode;
+    /// let mode = ExecutionMode::direct("castep", &["ZnO"]);
+    /// ```
+    pub fn direct(command: impl Into<String>, args: &[&str]) -> Self {
+        Self::Direct {
+            command: command.into(),
+            args: args.iter().map(|s| (*s).to_owned()).collect(),
+            env: HashMap::new(),
+            timeout: None,
+        }
+    }
 }
 
 pub struct Task {
@@ -90,37 +108,41 @@ impl Task {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn task_builder() {
-        let t = Task::new(
-            "my_task",
-            ExecutionMode::Direct {
-                command: "echo".into(),
-                args: vec!["test".into()],
-                env: HashMap::new(),
-                timeout: None,
-            },
-        );
+        let t = Task::new("my_task", ExecutionMode::direct("echo", &["test"]));
         assert_eq!(t.id, "my_task");
         assert!(t.dependencies.is_empty());
         assert!(t.monitors.is_empty());
     }
 
     #[test]
+    fn direct_constructor_fields() {
+        let mode = ExecutionMode::direct("castep", &["ZnO", "--flag"]);
+        match mode {
+            ExecutionMode::Direct { command, args, env, timeout } => {
+                assert_eq!(command, "castep");
+                assert_eq!(args, vec!["ZnO".to_string(), "--flag".to_string()]);
+                assert!(env.is_empty());
+                assert!(timeout.is_none());
+            }
+            _ => panic!("expected Direct variant"),
+        }
+    }
+
+    #[test]
+    fn execution_mode_debug() {
+        let mode = ExecutionMode::direct("echo", &[]);
+        let dbg = format!("{mode:?}");
+        assert!(dbg.contains("Direct"));
+    }
+
+    #[test]
     fn depends_on_chaining() {
-        let t = Task::new(
-            "t",
-            ExecutionMode::Direct {
-                command: "true".into(),
-                args: vec![],
-                env: HashMap::new(),
-                timeout: None,
-            },
-        )
-        .depends_on("a")
-        .depends_on("b");
+        let t = Task::new("t", ExecutionMode::direct("true", &[]))
+            .depends_on("a")
+            .depends_on("b");
         assert_eq!(t.dependencies, vec!["a", "b"]);
     }
 }

@@ -149,9 +149,10 @@ impl TaskSuccessors {
     ///
     /// The starting task IDs themselves are NOT included in the result.
     /// Cycle-safe: the visited set prevents re-enqueuing.
-    pub fn downstream_of(&self, start: &[String]) -> std::collections::HashSet<String> {
+    pub fn downstream_of<S: AsRef<str>>(&self, start: &[S]) -> std::collections::HashSet<String> {
         let mut visited = std::collections::HashSet::new();
-        let mut queue: std::collections::VecDeque<String> = start.iter().cloned().collect();
+        let mut queue: std::collections::VecDeque<String> =
+            start.iter().map(|s| s.as_ref().to_owned()).collect();
         while let Some(id) = queue.pop_front() {
             if let Some(deps) = self.get(&id) {
                 for dep in deps {
@@ -472,7 +473,7 @@ mod tests {
         map.insert("b".into(), vec!["c".into()]);
         map.insert("c".into(), vec![]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&["a".into()]);
+        let result = succ.downstream_of(&["a"]);
         assert_eq!(result.len(), 2);
         assert!(result.contains("b"));
         assert!(result.contains("c"));
@@ -487,7 +488,7 @@ mod tests {
         map.insert("c".into(), vec!["d".into()]);
         map.insert("d".into(), vec![]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&["a".into()]);
+        let result = succ.downstream_of(&["a"]);
         assert_eq!(result.len(), 3);
         assert!(result.contains("b"));
         assert!(result.contains("c"));
@@ -497,7 +498,7 @@ mod tests {
     #[test]
     fn downstream_of_start_not_in_map() {
         let succ = TaskSuccessors::new(HashMap::new());
-        let result = succ.downstream_of(&["x".into()]);
+        let result = succ.downstream_of(&["x"]);
         assert!(result.is_empty());
     }
 
@@ -506,7 +507,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("a".into(), vec!["b".into()]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&[]);
+        let result = succ.downstream_of(&[] as &[&str]);
         assert!(result.is_empty());
     }
 
@@ -518,7 +519,7 @@ mod tests {
         map.insert("b".into(), vec!["c".into()]);
         map.insert("c".into(), vec![]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&["a".into(), "b".into()]);
+        let result = succ.downstream_of(&["a", "b"]);
         assert_eq!(result.len(), 1);
         assert!(result.contains("c"));
     }
@@ -530,7 +531,7 @@ mod tests {
         map.insert("a".into(), vec!["b".into()]);
         map.insert("b".into(), vec!["a".into()]);
         let succ = TaskSuccessors::new(map);
-        let result = succ.downstream_of(&["a".into()]);
+        let result = succ.downstream_of(&["a"]);
         assert!(result.contains("b"));
         assert!(result.contains("a"));
     }

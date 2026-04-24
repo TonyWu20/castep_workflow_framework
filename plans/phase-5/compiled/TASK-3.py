@@ -1,18 +1,35 @@
 #!/usr/bin/env python3
-"""TASK-3: Create examples/hubbard_u_sweep_slurm/Cargo.toml and seed files"""
-import base64, sys
-from pathlib import Path
+"""TASK-3: Extract a free function parse_u_values(s: &str) from SweepConfig::parse_u_values, fix double trim, and have the method delegate to it"""
+import base64, json, subprocess, sys
 
-CONTENT = base64.b64decode("W3BhY2thZ2VdCm5hbWUgPSAiaHViYmFyZF91X3N3ZWVwX3NsdXJtIgp2ZXJzaW9uID0gIjAuMS4wIgplZGl0aW9uID0gIjIwMjEiCgpbW2Jpbl1dCm5hbWUgPSAiaHViYmFyZF91X3N3ZWVwX3NsdXJtIgpwYXRoID0gInNyYy9tYWluLnJzIgoKW2RlcGVuZGVuY2llc10KYW55aG93ID0geyB3b3Jrc3BhY2UgPSB0cnVlIH0KY2xhcCA9IHsgd29ya3NwYWNlID0gdHJ1ZSB9CmNhc3RlcC1jZWxsLWZtdCA9ICIwLjEuMCIKY2FzdGVwLWNlbGwtaW8gPSAiMC40LjAiCndvcmtmbG93X2NvcmUgPSB7IHBhdGggPSAiLi4vLi4vd29ya2Zsb3dfY29yZSIsIGZlYXR1cmVzID0gWyJkZWZhdWx0LWxvZ2dpbmciXSB9CndvcmtmbG93X3V0aWxzID0geyBwYXRoID0gIi4uLy4uL3dvcmtmbG93X3V0aWxzIiB9").decode()
-TARGET = "examples/hubbard_u_sweep_slurm/Cargo.toml"
 TASK_ID = "TASK-3"
+STEPS = json.loads('[{"before_b64": "aW1wbCBTd2VlcENvbmZpZyB7CiAgICBwdWIgZm4gcGFyc2VfdV92YWx1ZXMoJnNlbGYpIC0+IFJlc3VsdDxWZWM8ZjY0PiwgU3RyaW5nPiB7CiAgICAgICAgc2VsZi51X3ZhbHVlcwogICAgICAgICAgICAuc3BsaXQoJywnKQogICAgICAgICAgICAubWFwKHxzfCB7CiAgICAgICAgICAgICAgICBzLnRyaW0oKQogICAgICAgICAgICAgICAgICAgIC5wYXJzZTo6PGY2ND4oKQogICAgICAgICAgICAgICAgICAgIC5tYXBfZXJyKHxlfCBmb3JtYXQhKCJpbnZhbGlkIFUgdmFsdWUgJ3t9Jzoge30iLCBzLnRyaW0oKSwgZSkpCiAgICAgICAgICAgIH0pCiAgICAgICAgICAgIC5jb2xsZWN0Ojo8UmVzdWx0PFZlYzxfPiwgXz4+KCkKICAgIH0KfQ==", "after_b64": "Ly8vIFBhcnNlcyBhIGNvbW1hLXNlcGFyYXRlZCBzdHJpbmcgb2YgZjY0IHZhbHVlcy4KLy8vCi8vLyBFYWNoIHNlZ21lbnQgaXMgdHJpbW1lZCBiZWZvcmUgcGFyc2luZy4KLy8vIFJldHVybnMgYW4gZXJyb3Igc3RyaW5nIGlkZW50aWZ5aW5nIHRoZSBvZmZlbmRpbmcgdG9rZW4gb24gZmFpbHVyZS4KcHViIGZuIHBhcnNlX3VfdmFsdWVzKHM6ICZzdHIpIC0+IFJlc3VsdDxWZWM8ZjY0PiwgU3RyaW5nPiB7CiAgICBzLnNwbGl0KCcsJykKICAgICAgICAubWFwKHxzZWdtZW50fCB7CiAgICAgICAgICAgIGxldCB0cmltbWVkID0gc2VnbWVudC50cmltKCk7CiAgICAgICAgICAgIHRyaW1tZWQKICAgICAgICAgICAgICAgIC5wYXJzZTo6PGY2ND4oKQogICAgICAgICAgICAgICAgLm1hcF9lcnIofGV8IGZvcm1hdCEoImludmFsaWQgVSB2YWx1ZSAne30nOiB7fSIsIHRyaW1tZWQsIGUpKQogICAgICAgIH0pCiAgICAgICAgLmNvbGxlY3Q6OjxSZXN1bHQ8VmVjPF8+LCBfPj4oKQp9CgppbXBsIFN3ZWVwQ29uZmlnIHsKICAgIHB1YiBmbiBwYXJzZV91X3ZhbHVlcygmc2VsZikgLT4gUmVzdWx0PFZlYzxmNjQ+LCBTdHJpbmc+IHsKICAgICAgICBwYXJzZV91X3ZhbHVlcygmc2VsZi51X3ZhbHVlcykKICAgIH0KfQ==", "target": "examples/hubbard_u_sweep_slurm/src/config.rs", "index": 0}]')
 
-target_path = Path(TARGET)
-target_path.parent.mkdir(parents=True, exist_ok=True)
-target_path.write_text(CONTENT)
+for step in STEPS:
+    before = base64.b64decode(step["before_b64"]).decode()
+    after = base64.b64decode(step["after_b64"]).decode()
+    target = step["target"]
+    idx = step["index"]
 
-if not target_path.exists():
-    print(f"FAILED {TASK_ID}: file not created at {TARGET}", file=sys.stderr)
-    sys.exit(1)
+    content = open(target).read()
+    if before not in content:
+        print(f"FAILED {TASK_ID} change {idx}: pattern not found in {target}", file=sys.stderr)
+        print(f"Expected (first 200 chars): {repr(before[:200])}", file=sys.stderr)
+        sys.exit(1)
 
-print(f"OK {TASK_ID}: created {TARGET}")
+    result = subprocess.run(
+        ["sd", "-F", "-A", "-n", "1", before, after, target],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"FAILED {TASK_ID} change {idx}: sd error: {result.stderr}", file=sys.stderr)
+        sys.exit(result.returncode)
+
+    new_content = open(target).read()
+    if after and after not in new_content:
+        print(f"FAILED {TASK_ID} change {idx}: replacement not found after apply", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"OK {TASK_ID} change {idx}: applied to {target}")
+
+print(f"OK {TASK_ID}: all changes applied")

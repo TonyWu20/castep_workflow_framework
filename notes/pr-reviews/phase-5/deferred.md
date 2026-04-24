@@ -75,3 +75,22 @@ Items identified during PR review v1, classified as `[Improvement]` -- better de
 **Rationale:** `main.rs` uses `.map_err(|e| anyhow::anyhow!(e))` to convert a `String` error. The `anyhow!` macro is intended for format strings; the idiomatic form for wrapping an existing `Display` value is `.map_err(anyhow::Error::msg)`. Style-only, no correctness impact.
 **Candidate for:** Phase 5B or any touch to `main.rs`
 **Precondition:** Next edit to `main.rs`
+
+---
+
+## User added notes (2026-04-23)
+
+## D.10: `fn main()` in `main.rs` of `hubbard_u_sweep_slurm` has 135 lines of code
+
+**Source:** Tony's review
+**Rationale:** Need better abstraction to reduce the repetitive efforts in
+writing the boilerplate code of setting up the workflow.
+**Candidate for:** Phase 5B, about the api ergonomics
+
+## D.11: Direct `for loop` usage in implementation of parameter sweeping
+
+**Source:** Tony's review
+**Rationale:** The explicit `for loop` is fine for the simple single parameter
+sweeping. But it would become messy soon if multiple parameter sweeping is
+attempted. Prefer the iterator-based style.
+**Candidate for:** Phase 5B, about the api ergonomics
