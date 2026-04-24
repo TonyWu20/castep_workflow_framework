@@ -42,6 +42,7 @@ Phase 6 addresses:
 **Critical files:**
 - `workflow_core/src/task.rs` — add `CollectFailurePolicy` enum + field + builder
 - `workflow_core/src/workflow.rs:360-416` — reorder `process_finished()` logic
+- `workflow_core/src/workflow.rs` `InFlightTask` struct — add `collect_failure_policy: CollectFailurePolicy` field; populate from `task.collect_failure_policy` at dispatch (around lines 273-280). Ownership path: `Task` → `InFlightTask` → `process_finished()`.
 - `workflow_core/src/prelude.rs` — re-export `CollectFailurePolicy`
 - `workflow_core/tests/` — test both policies (collect-fail-marks-failed, collect-fail-warns-only)
 
@@ -81,14 +82,14 @@ Phase 6 addresses:
 **Design:**
 - Add `root_dir: Option<PathBuf>` field to `Workflow` in `workflow_core`
 - Add builder: `Workflow::with_root_dir(self, dir: impl Into<PathBuf>) -> Self`
-- In `run()`, if `root_dir` is `Some(dir)`, resolve all relative task workdirs against `dir` (i.e., `dir.join(task.workdir)`)
-- Log dir resolution also uses `root_dir` if set
-- `QueuedRunner::submit()` log path absolutization uses `root_dir` (subsumes D.4)
+- Resolution happens at dispatch time inside `run()`, not by mutating `Task::workdir`. This preserves `dry_run()` output and ensures resolution is a runtime behavior, not a mutation of the task graph. `dry_run()` does **not** apply `root_dir` resolution.
+- Resolution order: `root_dir.join(task.workdir)` if `task.workdir` is relative and `root_dir` is `Some`; otherwise use `task.workdir` as-is. Same for `self.log_dir`.
+- `create_dir_all` for `log_dir` (Workflow::run) must use the resolved path.
+- Log dir is resolved against `root_dir` in `run()` before being passed to `qs.submit()` (subsumes D.4). `workflow_utils/src/queued.rs` needs no changes — the existing `cwd.join()` fallback becomes redundant but can stay for defense in depth.
 - Layer 3 examples add `--workdir` via clap: `#[arg(long, default_value = ".")]`
 
 **Critical files:**
-- `workflow_core/src/workflow.rs` — add `root_dir` field + builder + resolution in `run()`
-- `workflow_utils/src/runner.rs` — `QueuedRunner::submit()` uses root_dir for log paths
+- `workflow_core/src/workflow.rs` — add `root_dir` field + builder; resolve relative `task.workdir` and `log_dir` against `root_dir` at dispatch time in `run()`
 - `examples/hubbard_u_sweep_slurm/src/main.rs` — add `--workdir` clap flag
 
 ### 4. `workflow-cli retry` Stdin Support
@@ -100,6 +101,8 @@ Phase 6 addresses:
 **Design:**
 - Detect stdin is a pipe (not a TTY): if `task_ids` is empty and stdin is piped, read task IDs from stdin (one per line, skip blanks)
 - Convention: `workflow-cli retry state.json -` reads from stdin explicitly (like `cat -`)
+- Change `task_ids` clap arg from `#[arg(required = true)]` to optional. When empty and stdin is not a TTY (or `-` is present), read from stdin. When empty and stdin is a TTY, print a usage error.
+- While editing `workflow-cli/src/main.rs`, also fix the two-blank-line whitespace artifact around line 71 (Phase 4 deferred item).
 - This composes with any Unix tool for Tier 1 users:
   ```bash
   # Retry all failed U3.0 tasks
@@ -123,11 +126,12 @@ Phase 6 addresses:
 
 **Items:**
 1. ARCHITECTURE.md: `setup`/`collect` builder signature — doc shows `<F>` returning `Result<(), WorkflowError>`, actual is `<F, E>` with `E: std::error::Error + Send + Sync + 'static`
-2. ARCHITECTURE.md: `JsonStateStore::new` — doc shows `impl Into<String>`, actual takes `&str` (or update the impl to accept `impl Into<String>`)
+2. ARCHITECTURE.md: `JsonStateStore::new` — doc shows `impl Into<String>`, actual takes `&str` (recommendation: update the impl to accept `impl Into<String>` — backward-compatible and more ergonomic)
 3. ARCHITECTURE.md: `load`/`load_raw` — shown as instance methods, actually static constructors returning `Result<Self, WorkflowError>`
 4. ARCHITECTURE_STATUS.md: Phase 3/4 entries — stale `TaskClosure` and `downstream_of` descriptions that contradict Phase 5B changes
 5. `parse_empty_string` test — strengthen assertion from `!err.is_empty()` to `err.contains("invalid")` or similar
 6. Trailing newline in `workflow_utils/src/prelude.rs`
+7. Run `cargo clippy --workspace -- -W clippy::uninlined_format_args` and fix instances in files touched by this phase (absorbs D.5 from Phase 5A: 8 `uninlined_format_args` and 1 `doc_markdown` warning in `config.rs`/`main.rs`)
 
 **Critical files:**
 - `ARCHITECTURE.md`
