@@ -54,7 +54,8 @@
 - `ExecutionMode::Direct` with per-task `Option<Duration>` timeout
 - OS signal handling: SIGTERM/SIGINT via `signal-hook`; graceful shutdown; re-registers on each `run()`
 - `workflow-cli` binary: `status`, `inspect`, `retry` subcommands
-- `Task` gains `setup`/`collect` closure fields; `TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>` type alias
+- `Task` gains `setup`/`collect` closure fields; `TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync>` type alias
+- `CollectFailurePolicy` enum: `FailTask` (default) and `WarnOnly` for governing collect closure failures
 - `anyhow` removed from `workflow_core`; `TaskStatus` re-exported from crate root
 - End-to-end resume and timeout integration tests
 
@@ -90,6 +91,7 @@
 - `workflow_utils::prelude` module: re-exports all commonly used types from both crates; Layer 3 binaries now use `use workflow_utils::prelude::*`
 - `run_default(&mut workflow, &mut state)` in `workflow_utils`: eliminates repeated Arc wiring (`SystemProcessRunner` + `ShellHookExecutor`) in binaries
 - `downstream_of<S: AsRef<str>>` generic signature — callers pass `&[&str]` without allocating
+- `CollectFailurePolicy` re-exported from `workflow_core::prelude` and `workflow_core::lib`
 - `hubbard_u_sweep_slurm`: local mode now uses `run_default()`; SLURM mode keeps manual Arc wiring
 - Inlined format args throughout (`{e}` instead of `{}`, e`)
 - `init_default_logging()` exposed in `workflow_core` crate root

@@ -124,7 +124,7 @@ mod tests {
     fn parse_empty_string() {
         // The whole input is empty (distinct from an empty token in the middle)
         let err = parse_u_values("").unwrap_err();
-        assert!(!err.is_empty());
+        assert!(err.contains("invalid"), "expected parse failure on empty input, got: {err}");
     }
 
     #[test]

@@ -37,3 +37,9 @@
   - `cargo check -p hubbard_u_sweep_slurm`: PASSED
   - `cargo check --workspace 2>&1`: PASSED
 
+### TASK-6: Update ARCHITECTURE.md/ARCHITECTURE_STATUS.md, fix config assertion, trailing newline, and clippy
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo clippy --workspace -- -D warnings`: PASSED
+  - `cargo check --workspace 2>&1`: PASSED
+
