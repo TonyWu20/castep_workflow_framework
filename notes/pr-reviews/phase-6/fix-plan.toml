@@ -1,0 +1,62 @@
+# Fix Plan — PR Review (phase-6)
+
+[tasks.TASK-1]
+description = "Remove dead `task_ids.is_empty()` branch in `read_task_ids`"
+type = "replace"
+acceptance = ["cargo check -p workflow-cli", "cargo test -p workflow-cli"]
+
+[[tasks.TASK-1.changes]]
+file = "workflow-cli/src/main.rs"
+before = '''    if task_ids.first().map(|s| s.as_str()) == Some("-") || task_ids.is_empty() {'''
+after = '''    if task_ids.first().map(|s| s.as_str()) == Some("-") {'''
+
+[tasks.TASK-2]
+description = "Fix single-mode task ID regression: pass empty string instead of \"default\" to avoid `_default` suffix"
+type = "replace"
+acceptance = ["cargo build -p hubbard_u_sweep_slurm", "cargo check -p hubbard_u_sweep_slurm"]
+
+[[tasks.TASK-2.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''                .map(|u| build_one_task(config, u, "default", seed_cell, seed_param).map_err(Into::into))'''
+after = '''                .map(|u| build_one_task(config, u, "", seed_cell, seed_param).map_err(Into::into))'''
+
+[tasks.TASK-3]
+description = "Fix `build_one_task` to omit the `_second` suffix when second is empty"
+type = "replace"
+acceptance = ["cargo build -p hubbard_u_sweep_slurm"]
+
+[[tasks.TASK-3.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''    let task_id = format!("scf_U{u:.1}_{second}");'''
+after = '''    let task_id = if second.is_empty() {
+        format!("scf_U{u:.1}")
+    } else {
+        format!("scf_U{u:.1}_{second}")
+    };'''
+
+[tasks.TASK-4]
+description = "Add trailing newline to examples/hubbard_u_sweep_slurm/Cargo.toml"
+type = "append"
+acceptance = ["cargo check -p hubbard_u_sweep_slurm"]
+
+[[tasks.TASK-4.changes]]
+file = "examples/hubbard_u_sweep_slurm/Cargo.toml"
+append = "\n"
+
+[tasks.TASK-5]
+description = "Add trailing newline to workflow_core/tests/collect_failure_policy.rs"
+type = "append"
+acceptance = ["cargo test -p workflow_core"]
+
+[[tasks.TASK-5.changes]]
+file = "workflow_core/tests/collect_failure_policy.rs"
+append = "\n"
+
+[tasks.TASK-6]
+description = "Add trailing newline to workflow_core/src/prelude.rs"
+type = "append"
+acceptance = ["cargo check -p workflow_core"]
+
+[[tasks.TASK-6.changes]]
+file = "workflow_core/src/prelude.rs"
+append = "\n"
