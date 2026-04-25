@@ -29,7 +29,7 @@ enum Commands {
 /// - `["-"]` or empty + piped input → read stdin (one ID per line)
 /// - Empty + TTY → usage error
 fn read_task_ids(task_ids: &[String]) -> anyhow::Result<Vec<String>> {
-    if task_ids.first().map(|s| s.as_str()) == Some("-") || task_ids.is_empty() {
+    if task_ids.first().map(|s| s.as_str()) == Some("-") {
         let mut input = String::new();
         if io::stdin().is_terminal() {
             anyhow::bail!(

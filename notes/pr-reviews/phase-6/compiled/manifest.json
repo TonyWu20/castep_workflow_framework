@@ -1,0 +1,68 @@
+{
+  "plan": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-6/fix-plan.toml",
+  "compiled_at": "2026-04-25T16:50:26.281229+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "script": "TASK-1.sh",
+      "runner": "TASK-1.py",
+      "file": "workflow-cli/src/main.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Remove dead `task_ids.is_empty()` branch in `read_task_ids`",
+      "acceptance": [
+        "cargo check -p workflow-cli",
+        "cargo test -p workflow-cli"
+      ]
+    },
+    {
+      "id": "TASK-2",
+      "script": "TASK-2.sh",
+      "runner": "TASK-2.py",
+      "file": "examples/hubbard_u_sweep_slurm/src/main.rs",
+      "type": "replace",
+      "changes": 5,
+      "description": "Change `second` parameter of `build_one_task` and `build_chain` to `Option<&str>`; update all call sites; restore single-mode task IDs to original format",
+      "acceptance": [
+        "cargo build -p hubbard_u_sweep_slurm"
+      ]
+    },
+    {
+      "id": "TASK-3",
+      "script": "TASK-3.sh",
+      "runner": "TASK-3.py",
+      "file": "examples/hubbard_u_sweep_slurm/Cargo.toml",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add trailing newline to examples/hubbard_u_sweep_slurm/Cargo.toml",
+      "acceptance": [
+        "cargo check -p hubbard_u_sweep_slurm"
+      ]
+    },
+    {
+      "id": "TASK-4",
+      "script": "TASK-4.sh",
+      "runner": "TASK-4.py",
+      "file": "workflow_core/tests/collect_failure_policy.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add trailing newline to workflow_core/tests/collect_failure_policy.rs",
+      "acceptance": [
+        "cargo test -p workflow_core"
+      ]
+    },
+    {
+      "id": "TASK-5",
+      "script": "TASK-5.sh",
+      "runner": "TASK-5.py",
+      "file": "workflow_core/src/prelude.rs",
+      "type": "replace",
+      "changes": 1,
+      "description": "Add trailing newline to workflow_core/src/prelude.rs",
+      "acceptance": [
+        "cargo check -p workflow_core"
+      ]
+    }
+  ],
+  "skipped": []
+}
