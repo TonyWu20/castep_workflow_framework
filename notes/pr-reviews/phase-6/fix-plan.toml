@@ -11,52 +11,106 @@ before = '''    if task_ids.first().map(|s| s.as_str()) == Some("-") || task_ids
 after = '''    if task_ids.first().map(|s| s.as_str()) == Some("-") {'''
 
 [tasks.TASK-2]
-description = "Fix single-mode task ID regression: pass empty string instead of \"default\" to avoid `_default` suffix"
+description = "Change `second` parameter of `build_one_task` and `build_chain` to `Option<&str>`; update all call sites; restore single-mode task IDs to original format"
 type = "replace"
-acceptance = ["cargo build -p hubbard_u_sweep_slurm", "cargo check -p hubbard_u_sweep_slurm"]
+acceptance = ["cargo build -p hubbard_u_sweep_slurm"]
+
+[[tasks.TASK-2.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''fn build_one_task(
+    config: &SweepConfig,
+    u: f64,
+    second: &str,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Task, WorkflowError> {
+    let task_id = format!("scf_U{u:.1}_{second}");
+    let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}/{second}"));'''
+after = '''fn build_one_task(
+    config: &SweepConfig,
+    u: f64,
+    second: Option<&str>,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Task, WorkflowError> {
+    let task_id = match second {
+        Some(s) => format!("scf_U{u:.1}_{s}"),
+        None => format!("scf_U{u:.1}"),
+    };
+    let workdir = match second {
+        Some(s) => std::path::PathBuf::from(format!("runs/U{u:.1}/{s}")),
+        None => std::path::PathBuf::from(format!("runs/U{u:.1}")),
+    };'''
+
+[[tasks.TASK-2.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''fn build_chain(
+    config: &SweepConfig,
+    u: f64,
+    second: &str,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Vec<Task>, WorkflowError> {
+    let scf = build_one_task(config, u, second, seed_cell, seed_param)?;
+    // DOS task depends on SCF completing successfully
+    let dos_id = format!("dos_{second}");
+    let dos_workdir = std::path::PathBuf::from(format!("runs/U{u:.1}/{second}/dos"));'''
+after = '''fn build_chain(
+    config: &SweepConfig,
+    u: f64,
+    second: Option<&str>,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Vec<Task>, WorkflowError> {
+    let scf = build_one_task(config, u, second, seed_cell, seed_param)?;
+    // DOS task depends on SCF completing successfully
+    let dos_id = match second {
+        Some(s) => format!("dos_{s}"),
+        None => "dos".to_string(),
+    };
+    let dos_workdir = match second {
+        Some(s) => std::path::PathBuf::from(format!("runs/U{u:.1}/{s}/dos")),
+        None => std::path::PathBuf::from(format!("runs/U{u:.1}/dos")),
+    };'''
+
+[[tasks.TASK-2.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''                tasks.extend(build_chain(config, u, &second, seed_cell, seed_param)?);'''
+after = '''                tasks.extend(build_chain(config, u, Some(&second), seed_cell, seed_param)?);'''
+
+[[tasks.TASK-2.changes]]
+file = "examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''                tasks.extend(build_chain(config, *u, second, seed_cell, seed_param)?);'''
+after = '''                tasks.extend(build_chain(config, *u, Some(second), seed_cell, seed_param)?);'''
 
 [[tasks.TASK-2.changes]]
 file = "examples/hubbard_u_sweep_slurm/src/main.rs"
 before = '''                .map(|u| build_one_task(config, u, "default", seed_cell, seed_param).map_err(Into::into))'''
-after = '''                .map(|u| build_one_task(config, u, "", seed_cell, seed_param).map_err(Into::into))'''
+after = '''                .map(|u| build_one_task(config, u, None, seed_cell, seed_param).map_err(Into::into))'''
 
 [tasks.TASK-3]
-description = "Fix `build_one_task` to omit the `_second` suffix when second is empty"
-type = "replace"
-acceptance = ["cargo build -p hubbard_u_sweep_slurm"]
-
-[[tasks.TASK-3.changes]]
-file = "examples/hubbard_u_sweep_slurm/src/main.rs"
-before = '''    let task_id = format!("scf_U{u:.1}_{second}");'''
-after = '''    let task_id = if second.is_empty() {
-        format!("scf_U{u:.1}")
-    } else {
-        format!("scf_U{u:.1}_{second}")
-    };'''
-
-[tasks.TASK-4]
 description = "Add trailing newline to examples/hubbard_u_sweep_slurm/Cargo.toml"
 type = "append"
 acceptance = ["cargo check -p hubbard_u_sweep_slurm"]
 
-[[tasks.TASK-4.changes]]
+[[tasks.TASK-3.changes]]
 file = "examples/hubbard_u_sweep_slurm/Cargo.toml"
 append = "\n"
 
-[tasks.TASK-5]
+[tasks.TASK-4]
 description = "Add trailing newline to workflow_core/tests/collect_failure_policy.rs"
 type = "append"
 acceptance = ["cargo test -p workflow_core"]
 
-[[tasks.TASK-5.changes]]
+[[tasks.TASK-4.changes]]
 file = "workflow_core/tests/collect_failure_policy.rs"
 append = "\n"
 
-[tasks.TASK-6]
+[tasks.TASK-5]
 description = "Add trailing newline to workflow_core/src/prelude.rs"
 type = "append"
 acceptance = ["cargo check -p workflow_core"]
 
-[[tasks.TASK-6.changes]]
+[[tasks.TASK-5.changes]]
 file = "workflow_core/src/prelude.rs"
 append = "\n"

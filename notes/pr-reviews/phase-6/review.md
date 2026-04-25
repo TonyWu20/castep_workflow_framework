@@ -35,7 +35,7 @@
 **File:** `examples/hubbard_u_sweep_slurm/src/main.rs`
 **Severity:** Blocking
 **Problem:** Single-mode passes `"default"` as the `second` parameter to `build_one_task`, which formats task IDs as `scf_U3.0_default` instead of the previous `scf_U3.0`. Existing workflow state files keyed on the old format will not match, causing tasks to be re-run or lost.
-**Fix:** Pass `""` as the `second` argument in single mode, and update `build_one_task` to omit the `_{second}` suffix when `second` is empty.
+**Fix:** Change `second: &str` to `second: Option<&str>` in both `build_one_task` and `build_chain`. Single mode passes `None` (restoring the original `scf_U{u:.1}` format); product/pairwise modes pass `Some(&second)`. Update `task_id`, `workdir`, `dos_id`, and `dos_workdir` formations to match on `Some`/`None`.
 
 ---
 
