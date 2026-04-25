@@ -1,0 +1,1618 @@
+[meta]
+title = "Phase 6: Reliability, Multi-Parameter Patterns, and Ergonomics"
+source_branch = "phase-6"
+created = "2026-04-25"
+
+[dependencies]
+TASK-1 = []
+TASK-2 = ["TASK-1"]
+TASK-3 = ["TASK-1", "TASK-2"]
+TASK-4 = []
+TASK-5 = ["TASK-4"]
+TASK-6 = ["TASK-5"]
+
+# ── TASK-1: CollectFailurePolicy — enum + field wiring ──────────────────────
+
+[tasks.TASK-1]
+description = "Add CollectFailurePolicy enum, field on Task/InFlightTask, and re-exports"
+type = "replace"
+acceptance = [
+    "cargo check -p workflow_core",
+]
+
+[[tasks.TASK-1.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/task.rs"
+before = '''use crate::monitoring::MonitoringHook;
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// A closure used for task setup or result collection.
+pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static>;
+
+#[derive(Debug, Clone)]
+pub enum ExecutionMode {
+    Direct {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        timeout: Option<Duration>,
+    },
+    /// Queued execution via an HPC scheduler (SLURM/PBS).
+    /// The actual submit/poll/cancel commands are owned by the `QueuedSubmitter`
+    /// implementation set via `Workflow::with_queued_submitter()`.
+    Queued,
+}
+
+impl ExecutionMode {
+    /// Convenience constructor for `Direct` mode with no env vars or timeout.
+    ///
+    /// # Examples
+    /// ```
+    /// # use workflow_core::task::ExecutionMode;
+    /// let mode = ExecutionMode::direct("castep", &["ZnO"]);
+    /// ```
+    pub fn direct(command: impl Into<String>, args: &[&str]) -> Self {
+        Self::Direct {
+            command: command.into(),
+            args: args.iter().map(|s| (*s).to_owned()).collect(),
+            env: HashMap::new(),
+            timeout: None,
+        }
+    }
+}
+
+pub struct Task {
+    pub id: String,
+    pub dependencies: Vec<String>,
+    pub workdir: PathBuf,
+    pub mode: ExecutionMode,
+    pub setup: Option<TaskClosure>,
+    pub collect: Option<TaskClosure>,
+    pub monitors: Vec<MonitoringHook>,
+}
+
+impl Task {
+    pub fn new(id: impl Into<String>, mode: ExecutionMode) -> Self {
+        Self {
+            id: id.into(),
+            dependencies: Vec::new(),
+            workdir: PathBuf::from("."),
+            mode,
+            setup: None,
+            collect: None,
+            monitors: Vec::new(),
+        }
+    }
+
+    pub fn depends_on(mut self, id: impl Into<String>) -> Self {
+        self.dependencies.push(id.into());
+        self
+    }
+
+    pub fn workdir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.workdir = path.into();
+        self
+    }
+
+    pub fn setup<F, E>(mut self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        self.setup = Some(Box::new(move |path| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            f(path).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        }));
+        self
+    }
+
+    pub fn collect<F, E>(mut self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        self.collect = Some(Box::new(move |path| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            f(path).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        }));
+        self
+    }
+
+    pub fn monitors(mut self, hooks: Vec<MonitoringHook>) -> Self {
+        self.monitors = hooks;
+        self
+    }
+
+    pub fn add_monitor(mut self, hook: MonitoringHook) -> Self {
+        self.monitors.push(hook);
+        self
+    }
+}
+'''
+after = '''use crate::monitoring::MonitoringHook;
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// A closure used for task setup or result collection.
+pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static>;
+
+/// Policy governing how collect-closure failures affect task status.
+///
+/// When a collect closure returns `Err`, the framework must decide whether
+/// the task itself should be marked as Failed or whether the error should
+/// only be logged as a warning.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CollectFailurePolicy {
+    /// The task is marked `Failed` with the collect error message.
+    /// This is the default and recommended policy for correctness.
+    #[default]
+    FailTask,
+    /// The error is logged as a warning and the task remains `Completed`.
+    WarnOnly,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExecutionMode {
+    Direct {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        timeout: Option<Duration>,
+    },
+    /// Queued execution via an HPC scheduler (SLURM/PBS).
+    /// The actual submit/poll/cancel commands are owned by the `QueuedSubmitter`
+    /// implementation set via `Workflow::with_queued_submitter()`.
+    Queued,
+}
+
+impl ExecutionMode {
+    /// Convenience constructor for `Direct` mode with no env vars or timeout.
+    ///
+    /// # Examples
+    /// ```
+    /// # use workflow_core::task::ExecutionMode;
+    /// let mode = ExecutionMode::direct("castep", &["ZnO"]);
+    /// ```
+    pub fn direct(command: impl Into<String>, args: &[&str]) -> Self {
+        Self::Direct {
+            command: command.into(),
+            args: args.iter().map(|s| (*s).to_owned()).collect(),
+            env: HashMap::new(),
+            timeout: None,
+        }
+    }
+}
+
+pub struct Task {
+    pub id: String,
+    pub dependencies: Vec<String>,
+    pub workdir: PathBuf,
+    pub mode: ExecutionMode,
+    pub setup: Option<TaskClosure>,
+    pub collect: Option<TaskClosure>,
+    pub monitors: Vec<MonitoringHook>,
+    pub(crate) collect_failure_policy: CollectFailurePolicy,
+}
+
+impl Task {
+    pub fn new(id: impl Into<String>, mode: ExecutionMode) -> Self {
+        Self {
+            id: id.into(),
+            dependencies: Vec::new(),
+            workdir: PathBuf::from("."),
+            mode,
+            setup: None,
+            collect: None,
+            monitors: Vec::new(),
+            collect_failure_policy: CollectFailurePolicy::default(),
+        }
+    }
+
+    pub fn depends_on(mut self, id: impl Into<String>) -> Self {
+        self.dependencies.push(id.into());
+        self
+    }
+
+    pub fn workdir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.workdir = path.into();
+        self
+    }
+
+    pub fn setup<F, E>(mut self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        self.setup = Some(Box::new(move |path| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            f(path).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        }));
+        self
+    }
+
+    pub fn collect<F, E>(mut self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        self.collect = Some(Box::new(move |path| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            f(path).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+        }));
+        self
+    }
+
+    pub fn collect_failure_policy(mut self, policy: CollectFailurePolicy) -> Self {
+        self.collect_failure_policy = policy;
+        self
+    }
+
+    pub fn monitors(mut self, hooks: Vec<MonitoringHook>) -> Self {
+        self.monitors = hooks;
+        self
+    }
+
+    pub fn add_monitor(mut self, hook: MonitoringHook) -> Self {
+        self.monitors.push(hook);
+        self
+    }
+}
+'''
+
+[[tasks.TASK-1.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/lib.rs"
+before = '''pub use task::{ExecutionMode, Task, TaskClosure};
+'''
+after = '''pub use task::{CollectFailurePolicy, ExecutionMode, Task, TaskClosure};
+'''
+
+[[tasks.TASK-1.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/prelude.rs"
+before = '''pub use crate::task::{ExecutionMode, Task};
+'''
+after = '''pub use crate::task::{CollectFailurePolicy, ExecutionMode, Task};
+'''
+
+[[tasks.TASK-1.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs"
+before = '''/// A handle to a running task with metadata.
+pub(crate) struct InFlightTask {
+    pub handle: Box<dyn ProcessHandle>,
+    pub started_at: Instant,
+    pub monitors: Vec<crate::monitoring::MonitoringHook>,
+    pub collect: Option<TaskClosure>,
+    pub workdir: std::path::PathBuf,
+    pub last_periodic_fire: HashMap<String, Instant>,
+}
+'''
+after = '''/// A handle to a running task with metadata.
+pub(crate) struct InFlightTask {
+    pub handle: Box<dyn ProcessHandle>,
+    pub started_at: Instant,
+    pub monitors: Vec<crate::monitoring::MonitoringHook>,
+    pub collect: Option<TaskClosure>,
+    pub workdir: std::path::PathBuf,
+    pub collect_failure_policy: crate::task::CollectFailurePolicy,
+    pub last_periodic_fire: HashMap<String, Instant>,
+}
+'''
+
+[[tasks.TASK-1.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs"
+before = '''                        handles.insert(id.to_string(), InFlightTask {
+                            handle,
+                            started_at: Instant::now(),
+                            monitors,
+                            collect: task.collect,
+                            workdir: task.workdir,
+                            last_periodic_fire: HashMap::new(),
+                        });
+'''
+after = '''                        handles.insert(id.to_string(), InFlightTask {
+                            handle,
+                            started_at: Instant::now(),
+                            monitors,
+                            collect: task.collect,
+                            workdir: task.workdir,
+                            collect_failure_policy: task.collect_failure_policy,
+                            last_periodic_fire: HashMap::new(),
+                        });
+'''
+
+# ── TASK-2: root_dir / --workdir support ────────────────────────────────────
+
+[tasks.TASK-2]
+description = "Add root_dir field and builder to Workflow; resolve relative workdirs at dispatch"
+type = "replace"
+acceptance = [
+    "cargo check -p workflow_core",
+]
+
+[[tasks.TASK-2.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs"
+before = '''pub struct Workflow {
+    pub name: String,
+    tasks: HashMap<String, Task>,
+    max_parallel: usize,
+    pub(crate) interrupt: Arc<AtomicBool>,
+    log_dir: Option<std::path::PathBuf>,
+    queued_submitter: Option<Arc<dyn crate::process::QueuedSubmitter>>,
+    computed_successors: Option<TaskSuccessors>,
+}
+'''
+after = '''pub struct Workflow {
+    pub name: String,
+    tasks: HashMap<String, Task>,
+    max_parallel: usize,
+    pub(crate) interrupt: Arc<AtomicBool>,
+    log_dir: Option<std::path::PathBuf>,
+    root_dir: Option<std::path::PathBuf>,
+    queued_submitter: Option<Arc<dyn crate::process::QueuedSubmitter>>,
+    computed_successors: Option<TaskSuccessors>,
+}
+'''
+
+[[tasks.TASK-2.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs"
+before = '''        Self {
+            name: name.into(),
+            tasks: HashMap::new(),
+            max_parallel,
+            interrupt: Arc::new(AtomicBool::new(false)),
+            log_dir: None,
+            queued_submitter: None,
+            computed_successors: None,
+        }
+'''
+after = '''        Self {
+            name: name.into(),
+            tasks: HashMap::new(),
+            max_parallel,
+            interrupt: Arc::new(AtomicBool::new(false)),
+            log_dir: None,
+            root_dir: None,
+            queued_submitter: None,
+            computed_successors: None,
+        }
+'''
+
+[[tasks.TASK-2.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs"
+before = '''    /// Sets the QueuedSubmitter for Queued execution mode tasks.
+    pub fn with_queued_submitter(mut self, qs: Arc<dyn crate::process::QueuedSubmitter>) -> Self {
+        self.queued_submitter = Some(qs);
+        self
+    }
+'''
+after = '''    /// Sets the QueuedSubmitter for Queued execution mode tasks.
+    pub fn with_queued_submitter(mut self, qs: Arc<dyn crate::process::QueuedSubmitter>) -> Self {
+        self.queued_submitter = Some(qs);
+        self
+    }
+
+    /// Sets a root directory. Relative `task.workdir` values are resolved against it.
+    pub fn with_root_dir(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.root_dir = Some(path.into());
+        self
+    }
+'''
+
+[[tasks.TASK-2.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs"
+before = '''        if let Some(ref dir) = self.log_dir {
+            std::fs::create_dir_all(dir).map_err(WorkflowError::Io)?;
+        }
+'''
+after = '''        let resolved_log_dir = self.log_dir.as_ref().map(|dir| {
+            if dir.is_absolute() {
+                dir.clone()
+            } else if let Some(ref root) = self.root_dir {
+                root.join(dir)
+            } else {
+                dir.clone()
+            }
+        });
+
+        if let Some(ref dir) = resolved_log_dir {
+            std::fs::create_dir_all(dir).map_err(WorkflowError::Io)?;
+        }
+'''
+
+[[tasks.TASK-2.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs"
+before = '''                if matches!(state.get_status(&id), Some(TaskStatus::Pending)) {
+                    // Take task from HashMap (consume it)
+                    if let Some(task) = self.tasks.remove(&id) {
+                        state.mark_running(&id);
+
+                        // Execute setup closure if present
+                        if let Some(setup) = &task.setup {
+                            if let Err(e) = setup(&task.workdir) {
+                                state.mark_failed(&id, e.to_string());
+                                state.save()?;
+                                continue;
+                            }
+                        }
+
+                        let handle = match &task.mode {
+                            ExecutionMode::Direct { command, args, env, timeout } => {
+                                if let Some(d) = timeout {
+                                    task_timeouts.insert(id.to_string(), *d);
+                                }
+                                match runner.spawn(&task.workdir, command, args, env) {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        state.mark_failed(&id, e.to_string());
+                                        state.save()?;
+                                        continue;
+                                    }
+                                }
+                            }
+                            ExecutionMode::Queued => {
+                                let qs = match self.queued_submitter.as_ref() {
+                                    Some(qs) => qs,
+                                    None => {
+                                        state.mark_failed(&id, format!(
+                                            "task '{}': Queued mode requires a QueuedSubmitter", id
+                                        ));
+                                        state.save()?;
+                                        continue;
+                                    }
+                                };
+                                let log_dir = self.log_dir.as_deref()
+                                    .unwrap_or(task.workdir.as_path());
+                                match qs.submit(&task.workdir, &id, log_dir) {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        state.mark_failed(&id, e.to_string());
+                                        state.save()?;
+                                        continue;
+                                    }
+                                }
+                            }
+                        };
+
+                        let monitors = task.monitors.clone();
+                        let task_workdir = task.workdir.clone();
+
+                        fire_hooks(
+                            &monitors,
+                            &task_workdir,
+                            crate::monitoring::TaskPhase::Running,
+                            None,
+                            &id,
+                            hook_executor.as_ref(),
+                        );
+
+                        handles.insert(id.to_string(), InFlightTask {
+                            handle,
+                            started_at: Instant::now(),
+                            monitors,
+                            collect: task.collect,
+                            workdir: task.workdir,
+                            collect_failure_policy: task.collect_failure_policy,
+                            last_periodic_fire: HashMap::new(),
+                        });
+                    }
+                }
+'''
+after = '''                if matches!(state.get_status(&id), Some(TaskStatus::Pending)) {
+                    // Take task from HashMap (consume it)
+                    if let Some(task) = self.tasks.remove(&id) {
+                        state.mark_running(&id);
+
+                        // Resolve workdir against root_dir if configured
+                        let resolved_workdir = if task.workdir.is_absolute() {
+                            task.workdir.clone()
+                        } else if let Some(ref root) = self.root_dir {
+                            root.join(&task.workdir)
+                        } else {
+                            task.workdir.clone()
+                        };
+
+                        // Execute setup closure if present
+                        if let Some(setup) = &task.setup {
+                            if let Err(e) = setup(&resolved_workdir) {
+                                state.mark_failed(&id, e.to_string());
+                                state.save()?;
+                                continue;
+                            }
+                        }
+
+                        let handle = match &task.mode {
+                            ExecutionMode::Direct { command, args, env, timeout } => {
+                                if let Some(d) = timeout {
+                                    task_timeouts.insert(id.to_string(), *d);
+                                }
+                                match runner.spawn(&resolved_workdir, command, args, env) {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        state.mark_failed(&id, e.to_string());
+                                        state.save()?;
+                                        continue;
+                                    }
+                                }
+                            }
+                            ExecutionMode::Queued => {
+                                let qs = match self.queued_submitter.as_ref() {
+                                    Some(qs) => qs,
+                                    None => {
+                                        state.mark_failed(&id, format!(
+                                            "task '{}': Queued mode requires a QueuedSubmitter", id
+                                        ));
+                                        state.save()?;
+                                        continue;
+                                    }
+                                };
+                                let log_dir = resolved_log_dir.as_deref()
+                                    .unwrap_or(resolved_workdir.as_path());
+                                match qs.submit(&resolved_workdir, &id, log_dir) {
+                                    Ok(h) => h,
+                                    Err(e) => {
+                                        state.mark_failed(&id, e.to_string());
+                                        state.save()?;
+                                        continue;
+                                    }
+                                }
+                            }
+                        };
+
+                        let monitors = task.monitors.clone();
+                        let task_workdir = resolved_workdir.clone();
+
+                        fire_hooks(
+                            &monitors,
+                            &task_workdir,
+                            crate::monitoring::TaskPhase::Running,
+                            None,
+                            &id,
+                            hook_executor.as_ref(),
+                        );
+
+                        handles.insert(id.to_string(), InFlightTask {
+                            handle,
+                            started_at: Instant::now(),
+                            monitors,
+                            collect: task.collect,
+                            workdir: task_workdir,
+                            collect_failure_policy: task.collect_failure_policy,
+                            last_periodic_fire: HashMap::new(),
+                        });
+                    }
+                }
+'''
+
+# ── TASK-3: CollectFailurePolicy — process_finished integration + test ───────
+
+[tasks.TASK-3]
+description = "Wire collect_failure_policy into process_finished; add integration tests"
+type = "replace"
+acceptance = [
+    "cargo check -p workflow_core",
+    "cargo test -p workflow_core",
+]
+
+[[tasks.TASK-3.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/src/workflow.rs"
+before = '''/// Processes a single finished task: waits for exit, updates state, runs collect, fires hooks.
+///
+/// If the task is already marked as Failed (e.g., timed out), returns immediately without calling `wait()`.
+fn process_finished(
+    id: &str,
+    mut t: InFlightTask,
+    state: &mut dyn StateStore,
+    hook_executor: &dyn HookExecutor,
+) -> Result<(), WorkflowError> {
+    // Guard: skip wait() if already marked failed (e.g., timed out)
+    if matches!(state.get_status(id), Some(TaskStatus::Failed { .. })) {
+        return Ok(());
+    }
+
+    let exit_code = if let Ok(process_result) = t.handle.wait() {
+        match process_result.exit_code {
+            Some(0) => {
+                state.mark_completed(id);
+                if let Some(ref collect) = t.collect {
+                    if let Err(e) = collect(&t.workdir) {
+                        tracing::warn!(
+                            "Collect closure for task '{}' failed: {}",
+                            id,
+                            e
+                        );
+                    }
+                }
+                process_result.exit_code
+            }
+            _ => {
+                state.mark_failed(
+                    id,
+                    format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
+                );
+                process_result.exit_code
+            }
+        }
+    } else {
+        state.mark_failed(id, "process terminated".to_string());
+        None
+    };
+
+    let task_phase = if exit_code == Some(0) {
+        crate::monitoring::TaskPhase::Completed
+    } else {
+        crate::monitoring::TaskPhase::Failed
+    };
+
+    fire_hooks(
+        &t.monitors,
+        &t.workdir,
+        task_phase,
+        exit_code,
+        id,
+        hook_executor,
+    );
+    state.save()?;
+
+    Ok(())
+}
+'''
+after = '''/// Processes a single finished task: waits for exit, updates state, runs collect, fires hooks.
+///
+/// If the task is already marked as Failed (e.g., timed out), returns immediately without calling `wait()`.
+fn process_finished(
+    id: &str,
+    mut t: InFlightTask,
+    state: &mut dyn StateStore,
+    hook_executor: &dyn HookExecutor,
+) -> Result<(), WorkflowError> {
+    // Guard: skip wait() if already marked failed (e.g., timed out)
+    if matches!(state.get_status(id), Some(TaskStatus::Failed { .. })) {
+        return Ok(());
+    }
+
+    // Determine final phase and mark the task accordingly
+    let (exit_ok, exit_code) = if let Ok(process_result) = t.handle.wait() {
+        match process_result.exit_code {
+            Some(0) => (true, Some(0i32)),
+            _ => {
+                state.mark_failed(
+                    id,
+                    format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
+                );
+                (false, process_result.exit_code)
+            }
+        }
+    } else {
+        state.mark_failed(id, "process terminated".to_string());
+        (false, None)
+    };
+
+    let task_phase = if exit_ok {
+        // Run collect closure BEFORE deciding final phase
+        if let Some(ref collect) = t.collect {
+            if let Err(e) = collect(&t.workdir) {
+                match t.collect_failure_policy {
+                    crate::task::CollectFailurePolicy::FailTask => {
+                        state.mark_failed(id, e.to_string());
+                    }
+                    crate::task::CollectFailurePolicy::WarnOnly => {
+                        tracing::warn!(
+                            "Collect closure for task '{}' failed: {}",
+                            id,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+        // Re-read after potential collect failure override
+        if matches!(state.get_status(id), Some(TaskStatus::Failed { .. })) {
+            crate::monitoring::TaskPhase::Failed
+        } else {
+            state.mark_completed(id);
+            crate::monitoring::TaskPhase::Completed
+        }
+    } else {
+        crate::monitoring::TaskPhase::Failed
+    };
+
+    fire_hooks(
+        &t.monitors,
+        &t.workdir,
+        task_phase,
+        exit_code,
+        id,
+        hook_executor,
+    );
+    state.save()?;
+
+    Ok(())
+}
+'''
+
+[[tasks.TASK-3.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_core/tests/collect_failure_policy.rs"
+before = '''
+'''
+after = '''use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use workflow_core::error::WorkflowError;
+use workflow_core::prelude::*;
+use workflow_core::process::{ProcessHandle, ProcessResult};
+use workflow_core::state::JsonStateStore;
+use workflow_core::{HookExecutor, HookResult, ProcessRunner};
+
+struct StubRunner;
+impl ProcessRunner for StubRunner {
+    fn spawn(
+        &self,
+        workdir: &std::path::Path,
+        command: &str,
+        args: &[String],
+        env: &HashMap<String, String>,
+    ) -> Result<Box<dyn ProcessHandle>, WorkflowError> {
+        let child = std::process::Command::new(command)
+            .args(args)
+            .envs(env)
+            .current_dir(workdir)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(WorkflowError::Io)?;
+        Ok(Box::new(StubHandle {
+            child: Some(child),
+            start: std::time::Instant::now(),
+        }))
+    }
+}
+
+struct StubHandle {
+    child: Option<std::process::Child>,
+    start: std::time::Instant,
+}
+
+impl ProcessHandle for StubHandle {
+    fn is_running(&mut self) -> bool {
+        match &mut self.child {
+            Some(child) => child.try_wait().ok().flatten().is_none(),
+            None => false,
+        }
+    }
+    fn terminate(&mut self) -> Result<(), WorkflowError> {
+        match &mut self.child {
+            Some(child) => child.kill().map_err(WorkflowError::Io),
+            None => Ok(()),
+        }
+    }
+    fn wait(&mut self) -> Result<ProcessResult, WorkflowError> {
+        let child = self
+            .child
+            .take()
+            .ok_or_else(|| WorkflowError::InvalidConfig("wait() called twice".into()))?;
+        let output = child.wait_with_output().map_err(WorkflowError::Io)?;
+        Ok(ProcessResult {
+            exit_code: output.status.code(),
+            output: workflow_core::process::OutputLocation::Captured {
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            },
+            duration: self.start.elapsed(),
+        })
+    }
+}
+
+struct StubHookExecutor;
+impl HookExecutor for StubHookExecutor {
+    fn execute_hook(
+        &self,
+        _hook: &workflow_core::MonitoringHook,
+        _ctx: &workflow_core::HookContext,
+    ) -> Result<HookResult, WorkflowError> {
+        Ok(HookResult {
+            success: true,
+            output: String::new(),
+        })
+    }
+}
+
+#[test]
+fn collect_failure_with_failtask_marks_failed() -> Result<(), WorkflowError> {
+    let dir = tempfile::tempdir().unwrap();
+    let mut wf = Workflow::new("wf_collect_fail").with_max_parallel(4)?;
+
+    wf.add_task(
+        Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        )
+        .collect_failure_policy(CollectFailurePolicy::FailTask)
+        .collect(|_workdir| -> Result<(), std::io::Error> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "collect boom"))
+        }),
+    )
+    .unwrap();
+
+    let runner: Arc<dyn ProcessRunner> = Arc::new(StubRunner);
+    let executor: Arc<dyn HookExecutor> = Arc::new(StubHookExecutor);
+    let state_path = dir.path().join(".wf_collect_fail.workflow.json");
+    let mut state = Box::new(JsonStateStore::new("wf_collect_fail", state_path));
+
+    wf.run(state.as_mut(), runner, executor)?;
+
+    assert!(matches!(
+        state.get_status("a"),
+        Some(TaskStatus::Failed { .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn collect_failure_with_warnonly_marks_completed() -> Result<(), WorkflowError> {
+    let dir = tempfile::tempdir().unwrap();
+    let mut wf = Workflow::new("wf_collect_warn").with_max_parallel(4)?;
+
+    wf.add_task(
+        Task::new(
+            "a",
+            ExecutionMode::Direct {
+                command: "true".into(),
+                args: vec![],
+                env: HashMap::new(),
+                timeout: None,
+            },
+        )
+        .collect_failure_policy(CollectFailurePolicy::WarnOnly)
+        .collect(|_workdir| -> Result<(), std::io::Error> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "collect warning"))
+        }),
+    )
+    .unwrap();
+
+    let runner: Arc<dyn ProcessRunner> = Arc::new(StubRunner);
+    let executor: Arc<dyn HookExecutor> = Arc::new(StubHookExecutor);
+    let state_path = dir.path().join(".wf_collect_warn.workflow.json");
+    let mut state = Box::new(JsonStateStore::new("wf_collect_warn", state_path));
+
+    wf.run(state.as_mut(), runner, executor)?;
+
+    assert!(matches!(
+        state.get_status("a"),
+        Some(TaskStatus::Completed)
+    ));
+    Ok(())
+}
+'''
+
+# ── TASK-4: retry stdin support ─────────────────────────────────────────────
+
+[tasks.TASK-4]
+description = "Add stdin-based task ID input to workflow-cli retry command"
+type = "replace"
+acceptance = [
+    "cargo check -p workflow-cli",
+]
+
+[[tasks.TASK-4.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow-cli/src/main.rs"
+before = '''use clap::{Parser, Subcommand};
+use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+
+#[derive(Parser)]
+#[command(name = "workflow-cli", about = "Workflow state inspection tool")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Status { state_file: String },
+    Retry {
+        state_file: String,
+        #[arg(required = true)]
+        task_ids: Vec<String>,
+    },
+    Inspect {
+        state_file: String,
+        task_id: Option<String>,
+    },
+}
+'''
+after = '''use clap::{Parser, Subcommand};
+use std::io::{self, IsTerminal, Read};
+use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
+
+#[derive(Parser)]
+#[command(name = "workflow-cli", about = "Workflow state inspection tool")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Status { state_file: String },
+    Retry {
+        state_file: String,
+        #[arg(required = false, default_value = "-")]
+        task_ids: Vec<String>,
+    },
+    Inspect {
+        state_file: String,
+        task_id: Option<String>,
+    },
+}
+
+/// Resolve task IDs from CLI args or stdin.
+///
+/// - Non-empty `task_ids` with first element != "-" → use as-is
+/// - `["-"]` or empty + piped input → read stdin (one ID per line)
+/// - Empty + TTY → usage error
+fn read_task_ids(task_ids: &[String]) -> anyhow::Result<Vec<String>> {
+    if task_ids.first().map(|s| s.as_str()) == Some("-") || task_ids.is_empty() {
+        let mut input = String::new();
+        if io::stdin().is_terminal() {
+            anyhow::bail!(
+                "no task IDs specified and stdin is a terminal; \
+                 provide IDs as arguments or pipe them via stdin"
+            );
+        }
+        io::stdin().read_to_string(&mut input).map_err(|e| {
+            anyhow::anyhow!("failed to read stdin: {}", e)
+        })?;
+        let ids: Vec<String> = input
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.trim().to_string())
+            .collect();
+        if ids.is_empty() {
+            anyhow::bail!("no task IDs found in stdin");
+        }
+        Ok(ids)
+    } else {
+        Ok(task_ids.to_vec())
+    }
+}
+'''
+
+[[tasks.TASK-4.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow-cli/src/main.rs"
+before = '''        Commands::Retry { state_file, task_ids } => {
+            let mut state = load_state_for_resume(&state_file)?;
+            cmd_retry(&mut state, &task_ids)?;
+            Ok(())
+        }
+'''
+after = '''        Commands::Retry { state_file, task_ids } => {
+            let resolved = read_task_ids(&task_ids)?;
+            let mut state = load_state_for_resume(&state_file)?;
+            cmd_retry(&mut state, &resolved)?;
+            Ok(())
+        }
+'''
+
+[[tasks.TASK-4.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow-cli/src/main.rs"
+before = '''#[cfg(test)]
+mod tests {
+    use super::*;
+    use workflow_core::state::StateStoreExt;
+
+    fn make_state(dir: &std::path::Path) -> JsonStateStore {
+        let mut s = JsonStateStore::new("test_wf", dir.join("state.json"));
+        s.mark_completed("task_a");
+        s.mark_failed("task_b", "exit code 1".into());
+        s.mark_skipped_due_to_dep_failure("task_c");
+        s.save().unwrap();
+        s
+    }
+
+    #[test]
+    fn retry_resets_failed_and_skipped_dep() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = make_state(dir.path());
+        // task_b=Failed, task_c=SkippedDueToDependencyFailure, task_a=Completed
+        cmd_retry(&mut s, &["task_b".to_string()]).unwrap();
+        assert!(matches!(s.get_status("task_b"), Some(TaskStatus::Pending)));
+        assert!(matches!(s.get_status("task_c"), Some(TaskStatus::Pending)));
+        assert!(matches!(s.get_status("task_a"), Some(TaskStatus::Completed))); // unchanged
+    }
+
+    #[test]
+    fn status_output_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        let out = cmd_status(&s);
+        assert!(out.contains("task_a: Completed"));
+        assert!(out.contains("task_b: Failed (exit code 1)"));
+        assert!(out.contains("Summary: 1 completed, 1 failed, 1 skipped, 0 pending"));
+    }
+
+    #[test]
+    fn status_shows_failed_after_load_raw() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        s.save().unwrap();
+        let loaded = JsonStateStore::load_raw(dir.path().join("state.json").to_str().unwrap()).unwrap();
+        let out = cmd_status(&loaded);
+        assert!(out.contains("task_b: Failed (exit code 1)"));
+    }
+
+    #[test]
+    fn inspect_single_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        let out = cmd_inspect(&s, Some("task_b")).unwrap();
+        assert_eq!(out, "task: task_b\nstatus: Failed\nerror: exit code 1");
+    }
+
+    #[test]
+    fn inspect_unknown_task_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        assert!(cmd_inspect(&s, Some("nonexistent")).is_err());
+    }
+
+}
+'''
+after = '''#[cfg(test)]
+mod tests {
+    use super::*;
+    use workflow_core::state::StateStoreExt;
+
+    fn make_state(dir: &std::path::Path) -> JsonStateStore {
+        let mut s = JsonStateStore::new("test_wf", dir.join("state.json"));
+        s.mark_completed("task_a");
+        s.mark_failed("task_b", "exit code 1".into());
+        s.mark_skipped_due_to_dep_failure("task_c");
+        s.save().unwrap();
+        s
+    }
+
+    #[test]
+    fn retry_resets_failed_and_skipped_dep() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = make_state(dir.path());
+        // task_b=Failed, task_c=SkippedDueToDependencyFailure, task_a=Completed
+        cmd_retry(&mut s, &["task_b".to_string()]).unwrap();
+        assert!(matches!(s.get_status("task_b"), Some(TaskStatus::Pending)));
+        assert!(matches!(s.get_status("task_c"), Some(TaskStatus::Pending)));
+        assert!(matches!(s.get_status("task_a"), Some(TaskStatus::Completed))); // unchanged
+    }
+
+    #[test]
+    fn read_task_ids_from_vec() {
+        let ids = read_task_ids(&["a".to_string(), "b".to_string()]).unwrap();
+        assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn read_task_ids_dash_empty_stdin_errors() {
+        // "-" enters stdin mode; with empty stdin it should error (not hang).
+        // In cargo test, stdin is a pipe (not a TTY), so read_to_string
+        // returns immediately with empty string, triggering the bail.
+        let result = read_task_ids(&["-".to_string()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no task IDs found"));
+    }
+
+    #[test]
+    fn status_output_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        let out = cmd_status(&s);
+        assert!(out.contains("task_a: Completed"));
+        assert!(out.contains("task_b: Failed (exit code 1)"));
+        assert!(out.contains("Summary: 1 completed, 1 failed, 1 skipped, 0 pending"));
+    }
+
+    #[test]
+    fn status_shows_failed_after_load_raw() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        s.save().unwrap();
+        let loaded = JsonStateStore::load_raw(dir.path().join("state.json").to_str().unwrap()).unwrap();
+        let out = cmd_status(&loaded);
+        assert!(out.contains("task_b: Failed (exit code 1)"));
+    }
+
+    #[test]
+    fn inspect_single_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        let out = cmd_inspect(&s, Some("task_b")).unwrap();
+        assert_eq!(out, "task: task_b\nstatus: Failed\nerror: exit code 1");
+    }
+
+    #[test]
+    fn inspect_unknown_task_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = make_state(dir.path());
+        assert!(cmd_inspect(&s, Some("nonexistent")).is_err());
+    }
+
+}
+'''
+
+# ── TASK-5: Multi-Parameter Sweep ───────────────────────────────────────────
+
+[tasks.TASK-5]
+description = "Add itertools and extend hubbard_u_sweep_slurm with product/pairwise sweep modes"
+type = "replace"
+acceptance = [
+    "cargo check -p hubbard_u_sweep_slurm",
+]
+
+[[tasks.TASK-5.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/Cargo.toml"
+before = '''[workspace.dependencies]
+workflow_core = { path = "workflow_core" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+petgraph = "0.8"
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+clap = { version = "4", features = ["derive", "env"] }
+signal-hook = "0.3"
+thiserror = "1"
+time = { version = "0.3", features = ["formatting"] }
+'''
+after = '''[workspace.dependencies]
+workflow_core = { path = "workflow_core" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+petgraph = "0.8"
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+clap = { version = "4", features = ["derive", "env"] }
+signal-hook = "0.3"
+thiserror = "1"
+time = { version = "0.3", features = ["formatting"] }
+itertools = "0.14"
+'''
+
+[[tasks.TASK-5.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm/Cargo.toml"
+before = '''[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+castep-cell-fmt = "0.1.0"
+castep-cell-io = "0.4.0"
+workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
+workflow_utils = { path = "../../workflow_utils" }
+'''
+after = '''[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+castep-cell-fmt = "0.1.0"
+castep-cell-io = "0.4.0"
+itertools = { workspace = true }
+workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
+workflow_utils = { path = "../../workflow_utils" }
+'''
+
+[[tasks.TASK-5.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm/src/config.rs"
+before = '''    /// CASTEP binary name or path (used in --local mode)
+    #[arg(long, default_value = "castep")]
+    pub castep_command: String,
+}
+'''
+after = '''    /// CASTEP binary name or path (used in --local mode)
+    #[arg(long, default_value = "castep")]
+    pub castep_command: String,
+
+    /// Sweep mode: "single" (default), "product", or "pairwise"
+    #[arg(long, default_value = "single")]
+    pub sweep_mode: String,
+
+    /// Second parameter values for product/pairwise sweeps, comma-separated
+    #[arg(long)]
+    pub second_values: Option<String>,
+
+    /// Root directory for runs/logs (relative workdirs are resolved against this)
+    #[arg(long, default_value = ".")]
+    pub workdir: String,
+}
+'''
+
+[[tasks.TASK-5.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''/// Build a single Task for the given Hubbard U value.
+fn build_one_task(
+    config: &SweepConfig,
+    u: f64,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Task, WorkflowError> {
+    let task_id = format!("scf_U{u:.1}");
+    let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}"));
+    let seed_cell = seed_cell.to_owned();
+    let seed_param = seed_param.to_owned();
+    let element = config.element.clone();
+    let orbital = config.orbital;
+    let seed_name_setup = config.seed_name.clone();
+    let seed_name_collect = config.seed_name.clone();
+    let is_local = config.local;
+
+    // Only generate job script for SLURM mode
+    let job_script = if !is_local {
+        Some(generate_job_script(config, &task_id, &config.seed_name))
+    } else {
+        None
+    };
+
+    let mode = if is_local {
+        ExecutionMode::direct(&config.castep_command, &[&config.seed_name])
+    } else {
+        ExecutionMode::Queued
+    };
+
+    let task = Task::new(&task_id, mode)
+        .workdir(workdir)
+        .setup(move |workdir| -> Result<(), WorkflowError> {
+            create_dir(workdir)?;
+
+            // Parse seed cell and inject HubbardU
+            let mut cell_doc: CellDocument =
+                parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+            let orbital_u = match orbital {
+                'd' => OrbitalU::D(u),
+                'f' => OrbitalU::F(u),
+                c => {
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "unsupported orbital '{c}'"
+                    )))
+                }
+            };
+            let atom_u = AtomHubbardU::builder()
+                .species(Species::Symbol(element.clone()))
+                .orbitals(vec![orbital_u])
+                .build();
+            let hubbard_u = HubbardU::builder()
+                .unit(HubbardUUnit::ElectronVolt)
+                .atom_u_values(vec![atom_u])
+                .build();
+            cell_doc.hubbard_u = Some(hubbard_u);
+
+            let cell_text = to_string_many_spaced(&cell_doc.to_cell_file());
+            write_file(
+                workdir.join(format!("{seed_name_setup}.cell")),
+                &cell_text,
+            )?;
+            write_file(
+                workdir.join(format!("{seed_name_setup}.param")),
+                &seed_param,
+            )?;
+            // Only write job script for SLURM mode
+            if let Some(ref script) = job_script {
+                write_file(workdir.join(JOB_SCRIPT_NAME), script)?;
+            }
+            Ok(())
+        })
+        .collect(move |workdir| -> Result<(), WorkflowError> {
+            let castep_out = workdir.join(format!("{seed_name_collect}.castep"));
+            if !castep_out.exists() {
+                return Err(WorkflowError::InvalidConfig(format!(
+                    "missing output: {}",
+                    castep_out.display()
+                )));
+            }
+            let content = read_file(&castep_out)?;
+            if !content.contains("Total time") {
+                return Err(WorkflowError::InvalidConfig(
+                    "CASTEP output appears incomplete (no 'Total time' marker)".into(),
+                ));
+            }
+            Ok(())
+        });
+
+    Ok(task)
+}
+
+/// Build all sweep tasks from the config.
+fn build_sweep_tasks(config: &SweepConfig) -> Result<Vec<Task>, anyhow::Error> {
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+    let u_values = parse_u_values(&config.u_values).map_err(anyhow::Error::msg)?;
+
+    u_values
+        .into_iter()
+        .map(|u| build_one_task(config, u, seed_cell, seed_param).map_err(Into::into))
+        .collect()
+}
+'''
+after = '''/// Build a single Task for the given Hubbard U value and second parameter.
+fn build_one_task(
+    config: &SweepConfig,
+    u: f64,
+    second: &str,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Task, WorkflowError> {
+    let task_id = format!("scf_U{u:.1}_{second}");
+    let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}/{second}"));
+    let seed_cell = seed_cell.to_owned();
+    let seed_param = seed_param.to_owned();
+    let element = config.element.clone();
+    let orbital = config.orbital;
+    let seed_name_setup = config.seed_name.clone();
+    let seed_name_collect = config.seed_name.clone();
+    let is_local = config.local;
+
+    // Only generate job script for SLURM mode
+    let job_script = if !is_local {
+        Some(generate_job_script(config, &task_id, &config.seed_name))
+    } else {
+        None
+    };
+
+    let mode = if is_local {
+        ExecutionMode::direct(&config.castep_command, &[&config.seed_name])
+    } else {
+        ExecutionMode::Queued
+    };
+
+    let task = Task::new(&task_id, mode)
+        .workdir(workdir)
+        .setup(move |workdir| -> Result<(), WorkflowError> {
+            create_dir(workdir)?;
+
+            // Parse seed cell and inject HubbardU
+            let mut cell_doc: CellDocument =
+                parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+            let orbital_u = match orbital {
+                'd' => OrbitalU::D(u),
+                'f' => OrbitalU::F(u),
+                c => {
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "unsupported orbital '{c}'"
+                    )))
+                }
+            };
+            let atom_u = AtomHubbardU::builder()
+                .species(Species::Symbol(element.clone()))
+                .orbitals(vec![orbital_u])
+                .build();
+            let hubbard_u = HubbardU::builder()
+                .unit(HubbardUUnit::ElectronVolt)
+                .atom_u_values(vec![atom_u])
+                .build();
+            cell_doc.hubbard_u = Some(hubbard_u);
+
+            let cell_text = to_string_many_spaced(&cell_doc.to_cell_file());
+            write_file(
+                workdir.join(format!("{seed_name_setup}.cell")),
+                &cell_text,
+            )?;
+            write_file(
+                workdir.join(format!("{seed_name_setup}.param")),
+                &seed_param,
+            )?;
+            // Only write job script for SLURM mode
+            if let Some(ref script) = job_script {
+                write_file(workdir.join(JOB_SCRIPT_NAME), script)?;
+            }
+            Ok(())
+        })
+        .collect(move |workdir| -> Result<(), WorkflowError> {
+            let castep_out = workdir.join(format!("{seed_name_collect}.castep"));
+            if !castep_out.exists() {
+                return Err(WorkflowError::InvalidConfig(format!(
+                    "missing output: {}",
+                    castep_out.display()
+                )));
+            }
+            let content = read_file(&castep_out)?;
+            if !content.contains("Total time") {
+                return Err(WorkflowError::InvalidConfig(
+                    "CASTEP output appears incomplete (no 'Total time' marker)".into(),
+                ));
+            }
+            Ok(())
+        });
+
+    Ok(task)
+}
+
+/// Build a dependent chain (SCF -> DOS) for a single parameter combination.
+fn build_chain(
+    config: &SweepConfig,
+    u: f64,
+    second: &str,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Vec<Task>, WorkflowError> {
+    let scf = build_one_task(config, u, second, seed_cell, seed_param)?;
+    // DOS task depends on SCF completing successfully
+    let dos_id = format!("dos_{second}");
+    let dos_workdir = std::path::PathBuf::from(format!("runs/U{u:.1}/{second}/dos"));
+    let seed_name = config.seed_name.clone();
+    let mode = if config.local {
+        ExecutionMode::direct(&config.castep_command, &[&seed_name])
+    } else {
+        ExecutionMode::Queued
+    };
+    let dos = Task::new(&dos_id, mode)
+        .workdir(dos_workdir)
+        .depends_on(&scf.id);
+    // Note: the DOS setup/collect closures would follow the same pattern as SCF
+    // but target DOS-specific output files. For dry-run validation, the dependency
+    // structure alone is sufficient.
+    Ok(vec![scf, dos])
+}
+
+/// Parse a comma-separated list of string labels (e.g. "kpt8x8x8,kpt6x6x6").
+/// Unlike parse_u_values, does not attempt f64 conversion — second parameters
+/// may be k-point meshes, cutoff labels, or any arbitrary string.
+fn parse_second_values(s: &str) -> Vec<String> {
+    s.split(',').map(|seg| seg.trim().to_string()).filter(|s| !s.is_empty()).collect()
+}
+
+/// Build all sweep tasks from the config, supporting single/product/pairwise modes.
+fn build_sweep_tasks(config: &SweepConfig) -> Result<Vec<Task>, anyhow::Error> {
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+    let u_values = parse_u_values(&config.u_values).map_err(anyhow::Error::msg)?;
+
+    match config.sweep_mode.as_str() {
+        "product" => {
+            let second_values = config
+                .second_values
+                .as_ref()
+                .map(|s| parse_second_values(s))
+                .unwrap_or_else(|| vec!["kpt8x8x8".to_string()]);
+            let mut tasks = Vec::new();
+            for (u, second) in itertools::iproduct!(u_values, second_values) {
+                tasks.extend(build_chain(config, u, &second, seed_cell, seed_param)?);
+            }
+            Ok(tasks)
+        }
+        "pairwise" => {
+            let second_values = config
+                .second_values
+                .as_ref()
+                .map(|s| parse_second_values(s))
+                .unwrap_or_else(|| vec!["kpt8x8x8".to_string()]);
+            let mut tasks = Vec::new();
+            for (u, second) in u_values.iter().zip(second_values.iter()) {
+                tasks.extend(build_chain(config, *u, second, seed_cell, seed_param)?);
+            }
+            Ok(tasks)
+        }
+        _ => {
+            // Single-parameter mode (default): one U value per task, no second parameter.
+            // Uses build_one_task directly (no DOS chain). To add a DOS chain in single
+            // mode, call build_chain with an explicit second label instead.
+            u_values
+                .into_iter()
+                .map(|u| build_one_task(config, u, "default", seed_cell, seed_param).map_err(Into::into))
+                .collect()
+        }
+    }
+}
+'''
+
+[[tasks.TASK-5.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm/src/main.rs"
+before = '''    let mut workflow = Workflow::new("hubbard_u_sweep_slurm")
+        .with_max_parallel(config.max_parallel)?
+        .with_log_dir("logs");
+'''
+after = '''    let mut workflow = Workflow::new("hubbard_u_sweep_slurm")
+        .with_max_parallel(config.max_parallel)?
+        .with_log_dir("logs")
+        .with_root_dir(&config.workdir);
+'''
+
+# ── TASK-6: Documentation accuracy sweep + clippy ───────────────────────────
+
+[tasks.TASK-6]
+description = "Update ARCHITECTURE.md/ARCHITECTURE_STATUS.md, fix config assertion, trailing newline, and clippy"
+type = "replace"
+acceptance = [
+    "cargo clippy --workspace -- -D warnings",
+]
+
+[[tasks.TASK-6.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/examples/hubbard_u_sweep_slurm/src/config.rs"
+before = '''    #[test]
+    fn parse_empty_string() {
+        // The whole input is empty (distinct from an empty token in the middle)
+        let err = parse_u_values("").unwrap_err();
+        assert!(!err.is_empty());
+    }
+'''
+after = '''    #[test]
+    fn parse_empty_string() {
+        // The whole input is empty (distinct from an empty token in the middle)
+        let err = parse_u_values("").unwrap_err();
+        assert!(err.contains("invalid"), "expected parse failure on empty input, got: {err}");
+    }
+'''
+
+[[tasks.TASK-6.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/workflow_utils/src/prelude.rs"
+before = '''// workflow_utils types
+pub use crate::{
+    copy_file, create_dir, exists, read_file, remove_dir, run_default, write_file,
+    QueuedRunner, SchedulerKind, ShellHookExecutor, SystemProcessRunner, JOB_SCRIPT_NAME,
+};'''
+after = '''// workflow_utils types
+pub use crate::{
+    copy_file, create_dir, exists, read_file, remove_dir, run_default, write_file,
+    QueuedRunner, SchedulerKind, ShellHookExecutor, SystemProcessRunner, JOB_SCRIPT_NAME,
+};
+'''
+
+[[tasks.TASK-6.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/ARCHITECTURE.md"
+before = '''impl JsonStateStore {
+    pub fn new(name: impl Into<String>, path: PathBuf) -> Self;
+
+    // crash-recovery: resets Failed/Running/SkippedDueToDependencyFailure → Pending
+    pub fn load(&mut self) -> Result<(), WorkflowError>;
+
+    // read-only inspection without crash-recovery resets (used by CLI status/inspect)
+    pub fn load_raw(&self) -> Result<WorkflowState, WorkflowError>;
+}
+'''
+after = '''impl JsonStateStore {
+    pub fn new(name: impl Into<String>, path: PathBuf) -> Self;
+
+    // crash-recovery: resets Failed/Running/SkippedDueToDependencyFailure → Pending
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, WorkflowError>;
+
+    // read-only inspection without crash-recovery resets (used by CLI status/inspect)
+    pub fn load_raw(path: impl AsRef<Path>) -> Result<Self, WorkflowError>;
+}
+'''
+
+[[tasks.TASK-6.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/ARCHITECTURE.md"
+before = '''    /// Set setup closure (runs before execution)
+    pub fn setup<F>(self, f: F) -> Self
+    where F: Fn(&Path) -> Result<(), WorkflowError> + Send + Sync + 'static;
+
+    /// Set collect closure (runs after successful execution to validate output)
+    pub fn collect<F>(self, f: F) -> Self
+    where F: Fn(&Path) -> Result<(), WorkflowError> + Send + Sync + 'static;
+'''
+after = '''    /// Set setup closure (runs before execution).
+    pub fn setup<F, E>(self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static;
+
+    /// Set collect closure (runs after successful execution to validate output).
+    pub fn collect<F, E>(self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static;
+'''
+
+[[tasks.TASK-6.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/ARCHITECTURE_STATUS.md"
+before = '''- `Task` gains `setup`/`collect` closure fields; `TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>` type alias
+'''
+after = '''- `Task` gains `setup`/`collect` closure fields; `TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync>` type alias
+- `CollectFailurePolicy` enum: `FailTask` (default) and `WarnOnly` for governing collect closure failures
+'''
+
+[[tasks.TASK-6.changes]]
+file = "/Users/tony/programming/castep_workflow_framework/ARCHITECTURE_STATUS.md"
+before = '''- `downstream_of<S: AsRef<str>>` generic signature — callers pass `&[&str]` without allocating
+'''
+after = '''- `downstream_of<S: AsRef<str>>` generic signature — callers pass `&[&str]` without allocating
+- `CollectFailurePolicy` re-exported from `workflow_core::prelude` and `workflow_core::lib`
+'''

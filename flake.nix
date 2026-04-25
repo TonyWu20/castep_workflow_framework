@@ -74,7 +74,7 @@
               {
                 name = "claude-qwen3.6-nix";
                 command = ''
-                  ANTHROPIC_BASE_URL=http://localhost:8001 \
+                  ANTHROPIC_BASE_URL=http://10.0.0.3:4000 \
                   CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
                   ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.6-apex-think \
                   ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.6-apex-think \
