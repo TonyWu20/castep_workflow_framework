@@ -30,6 +30,7 @@ pub struct Workflow {
     max_parallel: usize,
     pub(crate) interrupt: Arc<AtomicBool>,
     log_dir: Option<std::path::PathBuf>,
+    root_dir: Option<std::path::PathBuf>,
     queued_submitter: Option<Arc<dyn crate::process::QueuedSubmitter>>,
     computed_successors: Option<TaskSuccessors>,
 }
@@ -47,6 +48,7 @@ impl Workflow {
             max_parallel,
             interrupt: Arc::new(AtomicBool::new(false)),
             log_dir: None,
+            root_dir: None,
             queued_submitter: None,
             computed_successors: None,
         }
@@ -72,6 +74,12 @@ impl Workflow {
     /// Sets the QueuedSubmitter for Queued execution mode tasks.
     pub fn with_queued_submitter(mut self, qs: Arc<dyn crate::process::QueuedSubmitter>) -> Self {
         self.queued_submitter = Some(qs);
+        self
+    }
+
+    /// Sets a root directory. Relative `task.workdir` values are resolved against it.
+    pub fn with_root_dir(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.root_dir = Some(path.into());
         self
     }
 
@@ -112,7 +120,17 @@ impl Workflow {
         signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&self.interrupt)).ok();
         signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&self.interrupt)).ok();
 
-        if let Some(ref dir) = self.log_dir {
+        let resolved_log_dir = self.log_dir.as_ref().map(|dir| {
+            if dir.is_absolute() {
+                dir.clone()
+            } else if let Some(ref root) = self.root_dir {
+                root.join(dir)
+            } else {
+                dir.clone()
+            }
+        });
+
+        if let Some(ref dir) = resolved_log_dir {
             std::fs::create_dir_all(dir).map_err(WorkflowError::Io)?;
         }
 
@@ -212,9 +230,18 @@ impl Workflow {
                     if let Some(task) = self.tasks.remove(&id) {
                         state.mark_running(&id);
 
+                        // Resolve workdir against root_dir if configured
+                        let resolved_workdir = if task.workdir.is_absolute() {
+                            task.workdir.clone()
+                        } else if let Some(ref root) = self.root_dir {
+                            root.join(&task.workdir)
+                        } else {
+                            task.workdir.clone()
+                        };
+
                         // Execute setup closure if present
                         if let Some(setup) = &task.setup {
-                            if let Err(e) = setup(&task.workdir) {
+                            if let Err(e) = setup(&resolved_workdir) {
                                 state.mark_failed(&id, e.to_string());
                                 state.save()?;
                                 continue;
@@ -226,7 +253,7 @@ impl Workflow {
                                 if let Some(d) = timeout {
                                     task_timeouts.insert(id.to_string(), *d);
                                 }
-                                match runner.spawn(&task.workdir, command, args, env) {
+                                match runner.spawn(&resolved_workdir, command, args, env) {
                                     Ok(h) => h,
                                     Err(e) => {
                                         state.mark_failed(&id, e.to_string());
@@ -246,9 +273,9 @@ impl Workflow {
                                         continue;
                                     }
                                 };
-                                let log_dir = self.log_dir.as_deref()
-                                    .unwrap_or(task.workdir.as_path());
-                                match qs.submit(&task.workdir, &id, log_dir) {
+                                let log_dir = resolved_log_dir.as_deref()
+                                    .unwrap_or(resolved_workdir.as_path());
+                                match qs.submit(&resolved_workdir, &id, log_dir) {
                                     Ok(h) => h,
                                     Err(e) => {
                                         state.mark_failed(&id, e.to_string());
@@ -260,7 +287,7 @@ impl Workflow {
                         };
 
                         let monitors = task.monitors.clone();
-                        let task_workdir = task.workdir.clone();
+                        let task_workdir = resolved_workdir.clone();
 
                         fire_hooks(
                             &monitors,
@@ -276,7 +303,7 @@ impl Workflow {
                             started_at: Instant::now(),
                             monitors,
                             collect: task.collect,
-                            workdir: task.workdir,
+                            workdir: task_workdir,
                             collect_failure_policy: task.collect_failure_policy,
                             last_periodic_fire: HashMap::new(),
                         });

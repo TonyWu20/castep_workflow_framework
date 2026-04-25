@@ -18,3 +18,9 @@
   - `cargo check -p workflow_core`: PASSED
   - `cargo check --workspace 2>&1`: PASSED
 
+### TASK-2: Add root_dir field and builder to Workflow; resolve relative workdirs at dispatch
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+  - `cargo check --workspace 2>&1`: PASSED
+
