@@ -90,27 +90,43 @@ after = '''                .map(|u| build_one_task(config, u, None, seed_cell, s
 
 [tasks.TASK-3]
 description = "Add trailing newline to examples/hubbard_u_sweep_slurm/Cargo.toml"
-type = "append"
+type = "replace"
 acceptance = ["cargo check -p hubbard_u_sweep_slurm"]
 
 [[tasks.TASK-3.changes]]
 file = "examples/hubbard_u_sweep_slurm/Cargo.toml"
-append = "\n"
+before = '''workflow_utils = { path = "../../workflow_utils" }'''
+after = '''workflow_utils = { path = "../../workflow_utils" }
+'''
 
 [tasks.TASK-4]
 description = "Add trailing newline to workflow_core/tests/collect_failure_policy.rs"
-type = "append"
+type = "replace"
 acceptance = ["cargo test -p workflow_core"]
 
 [[tasks.TASK-4.changes]]
 file = "workflow_core/tests/collect_failure_policy.rs"
-append = "\n"
+before = '''    assert!(matches!(
+        state.get_status("a"),
+        Some(TaskStatus::Completed)
+    ));
+    Ok(())
+}'''
+after = '''    assert!(matches!(
+        state.get_status("a"),
+        Some(TaskStatus::Completed)
+    ));
+    Ok(())
+}
+'''
 
 [tasks.TASK-5]
 description = "Add trailing newline to workflow_core/src/prelude.rs"
-type = "append"
+type = "replace"
 acceptance = ["cargo check -p workflow_core"]
 
 [[tasks.TASK-5.changes]]
 file = "workflow_core/src/prelude.rs"
-append = "\n"
+before = '''pub use crate::{HookExecutor, ProcessRunner};'''
+after = '''pub use crate::{HookExecutor, ProcessRunner};
+'''
