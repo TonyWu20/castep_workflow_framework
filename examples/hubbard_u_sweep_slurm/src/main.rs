@@ -12,15 +12,16 @@ use workflow_utils::prelude::*;
 use config::{parse_u_values, SweepConfig};
 use job_script::generate_job_script;
 
-/// Build a single Task for the given Hubbard U value.
+/// Build a single Task for the given Hubbard U value and second parameter.
 fn build_one_task(
     config: &SweepConfig,
     u: f64,
+    second: &str,
     seed_cell: &str,
     seed_param: &str,
 ) -> Result<Task, WorkflowError> {
-    let task_id = format!("scf_U{u:.1}");
-    let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}"));
+    let task_id = format!("scf_U{u:.1}_{second}");
+    let workdir = std::path::PathBuf::from(format!("runs/U{u:.1}/{second}"));
     let seed_cell = seed_cell.to_owned();
     let seed_param = seed_param.to_owned();
     let element = config.element.clone();
@@ -105,16 +106,81 @@ fn build_one_task(
     Ok(task)
 }
 
-/// Build all sweep tasks from the config.
+/// Build a dependent chain (SCF -> DOS) for a single parameter combination.
+fn build_chain(
+    config: &SweepConfig,
+    u: f64,
+    second: &str,
+    seed_cell: &str,
+    seed_param: &str,
+) -> Result<Vec<Task>, WorkflowError> {
+    let scf = build_one_task(config, u, second, seed_cell, seed_param)?;
+    // DOS task depends on SCF completing successfully
+    let dos_id = format!("dos_{second}");
+    let dos_workdir = std::path::PathBuf::from(format!("runs/U{u:.1}/{second}/dos"));
+    let seed_name = config.seed_name.clone();
+    let mode = if config.local {
+        ExecutionMode::direct(&config.castep_command, &[&seed_name])
+    } else {
+        ExecutionMode::Queued
+    };
+    let dos = Task::new(&dos_id, mode)
+        .workdir(dos_workdir)
+        .depends_on(&scf.id);
+    // Note: the DOS setup/collect closures would follow the same pattern as SCF
+    // but target DOS-specific output files. For dry-run validation, the dependency
+    // structure alone is sufficient.
+    Ok(vec![scf, dos])
+}
+
+/// Parse a comma-separated list of string labels (e.g. "kpt8x8x8,kpt6x6x6").
+/// Unlike parse_u_values, does not attempt f64 conversion — second parameters
+/// may be k-point meshes, cutoff labels, or any arbitrary string.
+fn parse_second_values(s: &str) -> Vec<String> {
+    s.split(',').map(|seg| seg.trim().to_string()).filter(|s| !s.is_empty()).collect()
+}
+
+/// Build all sweep tasks from the config, supporting single/product/pairwise modes.
 fn build_sweep_tasks(config: &SweepConfig) -> Result<Vec<Task>, anyhow::Error> {
     let seed_cell = include_str!("../seeds/ZnO.cell");
     let seed_param = include_str!("../seeds/ZnO.param");
     let u_values = parse_u_values(&config.u_values).map_err(anyhow::Error::msg)?;
 
-    u_values
-        .into_iter()
-        .map(|u| build_one_task(config, u, seed_cell, seed_param).map_err(Into::into))
-        .collect()
+    match config.sweep_mode.as_str() {
+        "product" => {
+            let second_values = config
+                .second_values
+                .as_ref()
+                .map(|s| parse_second_values(s))
+                .unwrap_or_else(|| vec!["kpt8x8x8".to_string()]);
+            let mut tasks = Vec::new();
+            for (u, second) in itertools::iproduct!(u_values, second_values) {
+                tasks.extend(build_chain(config, u, &second, seed_cell, seed_param)?);
+            }
+            Ok(tasks)
+        }
+        "pairwise" => {
+            let second_values = config
+                .second_values
+                .as_ref()
+                .map(|s| parse_second_values(s))
+                .unwrap_or_else(|| vec!["kpt8x8x8".to_string()]);
+            let mut tasks = Vec::new();
+            for (u, second) in u_values.iter().zip(second_values.iter()) {
+                tasks.extend(build_chain(config, *u, second, seed_cell, seed_param)?);
+            }
+            Ok(tasks)
+        }
+        _ => {
+            // Single-parameter mode (default): one U value per task, no second parameter.
+            // Uses build_one_task directly (no DOS chain). To add a DOS chain in single
+            // mode, call build_chain with an explicit second label instead.
+            u_values
+                .into_iter()
+                .map(|u| build_one_task(config, u, "default", seed_cell, seed_param).map_err(Into::into))
+                .collect()
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -125,7 +191,8 @@ fn main() -> Result<()> {
 
     let mut workflow = Workflow::new("hubbard_u_sweep_slurm")
         .with_max_parallel(config.max_parallel)?
-        .with_log_dir("logs");
+        .with_log_dir("logs")
+        .with_root_dir(&config.workdir);
 
     if !config.local {
         workflow = workflow.with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));

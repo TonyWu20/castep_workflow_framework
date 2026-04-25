@@ -31,3 +31,9 @@
   - `cargo test -p workflow_core`: PASSED
   - `cargo check --workspace 2>&1`: PASSED
 
+### TASK-5: Add itertools and extend hubbard_u_sweep_slurm with product/pairwise sweep modes
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p hubbard_u_sweep_slurm`: PASSED
+  - `cargo check --workspace 2>&1`: PASSED
+

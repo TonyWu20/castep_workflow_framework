@@ -12,5 +12,6 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 castep-cell-fmt = "0.1.0"
 castep-cell-io = "0.4.0"
+itertools = { workspace = true }
 workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
 workflow_utils = { path = "../../workflow_utils" }
