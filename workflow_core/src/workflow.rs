@@ -397,12 +397,32 @@ fn process_finished(
         return Ok(());
     }
 
-    let exit_code = if let Ok(process_result) = t.handle.wait() {
+    // Determine final phase and mark the task accordingly
+    let (exit_ok, exit_code) = if let Ok(process_result) = t.handle.wait() {
         match process_result.exit_code {
-            Some(0) => {
-                state.mark_completed(id);
-                if let Some(ref collect) = t.collect {
-                    if let Err(e) = collect(&t.workdir) {
+            Some(0) => (true, Some(0i32)),
+            _ => {
+                state.mark_failed(
+                    id,
+                    format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
+                );
+                (false, process_result.exit_code)
+            }
+        }
+    } else {
+        state.mark_failed(id, "process terminated".to_string());
+        (false, None)
+    };
+
+    let task_phase = if exit_ok {
+        // Run collect closure BEFORE deciding final phase
+        if let Some(ref collect) = t.collect {
+            if let Err(e) = collect(&t.workdir) {
+                match t.collect_failure_policy {
+                    crate::task::CollectFailurePolicy::FailTask => {
+                        state.mark_failed(id, e.to_string());
+                    }
+                    crate::task::CollectFailurePolicy::WarnOnly => {
                         tracing::warn!(
                             "Collect closure for task '{}' failed: {}",
                             id,
@@ -410,23 +430,15 @@ fn process_finished(
                         );
                     }
                 }
-                process_result.exit_code
-            }
-            _ => {
-                state.mark_failed(
-                    id,
-                    format!("exit code {}", process_result.exit_code.unwrap_or(-1)),
-                );
-                process_result.exit_code
             }
         }
-    } else {
-        state.mark_failed(id, "process terminated".to_string());
-        None
-    };
-
-    let task_phase = if exit_code == Some(0) {
-        crate::monitoring::TaskPhase::Completed
+        // Re-read after potential collect failure override
+        if matches!(state.get_status(id), Some(TaskStatus::Failed { .. })) {
+            crate::monitoring::TaskPhase::Failed
+        } else {
+            state.mark_completed(id);
+            crate::monitoring::TaskPhase::Completed
+        }
     } else {
         crate::monitoring::TaskPhase::Failed
     };

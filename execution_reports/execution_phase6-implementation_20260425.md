@@ -24,3 +24,10 @@
   - `cargo check -p workflow_core`: PASSED
   - `cargo check --workspace 2>&1`: PASSED
 
+### TASK-3: Wire collect_failure_policy into process_finished; add integration tests
+- **Status**: ✓ Passed
+- **Validation output**:
+  - `cargo check -p workflow_core`: PASSED
+  - `cargo test -p workflow_core`: PASSED
+  - `cargo check --workspace 2>&1`: PASSED
+
