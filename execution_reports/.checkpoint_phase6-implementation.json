@@ -1,0 +1,9 @@
+{
+  "plan": "/Users/tony/programming/castep_workflow_framework/plans/phase-6/phase6_implementation.toml",
+  "base_commit": "2b738c7d1cbd5d261cb2ec071f552f6c1f45b60c",
+  "completed": [
+    "TASK-1"
+  ],
+  "failed": [],
+  "blocked": []
+}

@@ -20,6 +20,7 @@ pub(crate) struct InFlightTask {
     pub monitors: Vec<crate::monitoring::MonitoringHook>,
     pub collect: Option<TaskClosure>,
     pub workdir: std::path::PathBuf,
+    pub collect_failure_policy: crate::task::CollectFailurePolicy,
     pub last_periodic_fire: HashMap<String, Instant>,
 }
 
@@ -276,6 +277,7 @@ impl Workflow {
                             monitors,
                             collect: task.collect,
                             workdir: task.workdir,
+                            collect_failure_policy: task.collect_failure_policy,
                             last_periodic_fire: HashMap::new(),
                         });
                     }

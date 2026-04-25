@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::io::{self, IsTerminal, Read};
 use workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus};
 
 #[derive(Parser)]
@@ -13,13 +14,44 @@ enum Commands {
     Status { state_file: String },
     Retry {
         state_file: String,
-        #[arg(required = true)]
+        #[arg(required = false, default_value = "-")]
         task_ids: Vec<String>,
     },
     Inspect {
         state_file: String,
         task_id: Option<String>,
     },
+}
+
+/// Resolve task IDs from CLI args or stdin.
+///
+/// - Non-empty `task_ids` with first element != "-" → use as-is
+/// - `["-"]` or empty + piped input → read stdin (one ID per line)
+/// - Empty + TTY → usage error
+fn read_task_ids(task_ids: &[String]) -> anyhow::Result<Vec<String>> {
+    if task_ids.first().map(|s| s.as_str()) == Some("-") || task_ids.is_empty() {
+        let mut input = String::new();
+        if io::stdin().is_terminal() {
+            anyhow::bail!(
+                "no task IDs specified and stdin is a terminal; \
+                 provide IDs as arguments or pipe them via stdin"
+            );
+        }
+        io::stdin().read_to_string(&mut input).map_err(|e| {
+            anyhow::anyhow!("failed to read stdin: {}", e)
+        })?;
+        let ids: Vec<String> = input
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.trim().to_string())
+            .collect();
+        if ids.is_empty() {
+            anyhow::bail!("no task IDs found in stdin");
+        }
+        Ok(ids)
+    } else {
+        Ok(task_ids.to_vec())
+    }
 }
 
 fn load_state_raw(path: &str) -> anyhow::Result<JsonStateStore> {
@@ -121,8 +153,9 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Commands::Retry { state_file, task_ids } => {
+            let resolved = read_task_ids(&task_ids)?;
             let mut state = load_state_for_resume(&state_file)?;
-            cmd_retry(&mut state, &task_ids)?;
+            cmd_retry(&mut state, &resolved)?;
             Ok(())
         }
         Commands::Inspect { state_file, task_id } => {
@@ -157,6 +190,22 @@ mod tests {
         assert!(matches!(s.get_status("task_b"), Some(TaskStatus::Pending)));
         assert!(matches!(s.get_status("task_c"), Some(TaskStatus::Pending)));
         assert!(matches!(s.get_status("task_a"), Some(TaskStatus::Completed))); // unchanged
+    }
+
+    #[test]
+    fn read_task_ids_from_vec() {
+        let ids = read_task_ids(&["a".to_string(), "b".to_string()]).unwrap();
+        assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn read_task_ids_dash_empty_stdin_errors() {
+        // "-" enters stdin mode; with empty stdin it should error (not hang).
+        // In cargo test, stdin is a pipe (not a TTY), so read_to_string
+        // returns immediately with empty string, triggering the bail.
+        let result = read_task_ids(&["-".to_string()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no task IDs found"));
     }
 
     #[test]
