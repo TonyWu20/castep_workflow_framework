@@ -1,17 +1,36 @@
-# Phase 6 Per-File Analysis
+# Per-File Analysis: phase-6 -> main
 
 ## File: workflow_core/src/task.rs
 
-**Intent:** Added `CollectFailurePolicy` enum with `FailTask`/`WarnOnly` variants, field on `Task`, builder method, and default initialization.
+**Intent:** Added `CollectFailurePolicy` enum (FailTask/WarnOnly), `collect_failure_policy` field on `Task`, and builder method. Generic `<F, E>` signatures for `setup` and `collect` already existed.
 
 **Checklist:**
 - Unnecessary clone/unwrap/expect? No
-- Error handling: meaningful types or stringly-typed? N/A — this is a policy enum, not error handling
+- Error handling: N/A (new enum + field)
 - Dead code or unused imports? No
-- New public API: tests present? No — `CollectFailurePolicy` itself has no unit tests; integration tests exist in `collect_failure_policy.rs`
+- New public API: tests present? No — the enum's behavior is tested through integration tests in `collect_failure_policy.rs`
 - Change appears within plan scope? Yes — TASK-1
 
-**Notes:** Enum derives `Copy` which is appropriate for a small policy marker. The field is `pub(crate)` which is correct — internal to the workflow execution path, not part of the public Layer 3 API. Doc comments are thorough.
+**Notes:** The enum is correctly `#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]`. Default is `FailTask`. `pub(crate)` visibility on the struct field correctly limits external mutation. The `<F, E>` generic signatures on `setup` and `collect` in task.rs already matched ARCHITECTURE.md after the Phase 5B diff — documentation accuracy confirmed.
+
+---
+
+## File: workflow_core/src/workflow.rs
+
+**Intent:** Added `root_dir` field + builder; added `collect_failure_policy` to `InFlightTask`; rewrote `process_finished()` to run collect before final status decision; resolved workdir and log_dir against root_dir at dispatch.
+
+**Checklist:**
+- Unnecessary clone/unwrap/expect? The `root.join(&task.workdir)` clone is intentional — `task` is consumed by `self.tasks.remove()`, so the clone is necessary.
+- Error handling: stringly-typed `e.to_string()` for collect errors in state — consistent with existing pattern throughout the file
+- Dead code or unused imports? No
+- New public API: tests present? Inline tests verify workflow behavior; separate integration test file covers collect_failure_policy
+- Change appears within plan scope? Yes — TASK-1, TASK-2, TASK-3
+
+**Notes:**
+- The `process_finished()` rewrite (lines 389-457) is the most complex change. The collect-before-status ordering is correct. The state re-read pattern after `mark_failed` handles the collect-overrides-exit-code case properly.
+- `InFlightTask::workdir` now holds the resolved path — hooks and collect closures see the correct path, which is the intended behavior.
+- `resolved_log_dir` is computed once at the top of `run()` and reused. The `queued.rs` path uses `resolved_log_dir.as_deref().unwrap_or(resolved_workdir.as_path())`, which is correct — if no log_dir is configured, falls back to the resolved workdir.
+- `root_dir` resolution only applies to relative paths, preserving absolute paths unchanged. This matches the plan specification.
 
 ---
 
@@ -23,10 +42,10 @@
 - Unnecessary clone/unwrap/expect? No
 - Error handling: N/A
 - Dead code or unused imports? No
-- New public API: tests present? N/A — re-export
+- New public API: tests present? N/A — single-line re-export
 - Change appears within plan scope? Yes — TASK-1
 
-**Notes:** Single-line change. Correct placement in the existing re-export chain.
+**Notes:** Correct placement in the existing re-export chain.
 
 ---
 
@@ -41,26 +60,41 @@
 - New public API: tests present? N/A — re-export
 - Change appears within plan scope? Yes — TASK-1
 
-**Notes:** Note: file still missing trailing newline (the CLAUDE.md rule says to always add trailing newlines). This was listed as TASK-6 item 6 but the fix appears to have not landed here (or the diff stat shows only 2 lines changed for this file). Confirmed: the file ends without a newline.
+**Notes:** Trailing newline present (confirmed via manifest). No issues.
 
 ---
 
-## File: workflow_core/src/workflow.rs
+## File: workflow_core/tests/collect_failure_policy.rs
 
-**Intent:** Added `root_dir` field and builder to `Workflow`; added `collect_failure_policy` field to `InFlightTask`; rewrote `process_finished()` to run collect before final status decision; resolved workdir and log_dir against root_dir at dispatch time.
+**Intent:** New integration test file verifying both `FailTask` and `WarnOnly` policies.
 
 **Checklist:**
-- Unnecessary clone/unwrap/expect? `root.join(&task.workdir)` clones `task_workdir` before passing to `InFlightTask` — this is intentional since `task` is consumed by `self.tasks.remove()`, so the clone is necessary, not unnecessary.
-- Error handling: meaningful types or stringly-typed? `process_finished` uses `e.to_string()` for error propagation into state — consistent with existing pattern in the file
+- Unnecessary clone/unwrap/expect? `tempfile::tempdir().unwrap()` and `.unwrap()` on `add_task` — standard test patterns
+- Error handling: N/A (tests)
 - Dead code or unused imports? No
-- New public API: tests present? Yes — inline tests in `workflow.rs` cover the workflow behavior; separate integration test file covers `collect_failure_policy`
-- Change appears within plan scope? Yes — TASK-1, TASK-2, TASK-3
+- New public API: tests present? Yes — this is the test file itself
+- Change appears within plan scope? Yes — TASK-3
 
 **Notes:**
-- `process_finished()` rewrite is the most complex change. The logic now: (1) wait for process, (2) if exit != 0, mark failed immediately, (3) if exit == 0, run collect, (4) if collect fails with FailTask, mark failed, (5) re-read state to decide phase. The re-read of state (`state.get_status(id)`) after potential `mark_failed` is the correct pattern to handle the collect-overrides-exit-code case.
-- `resolved_log_dir` is computed once at the top of `run()` and reused. The QueuedSubmitter path uses `resolved_log_dir.as_deref().unwrap_or(resolved_workdir.as_path())` which is correct — if no log_dir is configured, falls back to the resolved workdir.
-- `root_dir` is `Option<std::path::PathBuf>` on the struct, set via builder. Resolution only applies to relative paths, preserving absolute paths unchanged. This matches the plan specification.
-- The `InFlightTask::workdir` field now holds the resolved path instead of the original task workdir. This means hooks and collect closures see the resolved path, which is the intended behavior.
+- Two tests cover the two policy modes. Both use the same pattern: create workflow, add task with failing collect, run, verify state.
+- `StubHandle::wait` takes ownership of the child via `.take()`, correct.
+- Test doubles (`StubRunner`, `StubHandle`, `StubHookExecutor`) are correct and complete.
+- Trailing newline missing (confirmed via manifest).
+
+---
+
+## File: workflow_core/tests/hook_recording.rs
+
+**Intent:** Added explicit `.collect_failure_policy(CollectFailurePolicy::WarnOnly)` to the existing `collect_failure_does_not_fail_task` test, and imported `CollectFailurePolicy`.
+
+**Checklist:**
+- Unnecessary clone/unwrap/expect? No
+- Error handling: N/A
+- Dead code or unused imports? No
+- New public API: N/A — existing test updated
+- Change appears within plan scope? Yes — TASK-3
+
+**Notes:** This change is necessary because the default `CollectFailurePolicy` is now `FailTask`. Without the explicit `WarnOnly`, the test would fail. The test's intent is to verify `WarnOnly` semantics, so this is correct.
 
 ---
 
@@ -69,15 +103,15 @@
 **Intent:** Added `read_task_ids()` function for stdin-based task ID input to `workflow-cli retry` command.
 
 **Checklist:**
-- Unnecessary clone/unwrap/expect? No. `task_ids.to_vec()` on the non-stdin branch is a defensive copy — reasonable for a public-facing function result.
-- Error handling: meaningful types or stringly-typed? Uses `anyhow::bail!` with descriptive messages for three error conditions (TTY, read failure, empty stdin).
+- Unnecessary clone/unwrap/expect? `task_ids.to_vec()` is a defensive copy on the non-stdin branch — reasonable for a public-facing function result.
+- Error handling: `anyhow::bail!` with descriptive messages for three error conditions (TTY, read failure, empty stdin)
 - Dead code or unused imports? No
 - New public API: tests present? Yes — two new tests for `read_task_ids`
 - Change appears within plan scope? Yes — TASK-4
 
 **Notes:**
-- The `#[arg(required = false, default_value = "-")]` clap attribute means `task_ids` will always be non-empty when clap parses — either the user provides values, or the default `"-"` is used. This means `task_ids.is_empty()` can never be true in practice. The empty check in `read_task_ids` is therefore dead code. This is a minor redundancy, not a correctness bug.
-- `io::stdin().read_to_string(&mut input)` on an empty pipe returns Ok with empty string (no bytes). The test comment correctly notes this behavior and the "no task IDs found" bail fires as expected.
+- The clap default `#[arg(required = false, default_value = "-")]` ensures `task_ids` is always non-empty when clap parses. The dead `task_ids.is_empty()` branch from the initial draft review was already removed in fix-plan TASK-1.
+- `io::stdin().read_to_string(&mut input)` on an empty pipe returns Ok with empty string. The test comment correctly notes this behavior and the "no task IDs found" bail fires as expected.
 - The function is `fn` (private), not `pub fn`, so it is not a new public API.
 
 ---
@@ -94,60 +128,38 @@
 - Change appears within plan scope? Yes — TASK-5, TASK-6
 
 **Notes:**
-- All three new fields are `String` / `Option<String>`. `sweep_mode` and `workdir` use clap defaults. `second_values` is optional — when absent in product/pairwise mode, the example defaults to `vec!["kpt8x8x8"]`.
-- The test assertion change from `!err.is_empty()` to `err.contains("invalid")` is an improvement in assertion specificity.
+- `sweep_mode` and `workdir` have clap defaults; `second_values` is optional (defaults to `vec!["kpt8x8x8"]` in product/pairwise mode).
+- Test assertion change from `!err.is_empty()` to `err.contains("invalid")` improves assertion specificity.
 
 ---
 
 ## File: examples/hubbard_u_sweep_slurm/src/main.rs
 
-**Intent:** Extended to support multi-parameter sweeps (product/pairwise modes), added `build_chain` for SCF→DOS dependent task chains, added `--workdir` root_dir wiring.
+**Intent:** Extended to support multi-parameter sweeps (product/pairwise modes), added `build_chain` for SCF-DOS dependent task chains, added `--workdir` root_dir wiring.
 
 **Checklist:**
 - Unnecessary clone/unwrap/expect? No
-- Error handling: Uses `WorkflowError` consistently in closures; `build_sweep_tasks` returns `anyhow::Error` (consistent with binary crate convention per CLAUDE.md)
+- Error handling: Uses `WorkflowError` consistently in closures; `build_sweep_tasks` returns `anyhow::Error` (binary crate convention per CLAUDE.md)
 - Dead code or unused imports? No
-- New public API: tests present? No — the binary example has no tests. The `build_chain` DOS task is a partial implementation (no setup/collect closures) with a comment noting this.
+- New public API: tests present? No — the binary example has no tests
 - Change appears within plan scope? Yes — TASK-5
 
 **Notes:**
-- `build_chain` creates a DOS task with no setup or collect closures. The comment explains this is sufficient for dry-run validation. This is a reasonable stub.
-- The "single" mode passes `"default"` as the second parameter string to `build_one_task`, which appends `_default` to the task ID. This means single-mode task IDs change format from `scf_U3.0` to `scf_U3.0_default`. This is a behavioral change that existing workflow state files would not recognize.
+- `build_chain` creates a DOS task with no setup/collect closures. The comment explains this is sufficient for dry-run validation per plan scope.
+- Single-mode mode calls `build_one_task(config, u, None, ...)` — task IDs remain in the original format (e.g., `scf_U3.0`). No behavioral change. (This was previously incorrectly flagged as introducing a `_default` suffix, which was the state before fix-plan TASK-2.)
 - `parse_second_values` is a simple split+trim, consistent with the existing `parse_u_values` pattern but without f64 conversion.
-- Duplicated `second_values` extraction logic in both "product" and "pairwise" arms could be extracted into a local binding before the match, but the duplication is minimal (4 lines each) and the match arms have different iteration patterns.
+- Minor duplication of `second_values` extraction in both "product" and "pairwise" arms (~4 lines each) — the match arms have different iteration patterns so extraction would be marginal.
 
 ---
 
-## File: workflow_core/tests/collect_failure_policy.rs
+## File: examples/hubbard_u_sweep_slurm/Cargo.toml
 
-**Intent:** New integration test file verifying both `FailTask` and `WarnOnly` policies in `process_finished`.
-
-**Checklist:**
-- Unnecessary clone/unwrap/expect? `tempfile::tempdir().unwrap()` and `.unwrap()` on `add_task` are standard test patterns.
-- Error handling: Test doubles (`StubRunner`, `StubHandle`, `StubHookExecutor`) are correct and complete.
-- Dead code or unused imports? No
-- New public API: tests present? Yes — this is the test file itself
-- Change appears within plan scope? Yes — TASK-3
-
-**Notes:**
-- Two tests cover the two policy modes. Both use the same pattern: create workflow, add task with failing collect, run, verify state.
-- `StubHandle::wait` takes ownership of the child via `.take()`, which is correct — ensures `wait()` is called at most once.
-- File ends without trailing newline (same issue as `prelude.rs`).
-
----
-
-## File: workflow_core/tests/hook_recording.rs
-
-**Intent:** Added explicit `.collect_failure_policy(CollectFailurePolicy::WarnOnly)` to the `collect_failure_does_not_fail_task` test, and imported `CollectFailurePolicy`.
+**Intent:** Added `itertools` workspace dependency.
 
 **Checklist:**
-- Unnecessary clone/unwrap/expect? No
-- Error handling: N/A
-- Dead code or unused imports? No
-- New public API: tests present? N/A — existing test updated
-- Change appears within plan scope? Yes — TASK-3
+- No substantive issues.
 
-**Notes:** This change is necessary because the default `CollectFailurePolicy` is now `FailTask`. Without the explicit `WarnOnly`, the test would fail (task would be marked Failed instead of Completed). This is correct behavior — the test's intent is to verify `WarnOnly` semantics.
+**Notes:** Trailing newline missing (confirmed via manifest).
 
 ---
 
@@ -156,24 +168,104 @@
 **Intent:** Added `itertools = "0.14"` to workspace dependencies.
 
 **Checklist:**
-- No issues
+- No issues.
 
 ---
 
-## File: examples/hubbard_u_sweep_slurm/Cargo.toml
+## File: Cargo.lock
 
-**Intent:** Added `itertools` workspace dependency. Removed trailing newline.
+**Intent:** Added `itertools` 0.14.0 and `either` 1.15.0.
 
 **Checklist:**
-- Trailing newline missing — minor code hygiene issue.
+- No issues.
 
 ---
 
-## File: workflow_core/src/prelude.rs
+## File: ARCHITECTURE.md
 
-**Intent:** Re-exported `CollectFailurePolicy`.
+**Intent:** Updated `setup`/`collect` builder signatures and `JsonStateStore::load`/`load_raw` to match actual implementation.
 
 **Checklist:**
-- File missing trailing newline (already noted above).
+- No issues.
+
+**Notes:** `setup<F, E>` and `collect<F, E>` now match actual signatures. `load`/`load_raw` corrected from instance methods to static constructors.
+
+---
+
+## File: ARCHITECTURE_STATUS.md
+
+**Intent:** Updated Phase 5 description, added Phase 6 section, updated Next Steps.
+
+**Checklist:**
+- No issues.
+
+**Notes:** `CollectFailurePolicy` re-export entry added. `TaskClosure` description updated. Next Steps updated to reflect Phase 6 status.
+
+---
+
+## File: flake.nix
+
+**Intent:** Updated LLM model endpoint URLs and model names for apex models.
+
+**Checklist:**
+- No issues (not source code).
+
+---
+
+## File: plans/phase-6/PHASE_PLAN.md
+
+**Intent:** New phase plan document for Phase 6.
+
+**Checklist:**
+- No issues.
+
+**Notes:** Contains 5 goals with detailed design, critical files, and sequencing notes.
+
+---
+
+## File: plans/phase-6/phase6_implementation.toml
+
+**Intent:** Task-level implementation breakdown for Phase 6.
+
+**Checklist:**
+- No issues.
+
+**Notes:** 6 tasks with dependency chain.
+
+---
+
+## File: notes/pr-reviews/phase-6/draft-fix-document.md
+
+**Intent:** Draft document identifying the dead code issue.
+
+**Checklist:**
+- Not code (review artifact).
+
+---
+
+## File: notes/pr-reviews/phase-6/fix-plan.toml
+
+**Intent:** Fix plan for review issues.
+
+**Checklist:**
+- Not code (review artifact).
+
+---
+
+## File: notes/plan-reviews/PHASE_PLAN/decisions.md
+
+**Intent:** Architectural review decisions for Phase 6 plan.
+
+**Checklist:**
+- Not code (review artifact).
+
+---
+
+## File: notes/pr-reviews/phase-6/deferred.md
+
+**Intent:** Deferred items carried forward from prior phases.
+
+**Checklist:**
+- Not code (review artifact).
 
 ---

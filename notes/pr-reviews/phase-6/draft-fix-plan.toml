@@ -1,11 +1,1 @@
-# Draft Fix Plan — PR Review (phase-6)
-
-[tasks.TASK-1]
-description = "Remove dead `task_ids.is_empty()` branch in `read_task_ids`"
-type = "replace"
-acceptance = ["cargo check -p workflow-cli", "cargo test -p workflow-cli"]
-
-[[tasks.TASK-1.changes]]
-file = "workflow-cli/src/main.rs"
-before = '''    if task_ids.first().map(|s| s.as_str()) == Some("-") || task_ids.is_empty() {'''
-after = '''    if task_ids.first().map(|s| s.as_str()) == Some("-") {'''
+# No fix tasks — PR approved without fixes
