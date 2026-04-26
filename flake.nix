@@ -97,10 +97,10 @@
                   ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_TOKEN \
                   CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
                   CLAUDE_CODE_EFFORT_LEVEL=max \
-                  ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro \
-                  ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4-flash \
+                  ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro[1m] \
+                  ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4-flash[1m] \
                   ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash \
-                  claude --model "opusplan [1m]"
+                  claude --model "opusplan"
                 '';
               }
             ];
