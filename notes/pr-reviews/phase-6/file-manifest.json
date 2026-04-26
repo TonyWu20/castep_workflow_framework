@@ -1,0 +1,522 @@
+{
+  "branch": "phase-6",
+  "base": "main",
+  "commits": [
+    {
+      "hash": "530fbc1",
+      "message": "chore(phase-6): remove build artifacts (checkpoint, compiled scripts)"
+    },
+    {
+      "hash": "9d2c68e",
+      "message": "fix(phase-6): update branch status snapshot"
+    },
+    {
+      "hash": "e98de9e",
+      "message": "feat(fix-plan): TASK-2: Change `second` parameter of `build_one_task` and `build_chain` to `Option<&str>`; update all call sites; restore single-mode task IDs to original format"
+    },
+    {
+      "hash": "65ef217",
+      "message": "review(phase-6): convert append tasks to replace with exact before blocks"
+    },
+    {
+      "hash": "69ac44d",
+      "message": "review(phase-6): update fix plan and review with Option<&str> approach"
+    },
+    {
+      "hash": "01f3116",
+      "message": "review(phase-6): fix plan and final review"
+    },
+    {
+      "hash": "3e177a8",
+      "message": "Gather files for review-pr"
+    },
+    {
+      "hash": "46ed39a",
+      "message": "chore(phase-6): add execution report and remove compiled artifacts"
+    },
+    {
+      "hash": "b045ecd",
+      "message": "feat(phase6-implementation): TASK-6: Update ARCHITECTURE.md/ARCHITECTURE_STATUS.md, fix config assertion, trailing newline, and clippy"
+    },
+    {
+      "hash": "9bc4705",
+      "message": "feat(phase6-implementation): TASK-5: Add itertools and extend hubbard_u_sweep_slurm with product/pairwise sweep modes"
+    },
+    {
+      "hash": "7b45cea",
+      "message": "feat(phase6-implementation): TASK-3: Wire collect_failure_policy into process_finished; add integration tests"
+    },
+    {
+      "hash": "4975f6c",
+      "message": "feat(phase6-implementation): TASK-2: Add root_dir field and builder to Workflow; resolve relative workdirs at dispatch"
+    },
+    {
+      "hash": "976889c",
+      "message": "feat(phase6-implementation): TASK-1: Add CollectFailurePolicy enum, field on Task/InFlightTask, and re-exports"
+    },
+    {
+      "hash": "2b738c7",
+      "message": "Revised phase6 implementation toml"
+    },
+    {
+      "hash": "0936c09",
+      "message": "chore(deferred): consolidate stale deferred items into phase-6/deferred.md"
+    },
+    {
+      "hash": "dbb981b",
+      "message": "plan-review(PHASE_PLAN): architectural review and deferred item decisions"
+    },
+    {
+      "hash": "dc6442d",
+      "message": "plan(phase-6): initial phase plan \u2014 Reliability, Multi-Parameter Patterns, and Ergonomics"
+    }
+  ],
+  "files": [
+    {
+      "path": "ARCHITECTURE.md",
+      "lines_added": 13,
+      "lines_removed": 9,
+      "added_functions": [
+        "setup",
+        "collect",
+        "load",
+        "load_raw"
+      ],
+      "removed_functions": [
+        "setup",
+        "collect",
+        "load",
+        "load_raw"
+      ],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": false
+    },
+    {
+      "path": "ARCHITECTURE_STATUS.md",
+      "lines_added": 16,
+      "lines_removed": 4,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "Cargo.lock",
+      "lines_added": 16,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "Cargo.toml",
+      "lines_added": 1,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "examples/hubbard_u_sweep_slurm/Cargo.toml",
+      "lines_added": 1,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": false
+    },
+    {
+      "path": "examples/hubbard_u_sweep_slurm/src/config.rs",
+      "lines_added": 13,
+      "lines_removed": 1,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "examples/hubbard_u_sweep_slurm/src/main.rs",
+      "lines_added": 88,
+      "lines_removed": 9,
+      "added_functions": [
+        "build_chain",
+        "parse_second_values"
+      ],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "execution_reports/.checkpoint_phase6-implementation.json",
+      "lines_added": 13,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "execution_reports/execution_fix-plan_20260426.md",
+      "lines_added": 56,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "execution_reports/execution_phase6-implementation_20260425.md",
+      "lines_added": 45,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "execution_reports/execution_phase6_implementation_20260425.md",
+      "lines_added": 103,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "flake.nix",
+      "lines_added": 4,
+      "lines_removed": 4,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/plan-reviews/PHASE_PLAN/decisions.md",
+      "lines_added": 118,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/context.md",
+      "lines_added": 33,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/deferred.md",
+      "lines_added": 30,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/draft-fix-document.md",
+      "lines_added": 9,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/draft-fix-plan.toml",
+      "lines_added": 11,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/draft-review.md",
+      "lines_added": 38,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/fix-plan.toml",
+      "lines_added": 132,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/gather-summary.md",
+      "lines_added": 22,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/per-file-analysis.md",
+      "lines_added": 179,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/raw-diff.md",
+      "lines_added": 191,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/review.md",
+      "lines_added": 68,
+      "lines_removed": 0,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "notes/pr-reviews/phase-6/status.md",
+      "lines_added": 114,
+      "lines_removed": 0,
+      "added_functions": [
+        "read_task_ids",
+        "build_one_task",
+        "build_chain"
+      ],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "plans/phase-6/PHASE_PLAN.md",
+      "lines_added": 211,
+      "lines_removed": 0,
+      "added_functions": [
+        "CollectFailurePolicy"
+      ],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "plans/phase-6/phase6_implementation.toml",
+      "lines_added": 1618,
+      "lines_removed": 0,
+      "added_functions": [
+        "TaskClosure",
+        "ExecutionMode",
+        "direct",
+        "Task",
+        "new",
+        "depends_on",
+        "workdir",
+        "setup",
+        "collect",
+        "monitors",
+        "add_monitor",
+        "CollectFailurePolicy",
+        "collect_failure_policy",
+        "with_queued_submitter",
+        "with_root_dir",
+        "process_finished",
+        "StubRunner",
+        "ProcessRunner",
+        "spawn",
+        "StubHandle",
+        "ProcessHandle",
+        "is_running",
+        "terminate",
+        "wait",
+        "StubHookExecutor",
+        "HookExecutor",
+        "execute_hook",
+        "collect_failure_with_failtask_marks_failed",
+        "collect_failure_with_warnonly_marks_completed",
+        "Cli",
+        "Commands",
+        "read_task_ids",
+        "make_state",
+        "retry_resets_failed_and_skipped_dep",
+        "status_output_format",
+        "status_shows_failed_after_load_raw",
+        "inspect_single_task",
+        "inspect_unknown_task_errors",
+        "read_task_ids_from_vec",
+        "read_task_ids_dash_empty_stdin_errors",
+        "build_one_task",
+        "build_sweep_tasks",
+        "build_chain",
+        "parse_second_values",
+        "parse_empty_string",
+        "load",
+        "load_raw"
+      ],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [
+        "std::collections::HashMap",
+        "std::path::{Path, PathBuf}",
+        "std::time::Duration",
+        "std::sync::Arc",
+        "workflow_core::error::WorkflowError",
+        "workflow_core::prelude::*",
+        "workflow_core::process::{ProcessHandle, ProcessResult}",
+        "workflow_core::state::JsonStateStore",
+        "workflow_core::{HookExecutor, HookResult, ProcessRunner}",
+        "workflow_core::state::{JsonStateStore, StateStore, StateStoreExt, TaskStatus}",
+        "std::io::{self, IsTerminal, Read}",
+        "super::*",
+        "workflow_core::state::StateStoreExt"
+      ],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "workflow-cli/src/main.rs",
+      "lines_added": 51,
+      "lines_removed": 2,
+      "added_functions": [
+        "read_task_ids",
+        "read_task_ids_from_vec",
+        "read_task_ids_dash_empty_stdin_errors"
+      ],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [
+        "std::io::{self, IsTerminal, Read}"
+      ],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "workflow_core/src/lib.rs",
+      "lines_added": 1,
+      "lines_removed": 1,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "workflow_core/src/prelude.rs",
+      "lines_added": 1,
+      "lines_removed": 1,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": false
+    },
+    {
+      "path": "workflow_core/src/task.rs",
+      "lines_added": 22,
+      "lines_removed": 0,
+      "added_functions": [
+        "CollectFailurePolicy",
+        "collect_failure_policy"
+      ],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "workflow_core/src/workflow.rs",
+      "lines_added": 67,
+      "lines_removed": 26,
+      "added_functions": [
+        "with_root_dir"
+      ],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [],
+      "has_trailing_newline": true
+    },
+    {
+      "path": "workflow_core/tests/collect_failure_policy.rs",
+      "lines_added": 153,
+      "lines_removed": 0,
+      "added_functions": [
+        "StubRunner",
+        "ProcessRunner",
+        "spawn",
+        "StubHandle",
+        "ProcessHandle",
+        "is_running",
+        "terminate",
+        "wait",
+        "StubHookExecutor",
+        "HookExecutor",
+        "execute_hook",
+        "collect_failure_with_failtask_marks_failed",
+        "collect_failure_with_warnonly_marks_completed"
+      ],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [
+        "std::collections::HashMap",
+        "std::sync::Arc",
+        "workflow_core::error::WorkflowError",
+        "workflow_core::prelude::*",
+        "workflow_core::process::{ProcessHandle, ProcessResult}",
+        "workflow_core::state::JsonStateStore",
+        "workflow_core::{HookExecutor, HookResult, ProcessRunner}"
+      ],
+      "has_trailing_newline": false
+    },
+    {
+      "path": "workflow_core/tests/hook_recording.rs",
+      "lines_added": 2,
+      "lines_removed": 1,
+      "added_functions": [],
+      "removed_functions": [],
+      "modified_functions": [],
+      "added_imports": [
+        "workflow_core::{CollectFailurePolicy, HookExecutor, process::ProcessRunner, state::{JsonStateStore, StateStore, TaskStatus}, Workflow, Task}"
+      ],
+      "has_trailing_newline": true
+    }
+  ]
+}

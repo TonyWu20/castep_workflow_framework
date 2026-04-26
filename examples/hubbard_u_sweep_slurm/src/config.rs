@@ -54,6 +54,18 @@ pub struct SweepConfig {
     /// CASTEP binary name or path (used in --local mode)
     #[arg(long, default_value = "castep")]
     pub castep_command: String,
+
+    /// Sweep mode: "single" (default), "product", or "pairwise"
+    #[arg(long, default_value = "single")]
+    pub sweep_mode: String,
+
+    /// Second parameter values for product/pairwise sweeps, comma-separated
+    #[arg(long)]
+    pub second_values: Option<String>,
+
+    /// Root directory for runs/logs (relative workdirs are resolved against this)
+    #[arg(long, default_value = ".")]
+    pub workdir: String,
 }
 
 /// Parses a comma-separated string of f64 values.
@@ -112,7 +124,7 @@ mod tests {
     fn parse_empty_string() {
         // The whole input is empty (distinct from an empty token in the middle)
         let err = parse_u_values("").unwrap_err();
-        assert!(!err.is_empty());
+        assert!(err.contains("invalid"), "expected parse failure on empty input, got: {err}");
     }
 
     #[test]

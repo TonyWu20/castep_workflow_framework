@@ -7,6 +7,21 @@ use std::time::Duration;
 /// A closure used for task setup or result collection.
 pub type TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static>;
 
+/// Policy governing how collect-closure failures affect task status.
+///
+/// When a collect closure returns `Err`, the framework must decide whether
+/// the task itself should be marked as Failed or whether the error should
+/// only be logged as a warning.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CollectFailurePolicy {
+    /// The task is marked `Failed` with the collect error message.
+    /// This is the default and recommended policy for correctness.
+    #[default]
+    FailTask,
+    /// The error is logged as a warning and the task remains `Completed`.
+    WarnOnly,
+}
+
 #[derive(Debug, Clone)]
 pub enum ExecutionMode {
     Direct {
@@ -47,6 +62,7 @@ pub struct Task {
     pub setup: Option<TaskClosure>,
     pub collect: Option<TaskClosure>,
     pub monitors: Vec<MonitoringHook>,
+    pub(crate) collect_failure_policy: CollectFailurePolicy,
 }
 
 impl Task {
@@ -59,6 +75,7 @@ impl Task {
             setup: None,
             collect: None,
             monitors: Vec::new(),
+            collect_failure_policy: CollectFailurePolicy::default(),
         }
     }
 
@@ -91,6 +108,11 @@ impl Task {
         self.collect = Some(Box::new(move |path| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             f(path).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
         }));
+        self
+    }
+
+    pub fn collect_failure_policy(mut self, policy: CollectFailurePolicy) -> Self {
+        self.collect_failure_policy = policy;
         self
     }
 

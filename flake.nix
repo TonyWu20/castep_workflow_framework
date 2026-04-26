@@ -74,11 +74,11 @@
               {
                 name = "claude-qwen3.6-nix";
                 command = ''
-                  ANTHROPIC_BASE_URL=http://localhost:8001 \
+                  ANTHROPIC_BASE_URL=http://10.0.0.3:4000 \
                   CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
-                  ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.6 \
-                  ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.6 \
-                  ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6 \
+                  ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3.6-apex-think \
+                  ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3.6-apex-think \
+                  ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6-apex \
                   claude
                 '';
               }
@@ -88,6 +88,19 @@
                   ANTHROPIC_BASE_URL=$FOXCODE_BASE_URL \
                   ANTHROPIC_AUTH_TOKEN=$FOXCODE_TOKEN \
                   claude
+                '';
+              }
+              {
+                name = "claude-deepseek";
+                command = ''
+                  ANTHROPIC_BASE_URL=$DEEPSEEK_BASE_URL \
+                  ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_TOKEN \
+                  CLAUDE_CODE_ATTRIBUTION_HEADER="0" \
+                  CLAUDE_CODE_EFFORT_LEVEL=max \
+                  ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro \
+                  ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4-flash \
+                  ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash \
+                  claude --model "opusplan [1m]"
                 '';
               }
             ];

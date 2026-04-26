@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use workflow_core::{HookExecutor, process::ProcessRunner, state::{JsonStateStore, StateStore, TaskStatus}, Workflow, Task};
+use workflow_core::{CollectFailurePolicy, HookExecutor, process::ProcessRunner, state::{JsonStateStore, StateStore, TaskStatus}, Workflow, Task};
 use workflow_utils::{ShellHookExecutor, SystemProcessRunner};
 
 mod common;
@@ -50,6 +50,7 @@ fn collect_failure_does_not_fail_task() {
 
     wf.add_task(
         Task::new("a", direct("true"))
+            .collect_failure_policy(CollectFailurePolicy::WarnOnly)
             .collect(|_| -> Result<(), std::io::Error> { Err(std::io::Error::other("collect failed")) })
     ).unwrap();
 

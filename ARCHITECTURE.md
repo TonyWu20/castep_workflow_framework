@@ -159,13 +159,17 @@ impl Task {
     /// Add dependency on another task
     pub fn depends_on(self, task_id: impl Into<String>) -> Self;
 
-    /// Set setup closure (runs before execution)
-    pub fn setup<F>(self, f: F) -> Self
-    where F: Fn(&Path) -> Result<(), WorkflowError> + Send + Sync + 'static;
+    /// Set setup closure (runs before execution).
+    pub fn setup<F, E>(self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static;
 
-    /// Set collect closure (runs after successful execution to validate output)
-    pub fn collect<F>(self, f: F) -> Self
-    where F: Fn(&Path) -> Result<(), WorkflowError> + Send + Sync + 'static;
+    /// Set collect closure (runs after successful execution to validate output).
+    pub fn collect<F, E>(self, f: F) -> Self
+    where
+        F: Fn(&Path) -> Result<(), E> + Send + Sync + 'static,
+        E: std::error::Error + Send + Sync + 'static;
 
     /// Attach monitoring hooks
     pub fn monitors(self, hooks: Vec<MonitoringHook>) -> Self;
@@ -231,10 +235,10 @@ impl JsonStateStore {
     pub fn new(name: impl Into<String>, path: PathBuf) -> Self;
 
     // crash-recovery: resets Failed/Running/SkippedDueToDependencyFailure → Pending
-    pub fn load(&mut self) -> Result<(), WorkflowError>;
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, WorkflowError>;
 
     // read-only inspection without crash-recovery resets (used by CLI status/inspect)
-    pub fn load_raw(&self) -> Result<WorkflowState, WorkflowError>;
+    pub fn load_raw(path: impl AsRef<Path>) -> Result<Self, WorkflowError>;
 }
 
 /// Persisted successor graph for graph-aware retry (Phase 4+)

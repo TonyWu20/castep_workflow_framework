@@ -54,7 +54,8 @@
 - `ExecutionMode::Direct` with per-task `Option<Duration>` timeout
 - OS signal handling: SIGTERM/SIGINT via `signal-hook`; graceful shutdown; re-registers on each `run()`
 - `workflow-cli` binary: `status`, `inspect`, `retry` subcommands
-- `Task` gains `setup`/`collect` closure fields; `TaskClosure = Box<dyn Fn(&Path) -> Result<(), WorkflowError> + Send + Sync>` type alias
+- `Task` gains `setup`/`collect` closure fields; `TaskClosure = Box<dyn Fn(&Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync>` type alias
+- `CollectFailurePolicy` enum: `FailTask` (default) and `WarnOnly` for governing collect closure failures
 - `anyhow` removed from `workflow_core`; `TaskStatus` re-exported from crate root
 - End-to-end resume and timeout integration tests
 
@@ -90,6 +91,7 @@
 - `workflow_utils::prelude` module: re-exports all commonly used types from both crates; Layer 3 binaries now use `use workflow_utils::prelude::*`
 - `run_default(&mut workflow, &mut state)` in `workflow_utils`: eliminates repeated Arc wiring (`SystemProcessRunner` + `ShellHookExecutor`) in binaries
 - `downstream_of<S: AsRef<str>>` generic signature — callers pass `&[&str]` without allocating
+- `CollectFailurePolicy` re-exported from `workflow_core::prelude` and `workflow_core::lib`
 - `hubbard_u_sweep_slurm`: local mode now uses `run_default()`; SLURM mode keeps manual Arc wiring
 - Inlined format args throughout (`{e}` instead of `{}`, e`)
 - `init_default_logging()` exposed in `workflow_core` crate root
@@ -133,13 +135,23 @@ Layer 1: workflow_core (Foundation)
 Parser Libraries: castep-cell-io, castep-cell-fmt, etc.
 ```
 
+#### Phase 6: Reliability, Multi-Parameter Patterns, and Ergonomics 🚧 (planned 2026-04-25)
+
+- **CollectFailurePolicy** — fix correctness bug: `mark_completed` currently runs *before* collect; collect failures only warn. New: run collect before marking completed; `FailTask` (default) marks task Failed, `WarnOnly` preserves old behavior. Software-agnostic: Layer 3 defines what "success" means, framework defines the policy.
+- **Multi-parameter sweep** — build and validate on HPC cluster: product (`iproduct!`) and pairwise (`zip`) modes, dependent task chains (SCF → DOS per parameter combo). No new framework API — Layer 3 patterns with `itertools`.
+- **`--workdir` / root_dir** — `Workflow::with_root_dir()` resolves relative task workdirs against a configurable root; enables binary invocation from any directory.
+- **`retry` stdin support** — accept task IDs from stdin (`workflow-cli retry state.json -`) for Unix pipeline composition; avoids reimplementing grep with `--match` glob.
+- **Documentation accuracy sweep** — fix 6 deferred doc/test mismatches from Phase 5B.
+
 ## Next Steps
 
-**Phases 1–5 are complete.** The framework is ready for production use on HPC clusters with both direct and SLURM queued execution modes. Future work may include:
+**Phases 1–5 are complete.** Phase 6 is planned. The framework is production-ready for single-parameter CASTEP sweeps on SLURM. Phase 6 extends reliability and validates multi-parameter sweep patterns on real hardware.
 
-- On-cluster SLURM submission validation with real CASTEP jobs
+Future work beyond Phase 6:
+- Typed result collection / convergence patterns (Phase 7)
 - Additional scheduler backends (PBS via `SchedulerKind::Pbs`)
-- TUI/interactive monitoring interface
+- Tier 2 interactive CLI (guided prompts for non-Rust-savvy researchers)
+- TUI/interactive monitoring interface (Tier 3)
 
 ## Key Design Decisions
 
