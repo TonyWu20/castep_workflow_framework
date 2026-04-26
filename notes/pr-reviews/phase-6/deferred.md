@@ -28,3 +28,12 @@ Items carried forward from prior phases after plan-review decisions. All other p
 **Rationale:** `parse_u_values` tests are comprehensive (done in Phase 5B). `generate_job_script` tests are tightly coupled to NixOS-specific output, making assertions brittle without a second template variant. Only worthwhile once D.1 (portable template) is addressed.
 **Candidate for:** When D.1 is resolved and a portable job script template exists.
 **Precondition:** D.1 must be addressed first — a second template variant makes test assertions meaningful.
+
+---
+
+### Improve: `read_task_ids` empty-string edge case
+
+**Source:** Round 2 review
+**Rationale:** The `read_task_ids` function returns `Ok([""])` when called with `vec![""]`, which — while not reachable through normal CLI usage (clap's `default_value = "-"` ensures a dash) — produces a downstream error rather than a clear diagnostic. The docstring accurately describes the `"-"` check but a future maintainer could be confused by the gap between the documented stdin-fallback description and the actual single-condition check.
+**Candidate for:** Next edit to `workflow-cli/src/main.rs`
+**Precondition:** Actual need to handle a different edge case in `read_task_ids` — not worth a standalone change.
