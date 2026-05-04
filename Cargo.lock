@@ -133,6 +133,16 @@ dependencies = [
 [[package]]
 name = "castep-cell-fmt"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ariadne",
+ "chumsky",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "castep-cell-fmt"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcf723cd48b934d59dfe0bff4519336d5429ae290d77a472357be8839faf7f26"
 dependencies = [
@@ -150,7 +160,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be8d0b1f40faf83d0a8835829da5b861d69bc497a5e0f50d92293220ecb3a7aa"
 dependencies = [
  "bon",
- "castep-cell-fmt",
+ "castep-cell-fmt 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+]
+
+[[package]]
+name = "castep-cell-io"
+version = "0.5.0"
+dependencies = [
+ "bon",
+ "castep-cell-fmt 0.1.0",
  "serde",
 ]
 
@@ -493,8 +512,8 @@ name = "hubbard_u_sweep"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "castep-cell-fmt",
- "castep-cell-io",
+ "castep-cell-fmt 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "castep-cell-io 0.4.0",
  "workflow_core",
  "workflow_utils",
 ]
@@ -504,8 +523,8 @@ name = "hubbard_u_sweep_slurm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "castep-cell-fmt",
- "castep-cell-io",
+ "castep-cell-fmt 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "castep-cell-io 0.4.0",
  "clap",
  "itertools",
  "workflow_core",
@@ -621,6 +640,19 @@ name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
+
+[[package]]
+name = "multi_param_sweep"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "castep-cell-fmt 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "castep-cell-io 0.5.0",
+ "clap",
+ "itertools",
+ "workflow_core",
+ "workflow_utils",
+]
 
 [[package]]
 name = "nu-ansi-term"

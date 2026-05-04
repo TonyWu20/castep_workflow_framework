@@ -4,6 +4,7 @@ members = [
     "workflow_utils",
     "examples/hubbard_u_sweep",
     "examples/hubbard_u_sweep_slurm",
+    "examples/multi_param_sweep",
     "workflow-cli",
 ]
 resolver = "2"
