@@ -3,7 +3,7 @@
   "worktree_path": "/Users/tony/programming/castep_workflow_framework/.pipeline-worktrees/phase-6-fix-core-1",
   "groups": {
     "core-1": {
-      "status": "pending",
+      "status": "completed",
       "tasks": [
         "G1-1",
         "G1-2",
@@ -15,7 +15,8 @@
         "G1-1",
         "G1-2",
         "G1-3",
-        "G1-4"
+        "G1-4",
+        "G1-5"
       ],
       "reason": "Create the complete examples/multi_param_sweep/ crate \u2014 a purpose-built binary for independent SCF parameter sweeps across Hubbard U, k-point MP grid, and cutoff energy in product or pairwise mode."
     }
