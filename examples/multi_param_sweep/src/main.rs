@@ -3,8 +3,10 @@ mod job_script;
 
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::anyhow;
+use clap::Parser;
 use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
 use castep_cell_io::cell::bz_sampling_kpoints::KpointsMpGrid;
 use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, OrbitalU, Species};
@@ -15,8 +17,53 @@ use itertools::iproduct;
 use job_script::generate_job_script;
 use workflow_utils::prelude::*;
 
-fn main() {
-    println!("multi_param_sweep: skeleton");
+fn main() -> anyhow::Result<()> {
+    workflow_core::init_default_logging().ok();
+    let config = SweepConfig::parse();
+
+    let tasks = build_all_scf_tasks(&config)?;
+
+    let mut workflow = Workflow::new("multi_param_sweep")
+        .with_max_parallel(config.max_parallel)?
+        .with_log_dir("logs")
+        .with_root_dir(&config.workdir);
+
+    if !config.local {
+        workflow = workflow.with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));
+    }
+
+    for task in tasks {
+        workflow.add_task(task)?;
+    }
+
+    if config.dry_run {
+        let order = workflow.dry_run()?;
+        println!("Dry-run topological order:");
+        for task_id in &order {
+            println!("  {task_id}");
+        }
+        return Ok(());
+    }
+
+    let state_path = PathBuf::from(".multi_param_sweep.workflow.json");
+    let mut state = JsonStateStore::new("multi_param_sweep", state_path);
+
+    let summary = if config.local {
+        run_default(&mut workflow, &mut state)?
+    } else {
+        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        workflow.run(&mut state, runner, executor)?
+    };
+
+    println!(
+        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
+        summary.succeeded.len(),
+        summary.failed.len(),
+        summary.skipped.len(),
+        summary.duration.as_secs_f64(),
+    );
+    Ok(())
 }
 
 fn build_one_scf_task(
