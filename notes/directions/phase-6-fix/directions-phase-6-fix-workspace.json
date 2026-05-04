@@ -1,0 +1,101 @@
+{
+  "meta": {
+    "title": "Phase 6 Fix: Rewrite example binaries for multi-parameter sweep & SCF+DOS chain",
+    "source_branch": "phase-6-fix"
+  },
+  "architecture_notes": [
+    "Summary: Replace the buggy hubbard_u_sweep_slurm binary with two purpose-built binaries \u2014 multi_param_sweep (independent SCF parameter sweep) and scf_dos_chain (SCF+DOS task chain) \u2014 using only local path deps for castep-cell-io v0.5.0.",
+    "parse_time_validation: Parse-time validation at CLI boundary \u2014 parse_kpoints and parse_cutoffs error immediately at CLI parse time, not inside setup closures. A malformed k-point like '8xx8' must fail before task construction begins (Pattern 3).",
+    "internal_type_choice: parse_kpoints uses [u32; 3] not a custom struct \u2014 The array type directly converts to KpointsMpGrid([kx, ky, kz]) with zero overhead. The type guarantee ('exactly 3 u32s') is enforced by the array type itself.",
+    "duplication_choice: parse_u_values and generate_job_script are duplicated, not extracted \u2014 Each function is ~15-30 lines with stable semantics. Extracting to a shared crate is overkill for 2 consumers. If a third consumer appears, extraction becomes justified.",
+    "task_naming_collision: Fully-qualified path for Task::BandStructure, not alias import \u2014 The collision between workflow_core::task::Task and castep_cell_io::param::general::Task is resolved by using the fully-qualified path at the single use-site where Task::BandStructure is set. No alias needed, no import shadow risk.",
+    "shared_workdir: Shared workdir for chained tasks \u2014 Both SCF and DOS tasks in scf_dos_chain use runs/scf_dos/. This makes checkpoint file access straightforward: the DOS setup copies ZnO.check to ZnO_DOS.check within the same directory (Pattern 6).",
+    "workspace_serialization: Workspace member additions serialize G1 and G2 skeleton tasks \u2014 Both new crates use workspace = true dependencies (anyhow, clap, itertools), which require workspace membership for cargo check to resolve. Since both crate skeletons must add themselves to the root Cargo.toml workspace.members, G2-1 depends on G1-1 to avoid a merge conflict on the same file. The groups remain logically independent at the code level.",
+    "no_new_library_crates: No new library crates are created \u2014 All new code lives in binary (example) crates. The new code is workflow usage (orchestration, not abstractions). The library crates (workflow_core, workflow_utils) are unchanged.",
+    "Crate boundaries:",
+    "  parse_u_values: Duplicated in multi_param_sweep/src/config.rs and scf_dos_chain/src/config.rs",
+    "  parse_kpoints: multi_param_sweep/src/config.rs only (not needed by Binary 2)",
+    "  parse_cutoffs: multi_param_sweep/src/config.rs only",
+    "  generate_job_script: Duplicated in both binaries' job_script.rs (D.2 fix applies to both)",
+    "  SweepConfig: multi_param_sweep/src/config.rs",
+    "  ChainConfig: scf_dos_chain/src/config.rs",
+    "  sweep_logic: multi_param_sweep/src/main.rs (build_one_scf_task, build_all_scf_tasks)",
+    "  chain_logic: scf_dos_chain/src/main.rs (build_scf_task, build_dos_task)",
+    "  seed_files: Each binary's seeds/ directory (identical content, self-contained)",
+    "Pattern: Purpose-specific binaries over mode-flags \u2014 check: Neither binary should have a flag that toggles between 'independent tasks' and 'chained tasks'. multi_param_sweep has a --sweep-mode flag for product vs pairwise (both are independent SCF sweeps, same workflow type). scf_dos_chain has no mode flag.",
+    "Pattern: Parameter encoding in task IDs \u2014 check: multi_param_sweep task IDs: scf_U{u}_k{k}_c{c} (e.g., scf_U3.0_k8x8x8_c500). scf_dos_chain task IDs: scf and dos (single parameter set, no collision risk).",
+    "Pattern: Parse-time validation gates \u2014 check: Every parsing function returns anyhow::Result<T> with messages containing the expected format and what went wrong. Examples: 'kpoints list is empty', 'invalid k-point: expected 3 axes, got 2'.",
+    "Pattern: Explicit defaults \u2014 check: --sweep-mode defaults to 'product'. --kpoints and --cutoffs are Option<String> defaulting to None (seed defaults used). Pairwise mode errors if either is None.",
+    "Pattern: In-memory document mutation \u2014 check: All CASTEP file modifications go through parse -> mutate typed fields -> to_cell_file() -> to_string_many_spaced(). Never use format! on raw strings to build .cell/.param content.",
+    "Pattern: Shared workdir for chained tasks \u2014 check: scf_dos_chain places both tasks in runs/scf_dos/. DOS setup copies ZnO.check to ZnO_DOS.check in the same directory.",
+    "Pattern: Clean heredoc template \u2014 check: The no_literal_tabs test must pass. Use consistent space-only indentation. SBATCH directives use consistent quoting (double-quotes around values that might contain spaces)."
+  ],
+  "known_pitfalls": [
+    "Task name collision in scf_dos_chain (P0): use workflow_utils::prelude::* brings workflow_core::task::Task into scope. Importing castep_cell_io::param::general::task::Task would shadow it. Resolution: use the fully-qualified path castep_cell_io::param::general::task::Task::BandStructure at the single use-site in the DOS setup closure. Verify the exact module path with LSP hover during implementation.. Mitigation: Do not add use castep_cell_io::param::general::task::Task. Instead use the fully-qualified path at the single use-site.",
+    "Local path dep must exist on the filesystem: The path ../castep-cell-io/castep_cell_io must resolve to a sibling directory containing a Cargo.toml with the castep-cell-io crate. Verify this exists before implementation.. Mitigation: Pre-implementation check: verify ../castep-cell-io/castep_cell_io/Cargo.toml exists.",
+    "castep-cell-fmt version compatibility: castep-cell-fmt = 0.1.0 from crates.io while castep-cell-io uses a local path dep at v0.5.0. If v0.5.0 depends on a newer castep-cell-fmt, Cargo resolves the semver-compatible version automatically. No conflict expected.. Mitigation: No action needed; Cargo handles this automatically.",
+    "Pairwise mode validation ordering: In pairwise mode, validate that both --kpoints and --cutoffs are provided BEFORE parsing them. If either is None, return a clear error immediately. After parsing, validate all three lists have the same length. The error message must state the expected and actual lengths.. Mitigation: Check sweep_mode first, then validate presence of both Option fields, then parse, then check lengths.",
+    "hubbard_u_sweep compatibility with v0.5.0 path dep: The existing hubbard_u_sweep/src/main.rs already uses the v0.5.0 parse API pattern (castep_cell_fmt::parse::<CellDocument>(&input)). However, v0.5.0 may have changed Species::Symbol signature, builder method names, or HubbardUUnit enum variants. If compilation fails after the path-dep change, fix these call sites based on compiler error messages.. Mitigation: After changing the path dep, run cargo check -p hubbard_u_sweep. If it fails, fix each error based on the compiler message. Common changes may include Species::Symbol type or builder method names.",
+    "Dead-code detection after refactoring (F.3 mitigation): After deleting hubbard_u_sweep_slurm, run cargo clippy --workspace --all-targets -- -W dead-code to detect any stale imports or dead functions left over from the refactoring.. Mitigation: Include clippy dead-code check in the Group 3 acceptance criteria.",
+    "D.2 formatting fix must be embedded in ported job_script.rs: The no_literal_tabs test from the old binary must be ported and must pass. The D.2 fix (clean heredoc template with all-space indentation, consistent double-quoting on SBATCH directives) must be applied to the ported generate_job_script function in BOTH new binaries.. Mitigation: Implementation checklist: all-space indentation, SBATCH directives use double-quotes consistently, shell continuation lines use backslash, no_literal_tabs test passes in both binaries.",
+    "Deferred items: what NOT to do: D.1 (portable SLURM config): Do NOT implement. D.3 (expanded unit tests for generate_job_script): Do NOT expand beyond ported tests. read_task_ids edge case: Do NOT fix. All three have unmet preconditions.. Mitigation: Review the deferred-and-patterns.md file for full details on each deferred item.",
+    "G1-1 and G2-1 both modify root Cargo.toml \u2014 serialized: Both multi_param_sweep and scf_dos_chain use workspace = true dependencies, requiring workspace membership. To avoid merge conflicts on the root Cargo.toml, TASK-G2-1 must run after TASK-G1-1 completes. The groups are logically independent at the code level; this dependency is solely a file collision on the workspace member list.. Mitigation: TASK-G2-1 depends_on TASK-G1-1. Only the skeleton creation tasks are serialized; all other tasks within each group can run in parallel with tasks in the other group."
+  ],
+  "task_groups": [
+    {
+      "group_id": "workspace",
+      "reason": "Wire everything together by removing the old hubbard_u_sweep_slurm crate, cleaning up workspace members, and running full build/test/clippy verification.",
+      "tasks": [
+        "G3-1"
+      ],
+      "depends_on_groups": [
+        "core-2"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "G3-1",
+      "description": "Remove hubbard_u_sweep_slurm from workspace members, delete the entire old crate directory, and run full workspace build, test, clippy, and dry-run verification. \u2014 Workspace finalization: updating workspace members list to remove the old binary, deleting examples/hubbard_u_sweep_slurm/ entirely, and running comprehensive verification (build, test, clippy dead-code, dry-run both binaries).",
+      "files_in_scope": [
+        "Cargo.toml (workspace root) and examples/hubbard_u_sweep_slurm/ (deletion)",
+        "Cargo.toml (workspace root)",
+        "examples/hubbard_u_sweep_slurm/"
+      ],
+      "changes": [
+        {
+          "path": "Cargo.toml (workspace root)",
+          "action": "modify",
+          "guidance": "Remove 'examples/hubbard_u_sweep_slurm' from the [workspace] members array. The members list should now contain exactly: 'workflow_core', 'workflow_utils', 'examples/hubbard_u_sweep', 'examples/multi_param_sweep', 'examples/scf_dos_chain', 'workflow-cli'. Do NOT change any other configuration (resolver, workspace.dependencies, etc.)."
+        },
+        {
+          "path": "examples/hubbard_u_sweep_slurm/",
+          "action": "delete",
+          "guidance": "Delete the entire directory and all its contents: Cargo.toml, src/main.rs, src/config.rs, src/job_script.rs, seeds/ZnO.cell, seeds/ZnO.param, .validation-complete. Use rm -rf or the equivalent VCS remove. This removes the old buggy binary entirely from the codebase."
+        }
+      ],
+      "acceptance": [
+        "cargo build --workspace (all crates compile with zero errors, zero warnings)",
+        "cargo test --workspace (all tests pass; old slurm tests are gone, new binary tests run and pass)",
+        "cargo clippy --workspace --all-targets -- -W dead-code (no dead-code warnings from stale imports \u2014 if any appear, fix them in the library crates)",
+        "cargo run --bin multi_param_sweep -- --dry-run (produces correct topological order with all 6 default SCF task IDs, no DOS tasks, no duplicate IDs)",
+        "cargo run --bin multi_param_sweep -- --dry-run --sweep-mode pairwise --u-values 0,1,2 --kpoints 8x8x8,6x6x6,4x4x4 --cutoffs 300,500,800 (produces 3 tasks, no errors)",
+        "cargo run --bin scf_dos_chain -- --dry-run (produces 'scf' then 'dos' \u2014 exactly 2 tasks, chain dependency respected)",
+        "cargo run --bin scf_dos_chain -- --local --dry-run (same output \u2014 'scf' then 'dos')",
+        "bash -c 'ls examples/hubbard_u_sweep_slurm/ 2>&1 | grep -q \"No such file\"' (old crate directory is fully gone)"
+      ],
+      "depends_on": [
+        "G1-5",
+        "G2-4",
+        "G2-5"
+      ],
+      "wiring_checklist": [
+        {
+          "kind": "pub_mod",
+          "file": "Cargo.toml (workspace root)",
+          "detail": "Remove 'examples/hubbard_u_sweep_slurm' from [workspace] members."
+        }
+      ]
+    }
+  ]
+}
