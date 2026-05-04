@@ -11,7 +11,9 @@
         "G1-4",
         "G1-5"
       ],
-      "completed_tasks": [],
+      "completed_tasks": [
+        "G1-1"
+      ],
       "reason": "Create the complete examples/multi_param_sweep/ crate \u2014 a purpose-built binary for independent SCF parameter sweeps across Hubbard U, k-point MP grid, and cutoff energy in product or pairwise mode."
     }
   }
