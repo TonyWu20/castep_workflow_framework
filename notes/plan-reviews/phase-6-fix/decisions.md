@@ -1,38 +1,43 @@
-## Plan Review Decisions — phase-6-fix — 2026-04-26
+## Plan Review Decisions — PHASE_6_FIX_PLAN — 2026-05-05
 
 ### Design Assessment
 
-The plan is sound. All three bugs (string-parsed flags with no format hints, default mode generating only SCF, duplicate DOS task IDs) are correctly identified and eliminated by the two-binary rewrite. The plan respects the project's three-layer architecture and existing example patterns. Five gaps were identified: unspecified kpoint/cutoff parser error handling, vague KpointsMpGrid-to-CellDocument merging steps, missing DOS collect closure, unhandled edge case in pairwise mode with optional parameters, and raw OS errors from `.check` file copy. All five are addressed via plan amendments.
+The plan is structurally sound. Splitting the buggy `hubbard_u_sweep_slurm` into two purpose-built binaries (`multi_param_sweep` for independent SCF sweeps, `scf_dos_chain` for the chained SCF-to-DOS workflow) correctly resolves all three bugs. Task ID encoding (`scf_U{u}_k{k}_c{c}`) eliminates the duplicate ID collision, and the `.check` file copy pattern for DOS chains follows standard CASTEP convention. Crate boundaries are respected: `anyhow` only in binaries, domain logic stays in library code. Two issues were identified and amended: (1) the plan was written against v0.4.0 APIs but `castep-cell-io` is now v0.5.0 — parse API changed, `KpointsMpGrid` is now a direct field, and dependencies must use local path refs; (2) the `default-logging` feature flag was missing from both new `Cargo.toml` files.
 
 ### Deferred Item Decisions
 
 #### D.1: Restore plan-specified portable config fields
 **Decision:** Defer again
-**Rationale:** Precondition (second user or non-NixOS cluster) is not met. Adding portable config fields would be a functional redesign of the SLURM interface, out of scope for this bug-fix plan.
-**Updated precondition:** When the `scf_dos_chain` or `multi_param_sweep` example is shared with a user on a non-NixOS cluster, or Tony migrates away from NixOS.
+**Rationale:** The current plan is a bug-fix rewrite, not a portability initiative. The NixOS-specific SLURM template remains appropriate for Tony's sole-user context.
+**Action:** No plan update needed.
 
 #### D.2: `generate_job_script` formatting inconsistencies
 **Decision:** Absorb
-**Rationale:** `job_script.rs` is being freshly written for both new binaries. Formatting should be fixed at creation time rather than carried forward.
-**Action:** Plan amended — step 5 of setup closure now reads: "**Formatting fix (from D.2)**: use a clean heredoc template — no literal tab characters mixed with spaces, consistent quoting around SBATCH directives."
+**Rationale:** The plan explicitly calls for cleaning up the heredoc template — no literal tab characters, consistent SBATCH quoting — and porting the `no_literal_tabs` test. This is the "next functional edit" the precondition was waiting for.
+**Action:** Already addressed in plan Section "Setup closure" step 5.
 
 #### D.3 (partial): Unit tests for `generate_job_script`
 **Decision:** Defer again
-**Rationale:** Meaningful tests require a second template variant (D.1). With the job script remaining NixOS-specific, tests would assert brittle NixOS-specific strings.
-**Updated precondition:** When D.1 (portable config fields) is implemented — a second template variant makes test assertions meaningful.
+**Rationale:** Without a second (portable) job script template variant, test assertions remain tightly coupled to NixOS-specific output. D.1 must be addressed first. The plan ports existing tests (including `no_literal_tabs`), which is sufficient.
+**Action:** Updated precondition: D.1 must be addressed first.
 
-#### Improve: `read_task_ids` empty-string edge case
+#### `read_task_ids` empty-string edge case
 **Decision:** Defer again
-**Rationale:** This plan touches only the workspace `Cargo.toml` and the `examples/` directory — no edits to `workflow-cli/src/main.rs`.
-**Updated precondition:** Next edit to `workflow-cli/src/main.rs` for any functional purpose.
+**Rationale:** Lives in `workflow-cli/src/main.rs` — a different crate entirely, unrelated to the example binary rewrite.
+**Action:** Updated precondition: next functional edit to `workflow-cli/src/main.rs`.
 
 ### Plan Amendments Applied
 
-1. Specify kpoint parser: `parse_kpoints(s: &str) -> anyhow::Result<Vec<[u32; 3]>>` with error handling for malformed input
-2. Specify cutoff parser: `parse_cutoffs(s: &str) -> anyhow::Result<Vec<f64>>`
-3. Clarify KpointsMpGrid merging: concrete API sequence (`.to_cell_file()` → push `kpoints.to_cell()` → `to_string_many_spaced()`)
-4. Add DOS collect closure: verify `ZnO_DOS.castep` exists with "Total time" completion marker
-5. Specify pairwise-mode constraint: error if `--kpoints` or `--cutoffs` is `None` in pairwise mode
-6. Absorb D.2: clean heredoc template in new `job_script.rs` — no literal tabs, consistent quoting
-7. Use `workspace = true` for workspace-managed deps (anyhow, clap, itertools) in both new binaries
-8. Verified: `examples/hubbard_u_sweep/` remains unchanged (no action needed)
+**Amendment 1** — Updated all `castep-cell-io` references to v0.5.0 API:
+- Parse calls: `castep_cell_fmt::parse::<CellDocument>(&input)` instead of `CellDocument::parse()`
+- `KpointsMpGrid` is a direct field on `CellDocument` (no serialization workaround)
+- Dependencies use local path dep: `castep-cell-io = { path = "../castep-cell-io/castep_cell_io" }`
+- Removed the "issue to be filed" note about missing KpointsMpGrid field
+- Bumped API version reference from v0.4.0 to v0.5.0 throughout
+- Added note that kept `hubbard_u_sweep` also needs Cargo.toml and main.rs updates
+
+**Amendment 2** — Added `features = ["default-logging"]` to both new `Cargo.toml` files
+
+**Amendment 3** — Added empty-string handling to `parse_kpoints` spec
+
+**Amendment 4** — Added lockfile note to build verification step
