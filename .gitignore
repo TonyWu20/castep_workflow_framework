@@ -27,3 +27,5 @@ target
 .direnv
 
 .claude/hooks/current_task*.json
+.pipeline-worktrees/
+.claude/

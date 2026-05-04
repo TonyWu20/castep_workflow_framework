@@ -20,7 +20,7 @@ The fix is to replace this binary with two purpose-built binaries that correctly
 **File structure**:
 ```
 examples/multi_param_sweep/
-├── Cargo.toml          (deps: anyhow, clap, castep-cell-fmt, castep-cell-io, itertools, workflow_core, workflow_utils; use `workspace = true` for workspace-managed deps: anyhow, clap, itertools)
+├── Cargo.toml          (deps: anyhow, clap, castep-cell-fmt, castep-cell-io, itertools, workflow_core, workflow_utils; use `workspace = true` for workspace-managed deps: anyhow, clap, itertools. castep-cell-io uses local path dep: `castep-cell-io = { path = "../castep-cell-io/castep_cell_io" }`. workflow_core needs `features = ["default-logging"]`.)
 ├── src/
 │   ├── main.rs         (entry point, task builders, sweep logic, workflow runner)
 │   ├── config.rs       (clap CLI config)
@@ -58,21 +58,21 @@ examples/multi_param_sweep/
 
 **Parsing utility functions** (`main.rs`):
 
-1. `fn parse_kpoints(s: &str) -> anyhow::Result<Vec<[u32; 3]>>` — splits on comma, splits each segment on `"x"`, parses exactly 3 `u32` values, returns clear `anyhow` errors for wrong number of axes or non-numeric input, e.g. `"8xx8"` → error, `"abc"` → error, `"8x8"` → error (only 2 axes)
+1. `fn parse_kpoints(s: &str) -> anyhow::Result<Vec<[u32; 3]>>` — splits on comma, splits each segment on `"x"`, parses exactly 3 `u32` values, returns clear `anyhow` errors for wrong number of axes or non-numeric input, e.g. `"8xx8"` → error, `"abc"` → error, `"8x8"` → error (only 2 axes). Empty or whitespace-only input returns `anyhow!("kpoints list is empty")`.
 2. `fn parse_cutoffs(s: &str) -> anyhow::Result<Vec<f64>>` — comma-separated f64 list, same pattern as existing `parse_u_values` (imported or duplicated)
 
 **Setup closure** — three parameter injections:
 
-1. **Hubbard U**: Parse seed cell → `CellDocument`, inject `hubbard_u` field using builder pattern
-2. **K-points**: Parse compact string `"8x8x8"` → `[u32; 3]`, create `KpointsMpGrid(...)`. Concrete API sequence: call `cell_doc.to_cell_file()` to get `Vec<Cell>`, call `kpoints.to_cell()` to get a `Cell`, push it onto the Vec, then pass the combined `Vec<Cell>` to `to_string_many_spaced()`. Note: `KpointsMpGrid` is *not* a field on `CellDocument` in v0.4.0 — issue to be filed at `TonyWu20/castep-cell-io`. Workaround: serialize `KpointsMpGrid` to a `Cell` block via its `ToCell` impl and merge into the output block list.
-3. **Cutoff energy**: Parse seed param → `ParamDocument`, set `basis_set.cutoff_energy = Some(CutOffEnergy { value, unit: None })` — unit defaults to eV in CASTEP, leaving `None` keeps serialization cleaner (no unit suffix)
+1. **Hubbard U**: Parse seed cell via `castep_cell_fmt::parse::<CellDocument>(&input)`, inject `hubbard_u` field using builder pattern
+2. **K-points**: Parse compact string `"8x8x8"` → `[u32; 3]`, construct `KpointsMpGrid([kx, ky, kz])`, set directly: `cell_doc.kpoints_mp_grid = Some(KpointsMpGrid(...))`. No workaround needed — `KpointsMpGrid` is a direct field on `CellDocument` in v0.5.0. Serialize via `cell_doc.to_cell_file()` and `to_string_many_spaced()` as usual.
+3. **Cutoff energy**: Parse seed param via `castep_cell_fmt::parse::<ParamDocument>(&input)`, set `basis_set.cutoff_energy = Some(CutOffEnergy { value, unit: None })` — unit defaults to eV in CASTEP, leaving `None` keeps serialization cleaner (no unit suffix)
 4. Serialize both documents to file via `to_string_many_spaced()`
 5. If Slurm: write `job.sh` via ported `generate_job_script()`. **Formatting fix (from D.2)**: use a clean heredoc template — no literal tab characters mixed with spaces, consistent quoting around SBATCH directives. The existing `no_literal_tabs` test from the old binary should be ported and pass.
 
-**API usage** (from `castep-cell-io` v0.4.0):
-- `CellDocument` — `parse()`, field mutation, `.to_cell_file()`
-- `KpointsMpGrid([u32; 3])` — `.to_cell()` → `Cell` block appended to output
-- `ParamDocument` — `parse()`, `.basis_set.cutoff_energy` field mutation, `.to_cell_file()`
+**API usage** (from `castep-cell-io` v0.5.0):
+- `CellDocument` — parsed via `castep_cell_fmt::parse::<CellDocument>(&input)`, field mutation, `.to_cell_file()`
+- `KpointsMpGrid([u32; 3])` — direct field on `CellDocument`: `doc.kpoints_mp_grid = Some(KpointsMpGrid(...))`
+- `ParamDocument` — parsed via `castep_cell_fmt::parse::<ParamDocument>(&input)`, `.basis_set.cutoff_energy` field mutation, `.to_cell_file()`
 - `HubbardU::builder()`, `AtomHubbardU::builder()`, `OrbitalU::D(f64)` / `OrbitalU::F(f64)`
 - `CutOffEnergy { value: f64, unit: None }` — None defaults to eV in CASTEP, cleaner serialization
 
@@ -85,7 +85,7 @@ examples/multi_param_sweep/
 **File structure**:
 ```
 examples/scf_dos_chain/
-├── Cargo.toml          (deps: same as multi_param_sweep; use `workspace = true` for workspace-managed deps)
+├── Cargo.toml          (deps: same as multi_param_sweep; use `workspace = true` for workspace-managed deps. Same path-dep and default-logging requirements.)
 ├── src/
 │   ├── main.rs         (entry point, SCF task, DOS task, chain wiring)
 │   ├── config.rs       (simpler CLI — single U, no sweep, no kpoints/cutoff)
@@ -130,8 +130,8 @@ examples/scf_dos_chain/
 - Execution: `ExecutionMode::direct("castep", &["ZnO_DOS"])` or `Queued` — note seed name is `ZnO_DOS`
 - Collect: verify `ZnO_DOS.castep` exists and contains a "Total time" completion marker (same pattern as SCF collect)
 
-**API usage** (from `castep-cell-io` v0.4.0):
-- `ParamDocument.general.task = Some(Task::BandStructure)` — direct field mutation
+**API usage** (from `castep-cell-io` v0.5.0):
+- `ParamDocument` — parsed via `castep_cell_fmt::parse::<ParamDocument>(&input)`, `.general.task = Some(Task::BandStructure)` — direct field mutation
 - `Task::BandStructure` imported from `castep_cell_io::param::general::task::Task`
 - `read_file`/`copy_file` from `workflow_utils::files` for .check file handling
 
@@ -146,8 +146,8 @@ examples/scf_dos_chain/
 **Delete**:
 - `examples/hubbard_u_sweep_slurm/` (entire directory)
 
-**Keep**:
-- `examples/hubbard_u_sweep/` (unchanged)
+**Keep and update**:
+- `examples/hubbard_u_sweep/` — update its `Cargo.toml` to use local path deps for `castep-cell-io`, and update `main.rs` to use the v0.5.0 parse API
 
 ---
 
@@ -158,5 +158,5 @@ examples/scf_dos_chain/
 3. **Binary 1 — local run**: `cargo run --bin multi_param_sweep -- --local --u-values 0,1 --kpoints 8x8x8,6x6x6` (if CASTEP available) → generates correct .cell/.param files with HubbardU block, KPOINTS_MP_GRID block, and correct cutoff energy
 4. **Binary 2 — dry run**: `cargo run --bin scf_dos_chain -- --dry-run` → prints `scf` then `dos` (chain dependency)
 5. **Binary 2 — SCF phase only**: `cargo run --bin scf_dos_chain -- --local --dry-run` → verify scf→dos topological order
-6. **Build**: `cargo build --workspace` → all crates compile, no warnings
+6. **Build**: `cargo build --workspace` → all crates compile, no warnings. Note: the lockfile will resolve the local path dep for `castep-cell-io` from the sibling workspace — `cargo update` not needed.
 7. **Tests**: `cargo test --workspace` → all existing tests pass (old slurm tests removed, new binary tests run)
