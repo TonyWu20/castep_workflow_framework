@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 
 /// Configuration for multi-parameter sweep over Hubbard U, k-points, and cutoffs.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "multi_param_sweep")]
 pub struct SweepConfig {
     /// Comma-separated list of Hubbard U values to sweep.

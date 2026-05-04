@@ -65,6 +65,21 @@ pub struct Task {
     pub(crate) collect_failure_policy: CollectFailurePolicy,
 }
 
+impl std::fmt::Debug for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Task")
+            .field("id", &self.id)
+            .field("dependencies", &self.dependencies)
+            .field("workdir", &self.workdir)
+            .field("mode", &self.mode)
+            .field("setup", &self.setup.as_ref().map(|_| "Fn(...)"))
+            .field("collect", &self.collect.as_ref().map(|_| "Fn(...)"))
+            .field("monitor_count", &self.monitors.len())
+            .field("collect_failure_policy", &self.collect_failure_policy)
+            .finish()
+    }
+}
+
 impl Task {
     pub fn new(id: impl Into<String>, mode: ExecutionMode) -> Self {
         Self {

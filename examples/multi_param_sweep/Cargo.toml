@@ -11,7 +11,7 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 clap = { workspace = true }
 itertools = { workspace = true }
-castep-cell-fmt = "0.1.0"
+castep-cell-fmt = { version = "0.1.0", path = "../castep-cell-io/castep_cell_fmt" }
 castep-cell-io = { path = "../castep-cell-io/castep_cell_io" }
 workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
 workflow_utils = { path = "../../workflow_utils" }
