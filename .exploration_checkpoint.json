@@ -11,7 +11,9 @@
         "G2-4",
         "G2-5"
       ],
-      "completed_tasks": [],
+      "completed_tasks": [
+        "G2-1"
+      ],
       "reason": "Create the examples/scf_dos_chain/ crate \u2014 a purpose-built binary for SCF+DOS task chain testing \u2014 and update the existing hubbard_u_sweep binary for castep-cell-io v0.5.0 path dep compatibility."
     }
   }
