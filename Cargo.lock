@@ -512,8 +512,8 @@ name = "hubbard_u_sweep"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "castep-cell-fmt 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "castep-cell-io 0.4.0",
+ "castep-cell-fmt 0.1.0",
+ "castep-cell-io 0.5.0",
  "workflow_core",
  "workflow_utils",
 ]
