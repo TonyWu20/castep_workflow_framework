@@ -69,6 +69,7 @@ pub struct ChainConfig {
 /// Each segment is trimmed of whitespace.  Empty input produces an error
 /// containing "empty".  Consecutive commas or non-numeric tokens produce an
 /// error containing the offending token.
+#[allow(dead_code)]
 pub fn parse_u_values(s: &str) -> Result<Vec<f64>> {
     let trimmed = s.trim();
     if trimmed.is_empty() {

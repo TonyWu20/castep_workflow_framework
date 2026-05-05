@@ -1,7 +1,6 @@
 mod config;
 mod job_script;
 
-use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,6 +11,7 @@ use castep_cell_io::{CellDocument, ParamDocument};
 use config::ChainConfig;
 use job_script::generate_job_script;
 use workflow_utils::prelude::*;
+use workflow_core::task::TaskClosure;
 
 fn build_scf_task(
     config: &ChainConfig,
@@ -46,7 +46,7 @@ fn build_scf_task(
     let setup_element = element.clone();
     let setup_seed_name = seed_name.clone();
 
-    let boxed_setup: Box<dyn Fn(&Path) -> std::result::Result<(), Box<dyn Error + Send + Sync>> + Send + Sync> = Box::new(move |path: &Path| {
+    let boxed_setup: TaskClosure = Box::new(move |path: &Path| {
         create_dir(path)?;
 
         // Parse and modify cell document -- inject Hubbard U
@@ -90,7 +90,7 @@ fn build_scf_task(
     });
 
     let collect_seed_name = seed_name;
-    let boxed_collect: Box<dyn Fn(&Path) -> std::result::Result<(), Box<dyn Error + Send + Sync>> + Send + Sync> = Box::new(move |path: &Path| {
+    let boxed_collect: TaskClosure = Box::new(move |path: &Path| {
         let output_str = read_file(path.join(format!("{}.castep", collect_seed_name)))?;
         if !output_str.contains("Total time") {
             return Err(Box::new(WorkflowError::InvalidConfig(
@@ -134,7 +134,7 @@ fn build_dos_task(
     let _setup_local = config.local;
     let setup_scf_task = scf_task_id.to_owned();
 
-    let boxed_setup: Box<dyn Fn(&Path) -> std::result::Result<(), Box<dyn Error + Send + Sync>> + Send + Sync> = Box::new(move |path: &Path| {
+    let boxed_setup: TaskClosure = Box::new(move |path: &Path| {
         create_dir(path)?;
 
         // Parse seed cell and write as ZnO_DOS.cell (reuse seed cell for DOS restart)
@@ -159,7 +159,7 @@ fn build_dos_task(
         Ok(())
     });
 
-    let boxed_collect: Box<dyn Fn(&Path) -> std::result::Result<(), Box<dyn Error + Send + Sync>> + Send + Sync> = Box::new(move |_: &Path| {
+    let boxed_collect: TaskClosure = Box::new(move |_: &Path| {
         let output_str = read_file(PathBuf::from("ZnO_DOS.castep"))?;
         if !output_str.contains("Total time") {
             return Err(Box::new(WorkflowError::InvalidConfig(
