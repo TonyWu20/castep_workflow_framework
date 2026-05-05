@@ -5,12 +5,11 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::anyhow;
 use clap::Parser;
 use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
 use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, OrbitalU, Species};
 use castep_cell_io::{CellDocument, ParamDocument};
-use config::{parse_u_values, ChainConfig};
+use config::ChainConfig;
 use job_script::generate_job_script;
 use workflow_utils::prelude::*;
 
@@ -179,8 +178,57 @@ fn build_dos_task(
     Ok(task)
 }
 
-fn main() {
-    println!("scf_dos_chain: skeleton");
+fn main() -> anyhow::Result<()> {
+    workflow_core::init_default_logging().ok();
+
+    let config = ChainConfig::parse();
+
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+
+    let scf_task = build_scf_task(&config, seed_cell, seed_param)?;
+    let dos_task = build_dos_task(&config, &scf_task.id, seed_cell, seed_param)?;
+
+    let mut workflow = Workflow::new("scf_dos_chain")
+        .with_max_parallel(config.max_parallel)?
+        .with_log_dir("logs")
+        .with_root_dir(&config.workdir);
+
+    if !config.local {
+        workflow = workflow.with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));
+    }
+
+    workflow.add_task(scf_task)?;
+    workflow.add_task(dos_task)?;
+
+    if config.dry_run {
+        let order = workflow.dry_run()?;
+        println!("Dry-run topological order:");
+        for task_id in &order {
+            println!("  {task_id}");
+        }
+        return Ok(());
+    }
+
+    let state_path = PathBuf::from(".scf_dos_chain.workflow.json");
+    let mut state = JsonStateStore::new("scf_dos_chain", state_path);
+
+    let summary = if config.local {
+        run_default(&mut workflow, &mut state)?
+    } else {
+        let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner::new());
+        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        workflow.run(&mut state, runner, executor)?
+    };
+
+    println!(
+        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
+        summary.succeeded.len(),
+        summary.failed.len(),
+        summary.skipped.len(),
+        summary.duration.as_secs_f64(),
+    );
+    Ok(())
 }
 
 #[cfg(test)]
