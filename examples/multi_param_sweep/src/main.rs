@@ -9,7 +9,7 @@ use anyhow::anyhow;
 use clap::Parser;
 use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
 use castep_cell_io::cell::bz_sampling_kpoints::KpointsMpGrid;
-use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, OrbitalU, Species};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
 use castep_cell_io::param::basis_set::CutOffEnergy;
 use castep_cell_io::{CellDocument, ParamDocument};
 use config::{parse_cutoffs, parse_kpoints, parse_u_values, SweepConfig};
@@ -146,6 +146,7 @@ fn build_one_scf_task(
             .orbitals(vec![orbital])
             .build();
         let hubbard_u = HubbardU::builder()
+            .unit(HubbardUUnit::ElectronVolt)
             .atom_u_values(vec![atom_u])
             .build();
         cell_doc.hubbard_u = Some(hubbard_u);
