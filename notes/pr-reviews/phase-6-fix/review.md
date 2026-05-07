@@ -1,97 +1,90 @@
-# Review: Phase 6 Fix — Rewrite example binaries for multi-parameter sweep & SCF+DOS chain
+# Review: Phase 6 Fix — Fix directions for defects found in review
 
-**Index**: notes/directions/phase-6-fix/directions-index.json
-**Reviewed**: 2026-05-05
+**Source**: `notes/pr-reviews/phase-6-fix/fix-tasks.md`
+**Reviewed**: 2026-05-08
 
 ## Summary
 
-**PASS WITH ISSUES** — 6 issues found (2 P1, 3 P2, 1 P3). The core-1 and core-2 groups are substantially complete with correct architecture. G3-1 (workspace cleanup) has not been executed. Two runtime bugs exist in `scf_dos_chain/src/main.rs`.
+**ALL FIXES PASSED** — 7 fix tasks, 0 defects remaining. All acceptance criteria verified.
 
-## Per-Task Results
+## Fix Audit Trail
 
-### Group core-1: multi_param_sweep crate
+This review validates the fix round against defects documented in the initial review (2026-05-05). Each fix was verified by source inspection, compilation, and acceptance tests.
 
-| Task | Status | Detail |
-|------|--------|--------|
-| G1-1 | ✓ Passed | Crate skeleton, Cargo.toml, stubs, seed files, workspace member all created |
-| G1-2 | ✓ Passed | SweepConfig with 16 fields, parse_u_values/parse_kpoints/parse_cutoffs with all 20 tests |
-| G1-3 | ✓ Passed | generate_job_script with D.2 fix, all 6 ported tests passing |
-| G1-4 | ✓ Passed | build_one_scf_task, build_all_scf_tasks, 12 sweep combinatorics tests — minor: missing HubbardUUnit import |
-| G1-5 | ✓ Passed | main() with dry-run and execution modes, all wiring correct |
+| Original Defect | Severity | Fix | Status |
+|-----------------|----------|-----|--------|
+| SCF job script uses wrong task_id | P1 | FIX-1 | ✓ |
+| DOS collect closure ignores workdir path | P1 | FIX-2 | ✓ |
+| Missing HubbardUUnit import and .unit() call | P2 | FIX-3 | ✓ |
+| Unused itertools dependency | P2 | FIX-4 | ✓ |
+| workflow_core/task.rs modified (accepted) | P2 | FIX-5 | ✓ |
+| castep-cell-fmt path dep deviation (accepted) | P3 | FIX-6 | ✓ |
+| G3-1 workspace cleanup not executed | — | FIX-7 | ✓ |
 
-### Group core-2: scf_dos_chain crate + hubbard_u_sweep
+## Per-Fix Verification
 
-| Task | Status | Detail |
-|------|--------|--------|
-| G2-1 | ✓ Passed | Crate skeleton, Cargo.toml, stubs, seed files, workspace member all created |
-| G2-2 | ✓ Passed | ChainConfig, parse_u_values, generate_job_script with D.2 fix, all 13 tests |
-| G2-3 | ⚠ Minor Issues | build_scf_task and build_dos_task implemented — 2 bugs found (P1 each) |
-| G2-4 | ✓ Passed | main() with dry-run and execution modes |
-| G2-5 | ✓ Passed | hubbard_u_sweep path dep update compiles — minor castep-cell-fmt path dep deviation |
+### FIX-1: Fix SCF task job script using wrong task_id
+**Status**: ✓ Passed
+**Evidence**: `generate_job_script(config, "scf", &seed_name)` — task_id is `"scf"`
+**Diff validation**: ✓ | **Strategic**: ✓
 
-### Group workspace: Cleanup
+### FIX-2: Fix DOS collect closure ignoring workdir path
+**Status**: ✓ Passed
+**Evidence**: `|path: &Path|` parameter + `path.join("ZnO_DOS.castep")`
+**Diff validation**: ✓ | **Strategic**: ✓
 
-| Task | Status | Detail |
-|------|--------|--------|
-| G3-1 | ✗ Not Executed | hubbard_u_sweep_slurm not removed from workspace members; directory still exists |
+### FIX-3: Add HubbardUUnit import and .unit() call
+**Status**: ✓ Passed
+**Evidence**: `HubbardUUnit` in import; `.unit(HubbardUUnit::ElectronVolt)` in builder chain
+**Diff validation**: ✓ | **Strategic**: ✓
+
+### FIX-4: Remove unused itertools dependency
+**Status**: ✓ Passed
+**Evidence**: No `itertools` in `examples/scf_dos_chain/Cargo.toml`
+**Diff validation**: ✓ | **Strategic**: ✓
+
+### FIX-5: Accept TaskClosure changes in workflow_core/src/task.rs
+**Status**: ✓ Passed
+**Evidence**: `TaskClosure` type alias (line 8) and manual `Debug` impl (lines 68-81) present
+**Diff validation**: ✓ | **Strategic**: ✓ (accepted as necessary enabler)
+
+### FIX-6: Document castep-cell-fmt path dep deviation
+**Status**: ✓ Passed
+**Evidence**: Path dep `{ version = "0.1.0", path = "../castep-cell-io/castep_cell_fmt" }` compiles
+**Diff validation**: ✓ | **Strategic**: ✓ (accepted as intentional deviation)
+
+### FIX-7: Execute G3-1 workspace cleanup
+**Status**: ✓ Passed
+**Evidence**: `hubbard_u_sweep_slurm` removed from workspace members; directory deleted
+**Diff validation**: ✓ | **Strategic**: ✓
+
+## Acceptance Verification
+
+| Criterion | Result |
+|-----------|--------|
+| `cargo check -p scf_dos_chain` | ✓ |
+| `cargo test -p scf_dos_chain` — SBATCH test | ✓ passed |
+| `cargo test -p scf_dos_chain` — all | ✓ 20 passed |
+| `cargo check -p multi_param_sweep` | ✓ |
+| `cargo test -p multi_param_sweep` | ✓ 38 passed |
+| `cargo check -p hubbard_u_sweep` | ✓ |
+| `cargo build --workspace` | ✓ |
+| `cargo test --workspace` (member crates) | ✓ 113+ passed (0 failures) |
+| `cargo clippy --workspace --all-targets -- -W dead-code` (member crates) | ✓ 0 errors |
+| `cargo run --bin multi_param_sweep -- --dry-run` | ✓ 6 default tasks |
+| `cargo run --bin scf_dos_chain -- --dry-run` | ✓ 'scf' then 'dos' |
+| directory `examples/hubbard_u_sweep_slurm/` deleted | ✓ |
 
 ## Issues Found
 
-### P1-1: SCF job script uses wrong task_id
-
-**File**: `examples/scf_dos_chain/src/main.rs:41`
-**Severity**: P1 (runtime functional bug)
-
-The SCF task calls `generate_job_script(config, &seed_name, &seed_name)` passing the seed name "ZnO" as the task_id for the `#SBATCH --job-name` directive. It should pass `"scf"` — change to `generate_job_script(config, "scf", &seed_name)`. The DOS task on line 129 correctly uses `"dos"`.
-
-### P1-2: DOS collect closure ignores workdir path
-
-**File**: `examples/scf_dos_chain/src/main.rs:162-163`
-**Severity**: P1 (runtime functional bug)
-
-The DOS collect closure uses `|_: &Path|` discarding the workdir path argument, then reads from `PathBuf::from("ZnO_DOS.castep")` — a bare relative path. This will fail at runtime if CWD ≠ workdir. Fix: use `|path: &Path|` and `path.join("ZnO_DOS.castep")`, matching the SCF collect pattern at lines 93-94.
-
-### P2-1: Missing HubbardUUnit import and .unit() call
-
-**File**: `examples/multi_param_sweep/src/main.rs:649,785-787`
-**Severity**: P2 (potential correctness issue)
-
-The `HubbardU` builder is called without `.unit(HubbardUUnit::ElectronVolt)`, and `HubbardUUnit` is not imported. If the builder's default unit differs from ElectronVolt, the generated `.cell` output will be incorrect. Add `HubbardUUnit` to the import and add `.unit(HubbardUUnit::ElectronVolt)` to the builder chain.
-
-### P2-2: Unused itertools dependency in scf_dos_chain
-
-**File**: `examples/scf_dos_chain/Cargo.toml`
-**Severity**: P2 (unnecessary dependency)
-
-`itertools = { workspace = true }` is listed but never used in any scf_dos_chain source file. Remove from Cargo.toml.
-
-### P2-3: workflow_core/task.rs modified despite architecture notes
-
-**File**: `workflow_core/src/task.rs`
-**Severity**: P2 (architecture note contradiction)
-
-Two additions were made: `TaskClosure` type alias (line 8) and manual `Debug` impl for `Task` (lines 68-81). The architecture notes state library crates should be unchanged. The `TaskClosure` alias is used by both new binaries. Accept the addition and update architecture notes, or revert and inline the closure type.
-
-### P3-1: castep-cell-fmt path dep deviation in hubbard_u_sweep
-
-**File**: `examples/hubbard_u_sweep/Cargo.toml:12`
-**Severity**: P3 (minor — likely necessary)
-
-`castep-cell-fmt` was given a path dep `{ version = "0.1.0", path = "../castep-cell-io/castep_cell_fmt" }` beyond the original direction. Likely necessary for Cargo resolution with local path deps. Document the rationale.
-
-## Unresolved Work
-
-### G3-1: Workspace cleanup — not executed
-
-The following actions remain:
-1. Remove `"examples/hubbard_u_sweep_slurm"` from `[workspace] members` in root `Cargo.toml`
-2. Delete the entire `examples/hubbard_u_sweep_slurm/` directory
-3. Run full verification: `cargo build --workspace`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -W dead-code`, dry-run both binaries
-
-## Deferred Items
-
-See `deferred.md` for items flagged for future phases.
+**None.** All 7 fix tasks passed verification with no defects.
 
 ## Strategic Assessment
 
-The architecture is sound — purpose-specific binaries, in-memory document mutation, parse-time validation, and duplication over extraction all follow the directions correctly. The two runtime bugs (P1-1, P1-2) are straightforward to fix. The unused dep (P2-2) and missing unit (P2-1) are minor. G3-1 remains to be executed as the final wiring step.
+**Architectural integrity**: PASS — all fixes are surgical and respect crate boundaries.
+**Crate boundaries**: PASS — no library crate depends on an example; no circular dependencies.
+
+Three minor concerns noted (all deferrable, see `deferred.md`):
+1. Dual `TaskClosure` interface inconsistency — direct field mutation vs builder method
+2. `default_chain_config` dead-code warning — test helper outside `#[cfg(test)]`
+3. No dedicated regression test for FIX-2's path construction (incidentally covered)

@@ -85,202 +85,6 @@
       ]
     },
     {
-      "name": "hubbard_u_sweep_slurm",
-      "root": "examples/hubbard_u_sweep_slurm/src/main.rs",
-      "package": {
-        "name": "hubbard_u_sweep_slurm",
-        "version": "0.1.0",
-        "edition": "2021",
-        "crateType": "bin"
-      },
-      "modules": [
-        {
-          "path": "hubbard_u_sweep_slurm",
-          "file": "examples/hubbard_u_sweep_slurm/src/main.rs",
-          "visibility": "pub",
-          "imports": [
-            {
-              "path": "anyhow::Result",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_fmt::ToCellFile",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_fmt::format::to_string_many_spaced",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_fmt::parse",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_io::CellDocument",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_io::cell::species::AtomHubbardU",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_io::cell::species::HubbardU",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_io::cell::species::HubbardUUnit",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_io::cell::species::OrbitalU",
-              "line": 0
-            },
-            {
-              "path": "castep_cell_io::cell::species::Species",
-              "line": 0
-            },
-            {
-              "path": "clap::Parser",
-              "line": 0
-            },
-            {
-              "path": "config::SweepConfig",
-              "line": 0
-            },
-            {
-              "path": "config::parse_u_values",
-              "line": 0
-            },
-            {
-              "path": "job_script::generate_job_script",
-              "line": 0
-            },
-            {
-              "path": "std::sync::Arc",
-              "line": 0
-            },
-            {
-              "path": "workflow_utils::prelude::*",
-              "line": 0
-            }
-          ],
-          "submodules": [
-            "config",
-            "job_script"
-          ]
-        },
-        {
-          "path": "hubbard_u_sweep_slurm::config",
-          "file": "examples/hubbard_u_sweep_slurm/src/config.rs",
-          "visibility": "private",
-          "publicItems": [
-            {
-              "kind": "struct",
-              "name": "SweepConfig",
-              "file": "",
-              "line": 5,
-              "attrs": {
-                "derive": [
-                  "Debug",
-                  "Parser"
-                ]
-              },
-              "generics": "",
-              "visibility": "pub",
-              "fields": [
-                "pub partition: String",
-                "pub ntasks: u32",
-                "pub nix_flake: String",
-                "pub mpi_if: String",
-                "pub seed_name: String",
-                "pub u_values: String",
-                "pub max_parallel: usize",
-                "pub element: String",
-                "pub orbital: char",
-                "pub dry_run: bool",
-                "pub local: bool",
-                "pub castep_command: String",
-                "pub sweep_mode: String",
-                "pub second_values: Option<String>",
-                "pub workdir: String"
-              ]
-            },
-            {
-              "kind": "fn",
-              "name": "parse_u_values",
-              "file": "",
-              "line": 75,
-              "attrs": {
-                "doc": [
-                  " Parses a comma-separated string of f64 values.",
-                  "",
-                  " Each segment is trimmed before parsing.",
-                  " Returns an error string identifying the offending token on failure."
-                ]
-              },
-              "generics": "",
-              "visibility": "pub"
-            }
-          ],
-          "imports": [
-            {
-              "path": "clap::Parser",
-              "line": 0
-            }
-          ],
-          "submodules": [
-            "tests"
-          ]
-        },
-        {
-          "path": "hubbard_u_sweep_slurm::job_script",
-          "file": "examples/hubbard_u_sweep_slurm/src/job_script.rs",
-          "visibility": "private",
-          "publicItems": [
-            {
-              "kind": "fn",
-              "name": "generate_job_script",
-              "file": "",
-              "line": 3,
-              "attrs": {},
-              "generics": "",
-              "visibility": "pub"
-            }
-          ],
-          "imports": [
-            {
-              "path": "crate::config::SweepConfig",
-              "line": 0
-            }
-          ],
-          "submodules": [
-            "tests"
-          ]
-        }
-      ],
-      "deps": {
-        "normal": [
-          "castep-cell-fmt",
-          "castep-cell-io",
-          "workflow_core",
-          "workflow_utils"
-        ],
-        "workspaceMembers": [
-          "anyhow",
-          "clap",
-          "itertools"
-        ]
-      },
-      "crossCrateImports": [
-        {
-          "importPath": "workflow_utils::prelude::*",
-          "targetCrate": "workflow_utils",
-          "symbol": "*",
-          "line": 0
-        }
-      ]
-    },
-    {
       "name": "multi_param_sweep",
       "root": "examples/multi_param_sweep/src/main.rs",
       "package": {
@@ -329,6 +133,10 @@
             },
             {
               "path": "castep_cell_io::cell::species::HubbardU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::HubbardUUnit",
               "line": 0
             },
             {
@@ -771,8 +579,7 @@
         ],
         "workspaceMembers": [
           "anyhow",
-          "clap",
-          "itertools"
+          "clap"
         ]
       },
       "crossCrateImports": [
@@ -3060,27 +2867,6 @@
   ],
   "crossReferences": {
     "types": {
-      "hubbard_u_sweep_slurm::config::SweepConfig": {
-        "crateName": "hubbard_u_sweep_slurm",
-        "kind": "struct",
-        "exportedBy": [
-          "hubbard_u_sweep_slurm"
-        ]
-      },
-      "hubbard_u_sweep_slurm::config::parse_u_values": {
-        "crateName": "hubbard_u_sweep_slurm",
-        "kind": "fn",
-        "exportedBy": [
-          "hubbard_u_sweep_slurm"
-        ]
-      },
-      "hubbard_u_sweep_slurm::job_script::generate_job_script": {
-        "crateName": "hubbard_u_sweep_slurm",
-        "kind": "fn",
-        "exportedBy": [
-          "hubbard_u_sweep_slurm"
-        ]
-      },
       "multi_param_sweep::config::SweepConfig": {
         "crateName": "multi_param_sweep",
         "kind": "struct",
@@ -3511,31 +3297,6 @@
     }
   },
   "symbols": {
-    "hubbard_u_sweep_slurm::config::SweepConfig": {
-      "crateName": "hubbard_u_sweep_slurm",
-      "module": "hubbard_u_sweep_slurm::config",
-      "file": "examples/hubbard_u_sweep_slurm/src/config.rs",
-      "line": 5,
-      "kind": "struct",
-      "deriveAttrs": [
-        "Debug",
-        "Parser"
-      ]
-    },
-    "hubbard_u_sweep_slurm::config::parse_u_values": {
-      "crateName": "hubbard_u_sweep_slurm",
-      "module": "hubbard_u_sweep_slurm::config",
-      "file": "examples/hubbard_u_sweep_slurm/src/config.rs",
-      "line": 75,
-      "kind": "fn"
-    },
-    "hubbard_u_sweep_slurm::job_script::generate_job_script": {
-      "crateName": "hubbard_u_sweep_slurm",
-      "module": "hubbard_u_sweep_slurm::job_script",
-      "file": "examples/hubbard_u_sweep_slurm/src/job_script.rs",
-      "line": 3,
-      "kind": "fn"
-    },
     "multi_param_sweep::config::SweepConfig": {
       "crateName": "multi_param_sweep",
       "module": "multi_param_sweep::config",
@@ -4085,7 +3846,6 @@
       "workflow_core::state::StateSummary"
     ],
     "SweepConfig": [
-      "hubbard_u_sweep_slurm::config::SweepConfig",
       "multi_param_sweep::config::SweepConfig"
     ],
     "SystemProcessHandle": [
@@ -4131,7 +3891,6 @@
       "workflow_utils::files::exists"
     ],
     "generate_job_script": [
-      "hubbard_u_sweep_slurm::job_script::generate_job_script",
       "multi_param_sweep::job_script::generate_job_script",
       "scf_dos_chain::job_script::generate_job_script"
     ],
@@ -4145,7 +3904,6 @@
       "multi_param_sweep::config::parse_kpoints"
     ],
     "parse_u_values": [
-      "hubbard_u_sweep_slurm::config::parse_u_values",
       "multi_param_sweep::config::parse_u_values",
       "scf_dos_chain::config::parse_u_values"
     ],
@@ -4165,20 +3923,6 @@
   "files": {
     "examples/hubbard_u_sweep/src/main.rs": {
       "modulePath": "hubbard_u_sweep",
-      "isCrateRoot": true
-    },
-    "examples/hubbard_u_sweep_slurm/src/config.rs": {
-      "modulePath": "hubbard_u_sweep_slurm::config",
-      "parentModuleFile": "examples/hubbard_u_sweep_slurm/src/main.rs",
-      "isCrateRoot": false
-    },
-    "examples/hubbard_u_sweep_slurm/src/job_script.rs": {
-      "modulePath": "hubbard_u_sweep_slurm::job_script",
-      "parentModuleFile": "examples/hubbard_u_sweep_slurm/src/main.rs",
-      "isCrateRoot": false
-    },
-    "examples/hubbard_u_sweep_slurm/src/main.rs": {
-      "modulePath": "hubbard_u_sweep_slurm",
       "isCrateRoot": true
     },
     "examples/multi_param_sweep/src/config.rs": {
