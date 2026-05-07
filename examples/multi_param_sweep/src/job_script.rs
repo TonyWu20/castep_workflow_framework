@@ -1,5 +1,9 @@
 use crate::config::SweepConfig;
 
+/// Generate a SLURM job submission script for a CASTEP calculation.
+///
+/// Returns a bash script with SBATCH directives, nix environment setup, and
+/// an mpirun invocation.  Uses only spaces for indentation (no literal tabs).
 pub fn generate_job_script(config: &SweepConfig, task_id: &str, seed_name: &str) -> String {
     format!(
         "\
@@ -39,16 +43,18 @@ mod tests {
         SweepConfig::parse_from(["test"])
     }
 
+    /// Script contains expected SBATCH directives with the task ID and config values
     #[test]
     fn contains_sbatch_directives() {
         let config = default_config();
         let script = generate_job_script(&config, "scf_U1.0", "ZnO");
-        assert!(script.contains("#SBATCH --job-name=\"scf_U1.0\""));
+        assert!(script.contains(r#"#SBATCH --job-name="scf_U1.0""#));
         assert!(script.contains("#SBATCH --partition=debug"));
         assert!(script.contains("#SBATCH --ntasks-per-node=16"));
         assert!(script.contains("#SBATCH --mem=30000m"));
     }
 
+    /// Script references the correct seed name in the castep command
     #[test]
     fn contains_seed_name() {
         let config = default_config();
@@ -56,6 +62,7 @@ mod tests {
         assert!(script.contains("castep.mpi ZnO"));
     }
 
+    /// D.2 fix: script must not contain literal tab characters
     #[test]
     fn no_literal_tabs() {
         let config = default_config();
@@ -63,6 +70,7 @@ mod tests {
         assert!(!script.contains('\t'), "job script should not contain literal tab characters");
     }
 
+    /// Script starts with a shebang line
     #[test]
     fn starts_with_shebang() {
         let config = default_config();
@@ -70,6 +78,7 @@ mod tests {
         assert!(script.starts_with("#!/usr/bin/env bash"));
     }
 
+    /// Script contains nix develop with the configured flake URI
     #[test]
     fn contains_nix_develop() {
         let config = default_config();
@@ -78,6 +87,7 @@ mod tests {
         assert!(script.contains(&config.nix_flake));
     }
 
+    /// Script contains the MPI interface setting
     #[test]
     fn contains_mpi_interface() {
         let config = default_config();

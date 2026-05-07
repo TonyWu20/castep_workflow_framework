@@ -11,7 +11,11 @@
   outputs = { nixpkgs, fenix, devshell, ... }:
     let
       systems = [ "x86_64-linux" "aarch64-darwin" ];
-      pkgsFor = system: import nixpkgs { inherit system; overlays = [ fenix.overlays.default devshell.overlays.default ]; };
+      pkgsFor = system: import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
+        overlays = [ fenix.overlays.default devshell.overlays.default ];
+      };
 
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
@@ -36,6 +40,7 @@
               fish
               python3
               uv
+              claude-code
             ];
             commands = [
               {
@@ -100,7 +105,7 @@
                   ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro[1m] \
                   ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4-flash[1m] \
                   ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash \
-                  claude --model "opusplan"
+                  claude --model "opusplan" --plugin-dir /Users/tony/programming/rust-development-pipeline
                 '';
               }
             ];

@@ -1,0 +1,253 @@
+{
+  "base_commit": "d88508fefc4fe679b2db9a54f5c5220d03092e46",
+  "head_commit": "38495c573f0338a007b4f9162c106782e7eeb35f",
+  "branch": "phase-6-fix",
+  "files": [
+    {
+      "path": ".claude/.current_stage",
+      "additions": 1,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": ".exploration_checkpoint.json",
+      "additions": 24,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": ".gitignore",
+      "additions": 2,
+      "deletions": 0,
+      "status": "modified"
+    },
+    {
+      "path": "Cargo.lock",
+      "additions": 50,
+      "deletions": 5,
+      "status": "modified"
+    },
+    {
+      "path": "Cargo.toml",
+      "additions": 2,
+      "deletions": 0,
+      "status": "modified"
+    },
+    {
+      "path": "examples/castep-cell-io",
+      "additions": 1,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/hubbard_u_sweep/Cargo.toml",
+      "additions": 2,
+      "deletions": 2,
+      "status": "modified"
+    },
+    {
+      "path": "examples/multi_param_sweep/Cargo.toml",
+      "additions": 17,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/multi_param_sweep/seeds/ZnO.cell",
+      "additions": 12,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/multi_param_sweep/seeds/ZnO.param",
+      "additions": 1,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/multi_param_sweep/src/config.rs",
+      "additions": 292,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/multi_param_sweep/src/job_script.rs",
+      "additions": 97,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/multi_param_sweep/src/main.rs",
+      "additions": 444,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/scf_dos_chain/Cargo.toml",
+      "additions": 17,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/scf_dos_chain/seeds/ZnO.cell",
+      "additions": 12,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/scf_dos_chain/seeds/ZnO.param",
+      "additions": 1,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/scf_dos_chain/src/config.rs",
+      "additions": 144,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/scf_dos_chain/src/job_script.rs",
+      "additions": 94,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "examples/scf_dos_chain/src/main.rs",
+      "additions": 316,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "flake.lock",
+      "additions": 3,
+      "deletions": 3,
+      "status": "modified"
+    },
+    {
+      "path": "flake.nix",
+      "additions": 7,
+      "deletions": 2,
+      "status": "modified"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/codebase-state.md",
+      "additions": 251,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/deferred-and-patterns.md",
+      "additions": 264,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/directions-index.json",
+      "additions": 78,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/directions-phase-6-fix-core-1.json",
+      "additions": 244,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/directions-phase-6-fix-core-2.json",
+      "additions": 258,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/directions-phase-6-fix-workspace.json",
+      "additions": 101,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/directions.json",
+      "additions": 507,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/draft-directions.json",
+      "additions": 583,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/draft-elaboration.md",
+      "additions": 619,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/task-checklist.md",
+      "additions": 261,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/directions/phase-6-fix/workspace-map.json",
+      "additions": 3721,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/plan-enrichment/phase-6-fix/codebase-state.md",
+      "additions": 375,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/plan-enrichment/phase-6-fix/deferred-and-patterns.md",
+      "additions": 23,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/plan-enrichment/phase-6-fix/draft-elaboration.md",
+      "additions": 684,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/plan-enrichment/phase-6-fix/draft-plan.toml",
+      "additions": 1124,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/plan-enrichment/phase-6-fix/gather-summary.md",
+      "additions": 24,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/plan-enrichment/phase-6-fix/task-checklist.md",
+      "additions": 184,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "notes/plan-reviews/phase-6-fix/decisions.md",
+      "additions": 43,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "plans/phase-6-fix/PHASE_6_FIX_PLAN.md",
+      "additions": 162,
+      "deletions": 0,
+      "status": "added"
+    },
+    {
+      "path": "workflow_core/src/task.rs",
+      "additions": 15,
+      "deletions": 0,
+      "status": "modified"
+    }
+  ]
+}

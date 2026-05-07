@@ -1,0 +1,4034 @@
+{
+  "workspace": {
+    "root": "/Users/tony/programming/castep_workflow_framework",
+    "workspaceName": "castep_workflow_framework"
+  },
+  "crates": [
+    {
+      "name": "hubbard_u_sweep",
+      "root": "examples/hubbard_u_sweep/src/main.rs",
+      "package": {
+        "name": "hubbard_u_sweep",
+        "version": "0.1.0",
+        "edition": "2021",
+        "crateType": "bin"
+      },
+      "modules": [
+        {
+          "path": "hubbard_u_sweep",
+          "file": "examples/hubbard_u_sweep/src/main.rs",
+          "visibility": "pub",
+          "imports": [
+            {
+              "path": "anyhow::Result",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_fmt::ToCellFile",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_fmt::format::to_string_many_spaced",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_fmt::parse",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::CellDocument",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::AtomHubbardU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::HubbardU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::HubbardUUnit",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::OrbitalU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::Species",
+              "line": 0
+            },
+            {
+              "path": "workflow_utils::prelude::*",
+              "line": 0
+            }
+          ]
+        }
+      ],
+      "deps": {
+        "normal": [
+          "anyhow",
+          "castep-cell-fmt",
+          "castep-cell-io",
+          "workflow_core",
+          "workflow_utils"
+        ]
+      },
+      "crossCrateImports": [
+        {
+          "importPath": "workflow_utils::prelude::*",
+          "targetCrate": "workflow_utils",
+          "symbol": "*",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "name": "multi_param_sweep",
+      "root": "examples/multi_param_sweep/src/main.rs",
+      "package": {
+        "name": "multi_param_sweep",
+        "version": "0.1.0",
+        "edition": "2021",
+        "crateType": "bin"
+      },
+      "modules": [
+        {
+          "path": "multi_param_sweep",
+          "file": "examples/multi_param_sweep/src/main.rs",
+          "visibility": "pub",
+          "imports": [
+            {
+              "path": "anyhow::anyhow",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_fmt::ToCellFile",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_fmt::format::to_string_many_spaced",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_fmt::parse",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::CellDocument",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::ParamDocument",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::bz_sampling_kpoints::KpointsMpGrid",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::AtomHubbardU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::HubbardU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::HubbardUUnit",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::OrbitalU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::Species",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::param::basis_set::CutOffEnergy",
+              "line": 0
+            },
+            {
+              "path": "clap::Parser",
+              "line": 0
+            },
+            {
+              "path": "config::SweepConfig",
+              "line": 0
+            },
+            {
+              "path": "config::parse_cutoffs",
+              "line": 0
+            },
+            {
+              "path": "config::parse_kpoints",
+              "line": 0
+            },
+            {
+              "path": "config::parse_u_values",
+              "line": 0
+            },
+            {
+              "path": "itertools::iproduct",
+              "line": 0
+            },
+            {
+              "path": "job_script::generate_job_script",
+              "line": 0
+            },
+            {
+              "path": "std::error::Error",
+              "line": 0
+            },
+            {
+              "path": "std::path::Path",
+              "line": 0
+            },
+            {
+              "path": "std::path::PathBuf",
+              "line": 0
+            },
+            {
+              "path": "std::sync::Arc",
+              "line": 0
+            },
+            {
+              "path": "workflow_utils::prelude::*",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "config",
+            "job_script",
+            "tests"
+          ]
+        },
+        {
+          "path": "multi_param_sweep::config",
+          "file": "examples/multi_param_sweep/src/config.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "SweepConfig",
+              "file": "",
+              "line": 7,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug",
+                  "Parser"
+                ],
+                "doc": [
+                  " Configuration for multi-parameter sweep over Hubbard U, k-points, and cutoffs."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub u_values: String",
+                "pub kpoints: Option<String>",
+                "pub cutoffs: Option<String>",
+                "pub sweep_mode: String",
+                "pub element: String",
+                "pub orbital: char",
+                "pub seed_name: String",
+                "pub max_parallel: usize",
+                "pub local: bool",
+                "pub dry_run: bool",
+                "pub castep_command: String",
+                "pub workdir: String",
+                "pub partition: String",
+                "pub ntasks: u32",
+                "pub nix_flake: String",
+                "pub mpi_if: String"
+              ]
+            },
+            {
+              "kind": "fn",
+              "name": "parse_cutoffs",
+              "file": "",
+              "line": 140,
+              "attrs": {
+                "doc": [
+                  " Parse a comma-separated list of plane-wave cutoff values into a vector of",
+                  " f64.",
+                  "",
+                  " Each segment is trimmed of whitespace.  Empty input produces an error",
+                  " containing \"empty\".  Consecutive commas or non-numeric tokens produce an",
+                  " error mentioning the offending token."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "fn",
+              "name": "parse_kpoints",
+              "file": "",
+              "line": 103,
+              "attrs": {
+                "doc": [
+                  " Parse a comma-separated list of k-point grids into a vector of [u32; 3].",
+                  "",
+                  " Each grid is specified as \"NxNxN\".  Empty input produces an error",
+                  " containing \"empty\".  Wrong axis counts (not exactly 3) produce errors",
+                  " mentioning the expected and actual count.  Non-numeric axes produce errors",
+                  " mentioning the invalid input."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "fn",
+              "name": "parse_u_values",
+              "file": "",
+              "line": 82,
+              "attrs": {
+                "doc": [
+                  " Parse a comma-separated list of Hubbard U values into a vector of f64.",
+                  "",
+                  " Each segment is trimmed of whitespace.  Empty input produces an error",
+                  " containing \"empty\".  Consecutive commas or non-numeric tokens produce an",
+                  " error containing the offending token."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "anyhow::Result",
+              "line": 0
+            },
+            {
+              "path": "anyhow::anyhow",
+              "line": 0
+            },
+            {
+              "path": "clap::Parser",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        },
+        {
+          "path": "multi_param_sweep::job_script",
+          "file": "examples/multi_param_sweep/src/job_script.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "fn",
+              "name": "generate_job_script",
+              "file": "",
+              "line": 7,
+              "attrs": {
+                "doc": [
+                  " Generate a SLURM job submission script for a CASTEP calculation.",
+                  "",
+                  " Returns a bash script with SBATCH directives, nix environment setup, and",
+                  " an mpirun invocation.  Uses only spaces for indentation (no literal tabs)."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::config::SweepConfig",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        }
+      ],
+      "deps": {
+        "normal": [
+          "castep-cell-fmt",
+          "castep-cell-io",
+          "workflow_core",
+          "workflow_utils"
+        ],
+        "workspaceMembers": [
+          "anyhow",
+          "clap",
+          "itertools"
+        ]
+      },
+      "crossCrateImports": [
+        {
+          "importPath": "workflow_utils::prelude::*",
+          "targetCrate": "workflow_utils",
+          "symbol": "*",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "name": "scf_dos_chain",
+      "root": "examples/scf_dos_chain/src/main.rs",
+      "package": {
+        "name": "scf_dos_chain",
+        "version": "0.1.0",
+        "edition": "2021",
+        "crateType": "bin"
+      },
+      "modules": [
+        {
+          "path": "scf_dos_chain",
+          "file": "examples/scf_dos_chain/src/main.rs",
+          "visibility": "pub",
+          "imports": [
+            {
+              "path": "castep_cell_fmt::ToCellFile",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_fmt::format::to_string_many_spaced",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_fmt::parse",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::CellDocument",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::ParamDocument",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::AtomHubbardU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::HubbardU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::OrbitalU",
+              "line": 0
+            },
+            {
+              "path": "castep_cell_io::cell::species::Species",
+              "line": 0
+            },
+            {
+              "path": "clap::Parser",
+              "line": 0
+            },
+            {
+              "path": "config::ChainConfig",
+              "line": 0
+            },
+            {
+              "path": "job_script::generate_job_script",
+              "line": 0
+            },
+            {
+              "path": "std::path::Path",
+              "line": 0
+            },
+            {
+              "path": "std::path::PathBuf",
+              "line": 0
+            },
+            {
+              "path": "std::sync::Arc",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::task::TaskClosure",
+              "line": 0
+            },
+            {
+              "path": "workflow_utils::prelude::*",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "config",
+            "job_script",
+            "tests"
+          ]
+        },
+        {
+          "path": "scf_dos_chain::config",
+          "file": "examples/scf_dos_chain/src/config.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "ChainConfig",
+              "file": "",
+              "line": 9,
+              "attrs": {
+                "derive": [
+                  "Debug",
+                  "Parser"
+                ],
+                "doc": [
+                  " Configuration for CASTEP SCF + DOS chain workflow."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub u_value: f64",
+                "pub element: String",
+                "pub orbital: char",
+                "pub seed_name: String",
+                "pub max_parallel: usize",
+                "pub local: bool",
+                "pub dry_run: bool",
+                "pub castep_command: String",
+                "pub workdir: String",
+                "pub partition: String",
+                "pub ntasks: u32",
+                "pub nix_flake: String",
+                "pub mpi_if: String"
+              ]
+            },
+            {
+              "kind": "fn",
+              "name": "parse_u_values",
+              "file": "",
+              "line": 73,
+              "attrs": {
+                "doc": [
+                  " Parse a comma-separated list of Hubbard U values into a vector of f64.",
+                  "",
+                  " Each segment is trimmed of whitespace.  Empty input produces an error",
+                  " containing \"empty\".  Consecutive commas or non-numeric tokens produce an",
+                  " error containing the offending token."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "anyhow::Result",
+              "line": 0
+            },
+            {
+              "path": "anyhow::anyhow",
+              "line": 0
+            },
+            {
+              "path": "clap::Parser",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        },
+        {
+          "path": "scf_dos_chain::job_script",
+          "file": "examples/scf_dos_chain/src/job_script.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "fn",
+              "name": "generate_job_script",
+              "file": "",
+              "line": 9,
+              "attrs": {
+                "doc": [
+                  " Generate a SLURM job submission script for a CASTEP calculation.",
+                  "",
+                  " Returns a bash script with SBATCH directives, nix environment setup, and",
+                  " an mpirun invocation.  Uses only spaces for indentation (no literal tabs)."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::config::ChainConfig",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        }
+      ],
+      "deps": {
+        "normal": [
+          "castep-cell-fmt",
+          "castep-cell-io",
+          "workflow_core",
+          "workflow_utils"
+        ],
+        "workspaceMembers": [
+          "anyhow",
+          "clap"
+        ]
+      },
+      "crossCrateImports": [
+        {
+          "importPath": "workflow_core::task::TaskClosure",
+          "targetCrate": "workflow_core",
+          "symbol": "TaskClosure",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_utils::prelude::*",
+          "targetCrate": "workflow_utils",
+          "symbol": "*",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "name": "workflow-cli",
+      "root": "workflow-cli/src/main.rs",
+      "package": {
+        "name": "workflow-cli",
+        "version": "0.1.0",
+        "edition": "2021",
+        "crateType": "bin"
+      },
+      "modules": [
+        {
+          "path": "workflow-cli",
+          "file": "workflow-cli/src/main.rs",
+          "visibility": "pub",
+          "imports": [
+            {
+              "path": "clap::Parser",
+              "line": 0
+            },
+            {
+              "path": "clap::Subcommand",
+              "line": 0
+            },
+            {
+              "path": "std::io::IsTerminal",
+              "line": 0
+            },
+            {
+              "path": "std::io::Read",
+              "line": 0
+            },
+            {
+              "path": "std::io::self",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::state::JsonStateStore",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::state::StateStore",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::state::StateStoreExt",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::state::TaskStatus",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        }
+      ],
+      "deps": {
+        "normal": [
+          "workflow_core"
+        ],
+        "dev": [
+          "tempfile"
+        ],
+        "workspaceMembers": [
+          "anyhow",
+          "clap"
+        ]
+      },
+      "crossCrateImports": [
+        {
+          "importPath": "workflow_core::state::JsonStateStore",
+          "targetCrate": "workflow_core",
+          "symbol": "JsonStateStore",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::state::StateStore",
+          "targetCrate": "workflow_core",
+          "symbol": "StateStore",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::state::StateStoreExt",
+          "targetCrate": "workflow_core",
+          "symbol": "StateStoreExt",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::state::TaskStatus",
+          "targetCrate": "workflow_core",
+          "symbol": "TaskStatus",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "name": "workflow_core",
+      "root": "workflow_core/src/lib.rs",
+      "package": {
+        "name": "workflow_core",
+        "version": "0.1.0",
+        "edition": "2021",
+        "crateType": "lib"
+      },
+      "modules": [
+        {
+          "path": "workflow_core",
+          "file": "workflow_core/src/lib.rs",
+          "visibility": "pub",
+          "publicItems": [
+            {
+              "kind": "fn",
+              "name": "init_default_logging",
+              "file": "",
+              "line": 24,
+              "attrs": {
+                "doc": [
+                  " Initialize default tracing subscriber with env-based filtering.",
+                  " Call once at start of main(). Controlled via RUST_LOG env var.",
+                  " Returns error if already initialized (safe, won't panic)."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "error::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "monitoring::HookContext",
+              "line": 0
+            },
+            {
+              "path": "monitoring::HookExecutor",
+              "line": 0
+            },
+            {
+              "path": "monitoring::HookResult",
+              "line": 0
+            },
+            {
+              "path": "monitoring::HookTrigger",
+              "line": 0
+            },
+            {
+              "path": "monitoring::MonitoringHook",
+              "line": 0
+            },
+            {
+              "path": "monitoring::TaskPhase",
+              "line": 0
+            },
+            {
+              "path": "process::OutputLocation",
+              "line": 0
+            },
+            {
+              "path": "process::ProcessHandle",
+              "line": 0
+            },
+            {
+              "path": "process::ProcessResult",
+              "line": 0
+            },
+            {
+              "path": "process::ProcessRunner",
+              "line": 0
+            },
+            {
+              "path": "process::QueuedSubmitter",
+              "line": 0
+            },
+            {
+              "path": "state::JsonStateStore",
+              "line": 0
+            },
+            {
+              "path": "state::StateStore",
+              "line": 0
+            },
+            {
+              "path": "state::StateStoreExt",
+              "line": 0
+            },
+            {
+              "path": "state::StateSummary",
+              "line": 0
+            },
+            {
+              "path": "state::TaskStatus",
+              "line": 0
+            },
+            {
+              "path": "state::TaskSuccessors",
+              "line": 0
+            },
+            {
+              "path": "task::CollectFailurePolicy",
+              "line": 0
+            },
+            {
+              "path": "task::ExecutionMode",
+              "line": 0
+            },
+            {
+              "path": "task::Task",
+              "line": 0
+            },
+            {
+              "path": "task::TaskClosure",
+              "line": 0
+            },
+            {
+              "path": "workflow::FailedTask",
+              "line": 0
+            },
+            {
+              "path": "workflow::Workflow",
+              "line": 0
+            },
+            {
+              "path": "workflow::WorkflowSummary",
+              "line": 0
+            }
+          ],
+          "reExports": [
+            {
+              "importPath": "task::CollectFailurePolicy",
+              "exportPath": "CollectFailurePolicy",
+              "line": 0
+            },
+            {
+              "importPath": "task::ExecutionMode",
+              "exportPath": "ExecutionMode",
+              "line": 0
+            },
+            {
+              "importPath": "workflow::FailedTask",
+              "exportPath": "FailedTask",
+              "line": 0
+            },
+            {
+              "importPath": "monitoring::HookContext",
+              "exportPath": "HookContext",
+              "line": 0
+            },
+            {
+              "importPath": "monitoring::HookExecutor",
+              "exportPath": "HookExecutor",
+              "line": 0
+            },
+            {
+              "importPath": "monitoring::HookResult",
+              "exportPath": "HookResult",
+              "line": 0
+            },
+            {
+              "importPath": "monitoring::HookTrigger",
+              "exportPath": "HookTrigger",
+              "line": 0
+            },
+            {
+              "importPath": "state::JsonStateStore",
+              "exportPath": "JsonStateStore",
+              "line": 0
+            },
+            {
+              "importPath": "monitoring::MonitoringHook",
+              "exportPath": "MonitoringHook",
+              "line": 0
+            },
+            {
+              "importPath": "process::OutputLocation",
+              "exportPath": "OutputLocation",
+              "line": 0
+            },
+            {
+              "importPath": "process::ProcessHandle",
+              "exportPath": "ProcessHandle",
+              "line": 0
+            },
+            {
+              "importPath": "process::ProcessResult",
+              "exportPath": "ProcessResult",
+              "line": 0
+            },
+            {
+              "importPath": "process::ProcessRunner",
+              "exportPath": "ProcessRunner",
+              "line": 0
+            },
+            {
+              "importPath": "process::QueuedSubmitter",
+              "exportPath": "QueuedSubmitter",
+              "line": 0
+            },
+            {
+              "importPath": "state::StateStore",
+              "exportPath": "StateStore",
+              "line": 0
+            },
+            {
+              "importPath": "state::StateStoreExt",
+              "exportPath": "StateStoreExt",
+              "line": 0
+            },
+            {
+              "importPath": "state::StateSummary",
+              "exportPath": "StateSummary",
+              "line": 0
+            },
+            {
+              "importPath": "task::Task",
+              "exportPath": "Task",
+              "line": 0
+            },
+            {
+              "importPath": "task::TaskClosure",
+              "exportPath": "TaskClosure",
+              "line": 0
+            },
+            {
+              "importPath": "monitoring::TaskPhase",
+              "exportPath": "TaskPhase",
+              "line": 0
+            },
+            {
+              "importPath": "state::TaskStatus",
+              "exportPath": "TaskStatus",
+              "line": 0
+            },
+            {
+              "importPath": "state::TaskSuccessors",
+              "exportPath": "TaskSuccessors",
+              "line": 0
+            },
+            {
+              "importPath": "workflow::Workflow",
+              "exportPath": "Workflow",
+              "line": 0
+            },
+            {
+              "importPath": "error::WorkflowError",
+              "exportPath": "WorkflowError",
+              "line": 0
+            },
+            {
+              "importPath": "workflow::WorkflowSummary",
+              "exportPath": "WorkflowSummary",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "dag",
+            "error",
+            "monitoring",
+            "prelude",
+            "process",
+            "state",
+            "task",
+            "workflow"
+          ]
+        },
+        {
+          "path": "workflow_core::dag",
+          "file": "workflow_core/src/dag.rs",
+          "visibility": "pub",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "Dag",
+              "file": "",
+              "line": 6,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "graph: DiGraph<String, ()>",
+                "node_map: HashMap<String, NodeIndex>"
+              ]
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::error::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "petgraph::algo",
+              "line": 0
+            },
+            {
+              "path": "petgraph::graph::DiGraph",
+              "line": 0
+            },
+            {
+              "path": "petgraph::graph::NodeIndex",
+              "line": 0
+            },
+            {
+              "path": "std::collections::HashMap",
+              "line": 0
+            },
+            {
+              "path": "std::collections::HashSet",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        },
+        {
+          "path": "workflow_core::error",
+          "file": "workflow_core/src/error.rs",
+          "visibility": "pub",
+          "publicItems": [
+            {
+              "kind": "enum",
+              "name": "WorkflowError",
+              "file": "",
+              "line": 5,
+              "attrs": {
+                "derive": [
+                  "Debug",
+                  "Error"
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "variants": [
+                "DuplicateTaskId(String)",
+                "CycleDetected",
+                "UnknownDependency { task: String, dependency: String }",
+                "StateCorrupted(String)",
+                "TaskTimeout(String)",
+                "InvalidConfig(String)",
+                "IoWithPath { path: std::path::PathBuf, source: std::io::Error }",
+                "Io(std::io::Error)",
+                "Interrupted",
+                "QueueSubmitFailed(String)"
+              ]
+            }
+          ],
+          "imports": [
+            {
+              "path": "thiserror::Error",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "path": "workflow_core::monitoring",
+          "file": "workflow_core/src/monitoring.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "HookContext",
+              "file": "",
+              "line": 75,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug",
+                  "Deserialize",
+                  "Serialize"
+                ],
+                "doc": [
+                  " Context available to monitoring hooks during execution."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub task_id: String",
+                "pub workdir: std::path::PathBuf",
+                "pub phase: TaskPhase",
+                "pub exit_code: Option<i32>"
+              ]
+            },
+            {
+              "kind": "trait",
+              "name": "HookExecutor",
+              "file": "",
+              "line": 8,
+              "attrs": {
+                "doc": [
+                  " Executor trait for monitoring hooks.",
+                  "",
+                  " This trait abstracts the execution of monitoring hooks, allowing different",
+                  " backend implementations (e.g., shell-based, in-process, etc.)."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "struct",
+              "name": "HookResult",
+              "file": "",
+              "line": 88,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug",
+                  "Deserialize",
+                  "Serialize"
+                ],
+                "doc": [
+                  " Result of executing a monitoring hook."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub success: bool",
+                "pub output: String"
+              ]
+            },
+            {
+              "kind": "enum",
+              "name": "HookTrigger",
+              "file": "",
+              "line": 41,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug",
+                  "Deserialize",
+                  "Serialize"
+                ],
+                "doc": [
+                  " The event that triggers a monitoring hook."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "variants": [
+                "OnStart",
+                "OnComplete",
+                "OnFailure",
+                "Periodic { interval_secs: u64 }"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "MonitoringHook",
+              "file": "",
+              "line": 19,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug",
+                  "Deserialize",
+                  "Serialize"
+                ],
+                "doc": [
+                  " A monitoring hook that can be triggered by a task event."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub name: String",
+                "pub command: String",
+                "pub trigger: HookTrigger"
+              ]
+            },
+            {
+              "kind": "enum",
+              "name": "TaskPhase",
+              "file": "",
+              "line": 54,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Copy",
+                  "Debug",
+                  "Deserialize",
+                  "Eq",
+                  "PartialEq",
+                  "Serialize"
+                ],
+                "doc": [
+                  " The phase of a task in the workflow."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "variants": [
+                "Running",
+                "Completed",
+                "Failed"
+              ]
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "serde::Deserialize",
+              "line": 0
+            },
+            {
+              "path": "serde::Serialize",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        },
+        {
+          "path": "workflow_core::prelude",
+          "file": "workflow_core/src/prelude.rs",
+          "visibility": "pub",
+          "imports": [
+            {
+              "path": "crate::HookExecutor",
+              "line": 0
+            },
+            {
+              "path": "crate::ProcessRunner",
+              "line": 0
+            },
+            {
+              "path": "crate::error::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "crate::state::JsonStateStore",
+              "line": 0
+            },
+            {
+              "path": "crate::state::StateStore",
+              "line": 0
+            },
+            {
+              "path": "crate::state::StateStoreExt",
+              "line": 0
+            },
+            {
+              "path": "crate::state::TaskStatus",
+              "line": 0
+            },
+            {
+              "path": "crate::task::CollectFailurePolicy",
+              "line": 0
+            },
+            {
+              "path": "crate::task::ExecutionMode",
+              "line": 0
+            },
+            {
+              "path": "crate::task::Task",
+              "line": 0
+            },
+            {
+              "path": "crate::workflow::Workflow",
+              "line": 0
+            },
+            {
+              "path": "crate::workflow::WorkflowSummary",
+              "line": 0
+            }
+          ],
+          "reExports": [
+            {
+              "importPath": "crate::task::CollectFailurePolicy",
+              "exportPath": "CollectFailurePolicy",
+              "line": 0
+            },
+            {
+              "importPath": "crate::task::ExecutionMode",
+              "exportPath": "ExecutionMode",
+              "line": 0
+            },
+            {
+              "importPath": "crate::HookExecutor",
+              "exportPath": "HookExecutor",
+              "line": 0
+            },
+            {
+              "importPath": "crate::state::JsonStateStore",
+              "exportPath": "JsonStateStore",
+              "line": 0
+            },
+            {
+              "importPath": "crate::ProcessRunner",
+              "exportPath": "ProcessRunner",
+              "line": 0
+            },
+            {
+              "importPath": "crate::state::StateStore",
+              "exportPath": "StateStore",
+              "line": 0
+            },
+            {
+              "importPath": "crate::state::StateStoreExt",
+              "exportPath": "StateStoreExt",
+              "line": 0
+            },
+            {
+              "importPath": "crate::task::Task",
+              "exportPath": "Task",
+              "line": 0
+            },
+            {
+              "importPath": "crate::state::TaskStatus",
+              "exportPath": "TaskStatus",
+              "line": 0
+            },
+            {
+              "importPath": "crate::workflow::Workflow",
+              "exportPath": "Workflow",
+              "line": 0
+            },
+            {
+              "importPath": "crate::error::WorkflowError",
+              "exportPath": "WorkflowError",
+              "line": 0
+            },
+            {
+              "importPath": "crate::workflow::WorkflowSummary",
+              "exportPath": "WorkflowSummary",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "path": "workflow_core::process",
+          "file": "workflow_core/src/process.rs",
+          "visibility": "pub",
+          "publicItems": [
+            {
+              "kind": "enum",
+              "name": "OutputLocation",
+              "file": "",
+              "line": 7,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug"
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "variants": [
+                "Captured { stdout: String, stderr: String }",
+                "OnDisk { stdout_path: PathBuf, stderr_path: PathBuf }"
+              ]
+            },
+            {
+              "kind": "trait",
+              "name": "ProcessHandle",
+              "file": "",
+              "line": 25,
+              "attrs": {
+                "doc": [
+                  " A handle to a running (or finished) process, used to poll, wait, or terminate it.",
+                  "",
+                  " Implementations must be `Send` so handles can be stored across thread boundaries."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "struct",
+              "name": "ProcessResult",
+              "file": "",
+              "line": 45,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub exit_code: Option<i32>",
+                "pub output: OutputLocation",
+                "pub duration: Duration"
+              ]
+            },
+            {
+              "kind": "trait",
+              "name": "ProcessRunner",
+              "file": "",
+              "line": 12,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "trait",
+              "name": "QueuedSubmitter",
+              "file": "",
+              "line": 51,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::error::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "std::collections::HashMap",
+              "line": 0
+            },
+            {
+              "path": "std::path::Path",
+              "line": 0
+            },
+            {
+              "path": "std::path::PathBuf",
+              "line": 0
+            },
+            {
+              "path": "std::time::Duration",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "path": "workflow_core::state",
+          "file": "workflow_core/src/state.rs",
+          "visibility": "pub",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "JsonStateStore",
+              "file": "",
+              "line": 190,
+              "attrs": {
+                "derive": [
+                  "Debug",
+                  "Deserialize",
+                  "Serialize"
+                ],
+                "doc": [
+                  " JSON-based state store implementation.",
+                  "",
+                  " # Crash Recovery and Resume",
+                  "",
+                  " When loading via [`JsonStateStore::load`], any tasks marked as `Running`, `Failed`, or",
+                  " `SkippedDueToDependencyFailure` are automatically reset to `Pending`. This ensures",
+                  " that incomplete or failed runs can be safely resumed without stale state blocking",
+                  " progress. Note that `Skipped` and `SkippedDueToDependencyFailure` (when not in",
+                  " a failed context) are preserved as-is.",
+                  "",
+                  " # Read-Only Inspection",
+                  "",
+                  " For read-only status inspection (e.g., CLI display, `workflow inspect` commands),",
+                  " use [`JsonStateStore::load_raw`]. Unlike `load`, this method does not apply crash",
+                  " recovery resets and returns the state exactly as persisted to disk.",
+                  "",
+                  " # Persistence Semantics",
+                  "",
+                  " State is persisted to disk via atomic writes (temp file + rename). See [`JsonStateStore::load`]",
+                  " and [`JsonStateStore::load_raw`] for details on crash recovery behavior."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "workflow_name: String",
+                "created_at: String",
+                "last_updated: String",
+                "tasks: HashMap<String, TaskStatus>",
+                "task_successors: Option<TaskSuccessors>",
+                "path: PathBuf"
+              ]
+            },
+            {
+              "kind": "trait",
+              "name": "StateStore",
+              "file": "",
+              "line": 33,
+              "attrs": {
+                "doc": [
+                  " State management interface for workflow execution.",
+                  "",
+                  " This trait defines the contract for persisting and retrieving task status during",
+                  " live workflow runs. Implementations handle runtime mutation of task states as",
+                  " the workflow progresses, ensuring durability through periodic saves.",
+                  "",
+                  " Workflow Summary:",
+                  " The `summary` method on `StateStoreExt` aggregates all task statuses into a",
+                  " concise overview (pending, running, completed, failed, skipped counts) suitable",
+                  " for progress reporting and export."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "trait",
+              "name": "StateStoreExt",
+              "file": "",
+              "line": 48,
+              "attrs": {
+                "doc": [
+                  " Extension trait providing convenience methods for state management."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "struct",
+              "name": "StateSummary",
+              "file": "",
+              "line": 110,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug"
+                ],
+                "doc": [
+                  " Summary of workflow state."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub pending: usize",
+                "pub running: usize",
+                "pub completed: usize",
+                "pub failed: usize",
+                "pub skipped: usize"
+              ]
+            },
+            {
+              "kind": "enum",
+              "name": "TaskStatus",
+              "file": "",
+              "line": 10,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug",
+                  "Deserialize",
+                  "PartialEq",
+                  "Serialize"
+                ],
+                "doc": [
+                  " Task status enum."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "variants": [
+                "Pending",
+                "Running",
+                "Completed",
+                "Failed { error: String }",
+                "Skipped",
+                "SkippedDueToDependencyFailure"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "TaskSuccessors",
+              "file": "",
+              "line": 129,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug",
+                  "Default",
+                  "Deserialize",
+                  "Serialize"
+                ],
+                "doc": [
+                  " A typed wrapper around the task successor adjacency map.",
+                  "",
+                  " Maps each task ID to its immediate downstream successors in the DAG.",
+                  " Used for graph-aware retry: given a set of failed tasks, BFS over this",
+                  " map finds all transitively downstream tasks to reset."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "HashMap<String, Vec<String>>"
+              ]
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::error::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "serde::Deserialize",
+              "line": 0
+            },
+            {
+              "path": "serde::Serialize",
+              "line": 0
+            },
+            {
+              "path": "std::collections::HashMap",
+              "line": 0
+            },
+            {
+              "path": "std::fs",
+              "line": 0
+            },
+            {
+              "path": "std::path::Path",
+              "line": 0
+            },
+            {
+              "path": "std::path::PathBuf",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        },
+        {
+          "path": "workflow_core::task",
+          "file": "workflow_core/src/task.rs",
+          "visibility": "pub",
+          "publicItems": [
+            {
+              "kind": "enum",
+              "name": "CollectFailurePolicy",
+              "file": "",
+              "line": 16,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Copy",
+                  "Debug",
+                  "Default",
+                  "Eq",
+                  "PartialEq"
+                ],
+                "doc": [
+                  " Policy governing how collect-closure failures affect task status.",
+                  "",
+                  " When a collect closure returns `Err`, the framework must decide whether",
+                  " the task itself should be marked as Failed or whether the error should",
+                  " only be logged as a warning."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "variants": [
+                "FailTask",
+                "WarnOnly"
+              ]
+            },
+            {
+              "kind": "enum",
+              "name": "ExecutionMode",
+              "file": "",
+              "line": 26,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug"
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "variants": [
+                "Direct { command: String, args: Vec<String>, env: HashMap<String, String>, timeout: Option<Duration> }",
+                "Queued"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Task",
+              "file": "",
+              "line": 57,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub id: String",
+                "pub dependencies: Vec<String>",
+                "pub workdir: PathBuf",
+                "pub mode: ExecutionMode",
+                "pub setup: Option<TaskClosure>",
+                "pub collect: Option<TaskClosure>",
+                "pub monitors: Vec<MonitoringHook>",
+                "collect_failure_policy: CollectFailurePolicy"
+              ]
+            },
+            {
+              "kind": "type",
+              "name": "TaskClosure",
+              "file": "",
+              "line": 8,
+              "attrs": {
+                "doc": [
+                  " A closure used for task setup or result collection."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::monitoring::MonitoringHook",
+              "line": 0
+            },
+            {
+              "path": "std::collections::HashMap",
+              "line": 0
+            },
+            {
+              "path": "std::path::Path",
+              "line": 0
+            },
+            {
+              "path": "std::path::PathBuf",
+              "line": 0
+            },
+            {
+              "path": "std::time::Duration",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        },
+        {
+          "path": "workflow_core::workflow",
+          "file": "workflow_core/src/workflow.rs",
+          "visibility": "pub",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "FailedTask",
+              "file": "",
+              "line": 563,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug"
+                ],
+                "doc": [
+                  " A task that failed during workflow execution."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub id: String",
+                "pub error: String"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "InFlightTask",
+              "file": "",
+              "line": 17,
+              "attrs": {
+                "doc": [
+                  " A handle to a running task with metadata."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub(crate)",
+              "fields": [
+                "pub handle: Box<ProcessHandle>",
+                "pub started_at: Instant",
+                "pub monitors: Vec<crate::monitoring::MonitoringHook>",
+                "pub collect: Option<TaskClosure>",
+                "pub workdir: std::path::PathBuf",
+                "pub collect_failure_policy: crate::task::CollectFailurePolicy",
+                "pub last_periodic_fire: HashMap<String, Instant>"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Workflow",
+              "file": "",
+              "line": 27,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub name: String",
+                "tasks: HashMap<String, Task>",
+                "max_parallel: usize",
+                "interrupt: Arc<AtomicBool>",
+                "log_dir: Option<std::path::PathBuf>",
+                "root_dir: Option<std::path::PathBuf>",
+                "queued_submitter: Option<Arc<QueuedSubmitter>>",
+                "computed_successors: Option<TaskSuccessors>"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "WorkflowSummary",
+              "file": "",
+              "line": 570,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Debug"
+                ],
+                "doc": [
+                  " Summary of workflow execution results."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub succeeded: Vec<String>",
+                "pub failed: Vec<FailedTask>",
+                "pub skipped: Vec<String>",
+                "pub duration: Duration"
+              ]
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::HookExecutor",
+              "line": 0
+            },
+            {
+              "path": "crate::dag::Dag",
+              "line": 0
+            },
+            {
+              "path": "crate::error::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "crate::process::ProcessHandle",
+              "line": 0
+            },
+            {
+              "path": "crate::process::ProcessRunner",
+              "line": 0
+            },
+            {
+              "path": "crate::state::StateStore",
+              "line": 0
+            },
+            {
+              "path": "crate::state::StateStoreExt",
+              "line": 0
+            },
+            {
+              "path": "crate::state::TaskStatus",
+              "line": 0
+            },
+            {
+              "path": "crate::state::TaskSuccessors",
+              "line": 0
+            },
+            {
+              "path": "crate::task::ExecutionMode",
+              "line": 0
+            },
+            {
+              "path": "crate::task::Task",
+              "line": 0
+            },
+            {
+              "path": "crate::task::TaskClosure",
+              "line": 0
+            },
+            {
+              "path": "std::collections::HashMap",
+              "line": 0
+            },
+            {
+              "path": "std::collections::HashSet",
+              "line": 0
+            },
+            {
+              "path": "std::sync::Arc",
+              "line": 0
+            },
+            {
+              "path": "std::sync::atomic::AtomicBool",
+              "line": 0
+            },
+            {
+              "path": "std::sync::atomic::Ordering",
+              "line": 0
+            },
+            {
+              "path": "std::time::Duration",
+              "line": 0
+            },
+            {
+              "path": "std::time::Instant",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        }
+      ],
+      "deps": {
+        "dev": [
+          "tempfile",
+          "workflow_utils"
+        ],
+        "workspaceMembers": [
+          "petgraph",
+          "serde",
+          "serde_json",
+          "signal-hook",
+          "thiserror",
+          "time",
+          "tracing",
+          "tracing-subscriber"
+        ]
+      }
+    },
+    {
+      "name": "workflow_utils",
+      "root": "workflow_utils/src/lib.rs",
+      "package": {
+        "name": "workflow_utils",
+        "version": "0.1.0",
+        "edition": "2021",
+        "crateType": "lib"
+      },
+      "modules": [
+        {
+          "path": "workflow_utils",
+          "file": "workflow_utils/src/lib.rs",
+          "visibility": "pub",
+          "publicItems": [
+            {
+              "kind": "fn",
+              "name": "run_default",
+              "file": "",
+              "line": 31,
+              "attrs": {
+                "doc": [
+                  " Runs a workflow with the default `SystemProcessRunner` and `ShellHookExecutor`.",
+                  "",
+                  " Eliminates the repeated `Arc` wiring boilerplate in every binary that uses",
+                  " direct (non-queued) process execution.",
+                  "",
+                  " # Example",
+                  " ```ignore",
+                  " let mut workflow = Workflow::new(\"my_workflow\");",
+                  " // ... add tasks ...",
+                  " let mut state = JsonStateStore::new(\"my_workflow\", path);",
+                  " let summary = workflow_utils::run_default(&mut workflow, &mut state)?;",
+                  " ```"
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "executor::ExecutionHandle",
+              "line": 0
+            },
+            {
+              "path": "executor::ExecutionResult",
+              "line": 0
+            },
+            {
+              "path": "executor::OutputLocation",
+              "line": 0
+            },
+            {
+              "path": "executor::SystemProcessRunner",
+              "line": 0
+            },
+            {
+              "path": "executor::TaskExecutor",
+              "line": 0
+            },
+            {
+              "path": "files::copy_file",
+              "line": 0
+            },
+            {
+              "path": "files::create_dir",
+              "line": 0
+            },
+            {
+              "path": "files::exists",
+              "line": 0
+            },
+            {
+              "path": "files::read_file",
+              "line": 0
+            },
+            {
+              "path": "files::remove_dir",
+              "line": 0
+            },
+            {
+              "path": "files::write_file",
+              "line": 0
+            },
+            {
+              "path": "monitoring::ShellHookExecutor",
+              "line": 0
+            },
+            {
+              "path": "queued::JOB_SCRIPT_NAME",
+              "line": 0
+            },
+            {
+              "path": "queued::QueuedRunner",
+              "line": 0
+            },
+            {
+              "path": "queued::SchedulerKind",
+              "line": 0
+            },
+            {
+              "path": "std::sync::Arc",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::HookContext",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::HookExecutor",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::HookResult",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::HookTrigger",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::MonitoringHook",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::ProcessRunner",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::state::StateStore",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::workflow::Workflow",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::workflow::WorkflowSummary",
+              "line": 0
+            }
+          ],
+          "reExports": [
+            {
+              "importPath": "executor::ExecutionHandle",
+              "exportPath": "ExecutionHandle",
+              "line": 0
+            },
+            {
+              "importPath": "executor::ExecutionResult",
+              "exportPath": "ExecutionResult",
+              "line": 0
+            },
+            {
+              "importPath": "workflow_core::HookContext",
+              "exportPath": "HookContext",
+              "line": 0
+            },
+            {
+              "importPath": "workflow_core::HookResult",
+              "exportPath": "HookResult",
+              "line": 0
+            },
+            {
+              "importPath": "workflow_core::HookTrigger",
+              "exportPath": "HookTrigger",
+              "line": 0
+            },
+            {
+              "importPath": "queued::JOB_SCRIPT_NAME",
+              "exportPath": "JOB_SCRIPT_NAME",
+              "line": 0
+            },
+            {
+              "importPath": "workflow_core::MonitoringHook",
+              "exportPath": "MonitoringHook",
+              "line": 0
+            },
+            {
+              "importPath": "executor::OutputLocation",
+              "exportPath": "OutputLocation",
+              "line": 0
+            },
+            {
+              "importPath": "queued::QueuedRunner",
+              "exportPath": "QueuedRunner",
+              "line": 0
+            },
+            {
+              "importPath": "queued::SchedulerKind",
+              "exportPath": "SchedulerKind",
+              "line": 0
+            },
+            {
+              "importPath": "monitoring::ShellHookExecutor",
+              "exportPath": "ShellHookExecutor",
+              "line": 0
+            },
+            {
+              "importPath": "executor::SystemProcessRunner",
+              "exportPath": "SystemProcessRunner",
+              "line": 0
+            },
+            {
+              "importPath": "executor::TaskExecutor",
+              "exportPath": "TaskExecutor",
+              "line": 0
+            },
+            {
+              "importPath": "files::copy_file",
+              "exportPath": "copy_file",
+              "line": 0
+            },
+            {
+              "importPath": "files::create_dir",
+              "exportPath": "create_dir",
+              "line": 0
+            },
+            {
+              "importPath": "files::exists",
+              "exportPath": "exists",
+              "line": 0
+            },
+            {
+              "importPath": "files::read_file",
+              "exportPath": "read_file",
+              "line": 0
+            },
+            {
+              "importPath": "files::remove_dir",
+              "exportPath": "remove_dir",
+              "line": 0
+            },
+            {
+              "importPath": "files::write_file",
+              "exportPath": "write_file",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "executor",
+            "files",
+            "monitoring",
+            "prelude",
+            "queued"
+          ]
+        },
+        {
+          "path": "workflow_utils::executor",
+          "file": "workflow_utils/src/executor.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "ExecutionHandle",
+              "file": "",
+              "line": 89,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "child: std::process::Child"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "ExecutionResult",
+              "file": "",
+              "line": 76,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "pub exit_code: Option<i32>",
+                "pub stdout: String",
+                "pub stderr: String",
+                "pub duration: std::time::Duration"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "SystemProcessHandle",
+              "file": "",
+              "line": 166,
+              "attrs": {
+                "doc": [
+                  " Handle to a running system process.",
+                  " Uses `Option<Child>` to allow consuming the child once via `wait()`."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "child: Option<Child>",
+                "start: Instant",
+                "output_files: Option<(PathBuf, PathBuf)>"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "SystemProcessRunner",
+              "file": "",
+              "line": 110,
+              "attrs": {
+                "derive": [
+                  "Default"
+                ],
+                "doc": [
+                  " Concrete implementation of the ProcessRunner trait for system processes.",
+                  " Wraps `std::process::Child` with output capture and timing."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "log_dir: Option<PathBuf>"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "TaskExecutor",
+              "file": "",
+              "line": 12,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "workdir: PathBuf",
+                "command: String",
+                "args: Vec<String>",
+                "env: HashMap<String, String>"
+              ]
+            }
+          ],
+          "imports": [
+            {
+              "path": "std::collections::HashMap",
+              "line": 0
+            },
+            {
+              "path": "std::path::Path",
+              "line": 0
+            },
+            {
+              "path": "std::path::PathBuf",
+              "line": 0
+            },
+            {
+              "path": "std::process::Child",
+              "line": 0
+            },
+            {
+              "path": "std::process::Command",
+              "line": 0
+            },
+            {
+              "path": "std::process::Stdio",
+              "line": 0
+            },
+            {
+              "path": "std::time::Instant",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::ProcessHandle",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::ProcessResult",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::ProcessRunner",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::process::OutputLocation",
+              "line": 0
+            }
+          ],
+          "reExports": [
+            {
+              "importPath": "workflow_core::process::OutputLocation",
+              "exportPath": "OutputLocation",
+              "line": 0
+            },
+            {
+              "importPath": "workflow_core::ProcessHandle",
+              "exportPath": "ProcessHandle",
+              "line": 0
+            },
+            {
+              "importPath": "workflow_core::ProcessResult",
+              "exportPath": "ProcessResult",
+              "line": 0
+            },
+            {
+              "importPath": "workflow_core::ProcessRunner",
+              "exportPath": "ProcessRunner",
+              "line": 0
+            },
+            {
+              "importPath": "workflow_core::WorkflowError",
+              "exportPath": "WorkflowError",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "path": "workflow_utils::files",
+          "file": "workflow_utils/src/files.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "fn",
+              "name": "copy_file",
+              "file": "",
+              "line": 21,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "fn",
+              "name": "create_dir",
+              "file": "",
+              "line": 31,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "fn",
+              "name": "exists",
+              "file": "",
+              "line": 41,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "fn",
+              "name": "read_file",
+              "file": "",
+              "line": 8,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "fn",
+              "name": "remove_dir",
+              "file": "",
+              "line": 36,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub"
+            },
+            {
+              "kind": "fn",
+              "name": "write_file",
+              "file": "",
+              "line": 13,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "std::path::Path",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::WorkflowError",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "path": "workflow_utils::monitoring",
+          "file": "workflow_utils/src/monitoring.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "ShellHookExecutor",
+              "file": "",
+              "line": 6,
+              "attrs": {
+                "derive": [
+                  "Debug"
+                ],
+                "doc": [
+                  " A concrete implementation of `HookExecutor` that executes hooks via shell commands."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub"
+            }
+          ],
+          "imports": [
+            {
+              "path": "crate::executor::TaskExecutor",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::HookContext",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::HookExecutor",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::HookResult",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::MonitoringHook",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        },
+        {
+          "path": "workflow_utils::prelude",
+          "file": "workflow_utils/src/prelude.rs",
+          "visibility": "pub",
+          "imports": [
+            {
+              "path": "crate::JOB_SCRIPT_NAME",
+              "line": 0
+            },
+            {
+              "path": "crate::QueuedRunner",
+              "line": 0
+            },
+            {
+              "path": "crate::SchedulerKind",
+              "line": 0
+            },
+            {
+              "path": "crate::ShellHookExecutor",
+              "line": 0
+            },
+            {
+              "path": "crate::SystemProcessRunner",
+              "line": 0
+            },
+            {
+              "path": "crate::copy_file",
+              "line": 0
+            },
+            {
+              "path": "crate::create_dir",
+              "line": 0
+            },
+            {
+              "path": "crate::exists",
+              "line": 0
+            },
+            {
+              "path": "crate::read_file",
+              "line": 0
+            },
+            {
+              "path": "crate::remove_dir",
+              "line": 0
+            },
+            {
+              "path": "crate::run_default",
+              "line": 0
+            },
+            {
+              "path": "crate::write_file",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::prelude::*",
+              "line": 0
+            }
+          ],
+          "reExports": [
+            {
+              "importPath": "workflow_core::prelude",
+              "exportPath": "*",
+              "line": 0
+            },
+            {
+              "importPath": "crate::JOB_SCRIPT_NAME",
+              "exportPath": "JOB_SCRIPT_NAME",
+              "line": 0
+            },
+            {
+              "importPath": "crate::QueuedRunner",
+              "exportPath": "QueuedRunner",
+              "line": 0
+            },
+            {
+              "importPath": "crate::SchedulerKind",
+              "exportPath": "SchedulerKind",
+              "line": 0
+            },
+            {
+              "importPath": "crate::ShellHookExecutor",
+              "exportPath": "ShellHookExecutor",
+              "line": 0
+            },
+            {
+              "importPath": "crate::SystemProcessRunner",
+              "exportPath": "SystemProcessRunner",
+              "line": 0
+            },
+            {
+              "importPath": "crate::copy_file",
+              "exportPath": "copy_file",
+              "line": 0
+            },
+            {
+              "importPath": "crate::create_dir",
+              "exportPath": "create_dir",
+              "line": 0
+            },
+            {
+              "importPath": "crate::exists",
+              "exportPath": "exists",
+              "line": 0
+            },
+            {
+              "importPath": "crate::read_file",
+              "exportPath": "read_file",
+              "line": 0
+            },
+            {
+              "importPath": "crate::remove_dir",
+              "exportPath": "remove_dir",
+              "line": 0
+            },
+            {
+              "importPath": "crate::run_default",
+              "exportPath": "run_default",
+              "line": 0
+            },
+            {
+              "importPath": "crate::write_file",
+              "exportPath": "write_file",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "path": "workflow_utils::queued",
+          "file": "workflow_utils/src/queued.rs",
+          "visibility": "private",
+          "publicItems": [
+            {
+              "kind": "struct",
+              "name": "QueuedProcessHandle",
+              "file": "",
+              "line": 112,
+              "attrs": {},
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "job_id: String",
+                "scheduler: SchedulerKind",
+                "stdout_path: PathBuf",
+                "stderr_path: PathBuf",
+                "last_poll: Instant",
+                "poll_interval: Duration",
+                "cached_running: bool",
+                "finished_exit_code: Option<i32>",
+                "started_at: Instant"
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "QueuedRunner",
+              "file": "",
+              "line": 24,
+              "attrs": {
+                "doc": [
+                  " Submits and manages jobs via an HPC batch scheduler.",
+                  "",
+                  " Implements [`QueuedSubmitter`](workflow_core::process::QueuedSubmitter) to",
+                  " integrate with the workflow engine's `Queued` execution mode."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "fields": [
+                "scheduler: SchedulerKind"
+              ]
+            },
+            {
+              "kind": "enum",
+              "name": "SchedulerKind",
+              "file": "",
+              "line": 13,
+              "attrs": {
+                "derive": [
+                  "Clone",
+                  "Copy",
+                  "Debug"
+                ],
+                "doc": [
+                  " The type of HPC job scheduler to target."
+                ]
+              },
+              "generics": "",
+              "visibility": "pub",
+              "variants": [
+                "Slurm",
+                "Pbs"
+              ]
+            }
+          ],
+          "imports": [
+            {
+              "path": "std::path::Path",
+              "line": 0
+            },
+            {
+              "path": "std::path::PathBuf",
+              "line": 0
+            },
+            {
+              "path": "std::process::Command",
+              "line": 0
+            },
+            {
+              "path": "std::time::Duration",
+              "line": 0
+            },
+            {
+              "path": "std::time::Instant",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::error::WorkflowError",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::process::OutputLocation",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::process::ProcessHandle",
+              "line": 0
+            },
+            {
+              "path": "workflow_core::process::ProcessResult",
+              "line": 0
+            }
+          ],
+          "submodules": [
+            "tests"
+          ]
+        }
+      ],
+      "deps": {
+        "normal": [
+          "workflow_core"
+        ],
+        "dev": [
+          "serial_test",
+          "tempfile"
+        ],
+        "workspaceMembers": [
+          "serde"
+        ]
+      },
+      "crossCrateImports": [
+        {
+          "importPath": "workflow_core::HookContext",
+          "targetCrate": "workflow_core",
+          "symbol": "HookContext",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::HookContext",
+          "targetCrate": "workflow_core",
+          "symbol": "HookContext",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::HookExecutor",
+          "targetCrate": "workflow_core",
+          "symbol": "HookExecutor",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::HookExecutor",
+          "targetCrate": "workflow_core",
+          "symbol": "HookExecutor",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::HookResult",
+          "targetCrate": "workflow_core",
+          "symbol": "HookResult",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::HookResult",
+          "targetCrate": "workflow_core",
+          "symbol": "HookResult",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::HookTrigger",
+          "targetCrate": "workflow_core",
+          "symbol": "HookTrigger",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::MonitoringHook",
+          "targetCrate": "workflow_core",
+          "symbol": "MonitoringHook",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::MonitoringHook",
+          "targetCrate": "workflow_core",
+          "symbol": "MonitoringHook",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::ProcessHandle",
+          "targetCrate": "workflow_core",
+          "symbol": "ProcessHandle",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::ProcessResult",
+          "targetCrate": "workflow_core",
+          "symbol": "ProcessResult",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::ProcessRunner",
+          "targetCrate": "workflow_core",
+          "symbol": "ProcessRunner",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::ProcessRunner",
+          "targetCrate": "workflow_core",
+          "symbol": "ProcessRunner",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::WorkflowError",
+          "targetCrate": "workflow_core",
+          "symbol": "WorkflowError",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::WorkflowError",
+          "targetCrate": "workflow_core",
+          "symbol": "WorkflowError",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::WorkflowError",
+          "targetCrate": "workflow_core",
+          "symbol": "WorkflowError",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::error::WorkflowError",
+          "targetCrate": "workflow_core",
+          "symbol": "WorkflowError",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::prelude::*",
+          "targetCrate": "workflow_core",
+          "symbol": "*",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::process::OutputLocation",
+          "targetCrate": "workflow_core",
+          "symbol": "OutputLocation",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::process::OutputLocation",
+          "targetCrate": "workflow_core",
+          "symbol": "OutputLocation",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::process::ProcessHandle",
+          "targetCrate": "workflow_core",
+          "symbol": "ProcessHandle",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::process::ProcessResult",
+          "targetCrate": "workflow_core",
+          "symbol": "ProcessResult",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::state::StateStore",
+          "targetCrate": "workflow_core",
+          "symbol": "StateStore",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::workflow::Workflow",
+          "targetCrate": "workflow_core",
+          "symbol": "Workflow",
+          "line": 0
+        },
+        {
+          "importPath": "workflow_core::workflow::WorkflowSummary",
+          "targetCrate": "workflow_core",
+          "symbol": "WorkflowSummary",
+          "line": 0
+        }
+      ]
+    }
+  ],
+  "crossReferences": {
+    "types": {
+      "multi_param_sweep::config::SweepConfig": {
+        "crateName": "multi_param_sweep",
+        "kind": "struct",
+        "exportedBy": [
+          "multi_param_sweep"
+        ]
+      },
+      "multi_param_sweep::config::parse_cutoffs": {
+        "crateName": "multi_param_sweep",
+        "kind": "fn",
+        "exportedBy": [
+          "multi_param_sweep"
+        ]
+      },
+      "multi_param_sweep::config::parse_kpoints": {
+        "crateName": "multi_param_sweep",
+        "kind": "fn",
+        "exportedBy": [
+          "multi_param_sweep"
+        ]
+      },
+      "multi_param_sweep::config::parse_u_values": {
+        "crateName": "multi_param_sweep",
+        "kind": "fn",
+        "exportedBy": [
+          "multi_param_sweep"
+        ]
+      },
+      "multi_param_sweep::job_script::generate_job_script": {
+        "crateName": "multi_param_sweep",
+        "kind": "fn",
+        "exportedBy": [
+          "multi_param_sweep"
+        ]
+      },
+      "scf_dos_chain::config::ChainConfig": {
+        "crateName": "scf_dos_chain",
+        "kind": "struct",
+        "exportedBy": [
+          "scf_dos_chain"
+        ]
+      },
+      "scf_dos_chain::config::parse_u_values": {
+        "crateName": "scf_dos_chain",
+        "kind": "fn",
+        "exportedBy": [
+          "scf_dos_chain"
+        ]
+      },
+      "scf_dos_chain::job_script::generate_job_script": {
+        "crateName": "scf_dos_chain",
+        "kind": "fn",
+        "exportedBy": [
+          "scf_dos_chain"
+        ]
+      },
+      "workflow_core::dag::Dag": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::error::WorkflowError": {
+        "crateName": "workflow_core",
+        "kind": "enum",
+        "importedBy": [
+          "workflow_utils:workflow_utils",
+          "workflow_utils:workflow_utils::executor",
+          "workflow_utils:workflow_utils::files",
+          "workflow_utils:workflow_utils::queued"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::init_default_logging": {
+        "crateName": "workflow_core",
+        "kind": "fn",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::monitoring::HookContext": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "importedBy": [
+          "workflow_utils:workflow_utils",
+          "workflow_utils:workflow_utils::monitoring"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::monitoring::HookExecutor": {
+        "crateName": "workflow_core",
+        "kind": "trait",
+        "importedBy": [
+          "workflow_utils:workflow_utils",
+          "workflow_utils:workflow_utils::monitoring"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::monitoring::HookResult": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "importedBy": [
+          "workflow_utils:workflow_utils",
+          "workflow_utils:workflow_utils::monitoring"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::monitoring::HookTrigger": {
+        "crateName": "workflow_core",
+        "kind": "enum",
+        "importedBy": [
+          "workflow_utils:workflow_utils"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::monitoring::MonitoringHook": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "importedBy": [
+          "workflow_utils:workflow_utils",
+          "workflow_utils:workflow_utils::monitoring"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::monitoring::TaskPhase": {
+        "crateName": "workflow_core",
+        "kind": "enum",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::process::OutputLocation": {
+        "crateName": "workflow_core",
+        "kind": "enum",
+        "importedBy": [
+          "workflow_utils:workflow_utils::executor",
+          "workflow_utils:workflow_utils::queued"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::process::ProcessHandle": {
+        "crateName": "workflow_core",
+        "kind": "trait",
+        "importedBy": [
+          "workflow_utils:workflow_utils::executor",
+          "workflow_utils:workflow_utils::queued"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::process::ProcessResult": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "importedBy": [
+          "workflow_utils:workflow_utils::executor",
+          "workflow_utils:workflow_utils::queued"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::process::ProcessRunner": {
+        "crateName": "workflow_core",
+        "kind": "trait",
+        "importedBy": [
+          "workflow_utils:workflow_utils",
+          "workflow_utils:workflow_utils::executor"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::process::QueuedSubmitter": {
+        "crateName": "workflow_core",
+        "kind": "trait",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::state::JsonStateStore": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "importedBy": [
+          "workflow-cli:workflow-cli"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::state::StateStore": {
+        "crateName": "workflow_core",
+        "kind": "trait",
+        "importedBy": [
+          "workflow-cli:workflow-cli",
+          "workflow_utils:workflow_utils"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::state::StateStoreExt": {
+        "crateName": "workflow_core",
+        "kind": "trait",
+        "importedBy": [
+          "workflow-cli:workflow-cli"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::state::StateSummary": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::state::TaskStatus": {
+        "crateName": "workflow_core",
+        "kind": "enum",
+        "importedBy": [
+          "workflow-cli:workflow-cli"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::state::TaskSuccessors": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::task::CollectFailurePolicy": {
+        "crateName": "workflow_core",
+        "kind": "enum",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::task::ExecutionMode": {
+        "crateName": "workflow_core",
+        "kind": "enum",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::task::Task": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::task::TaskClosure": {
+        "crateName": "workflow_core",
+        "kind": "type",
+        "importedBy": [
+          "scf_dos_chain:scf_dos_chain"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::workflow::FailedTask": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::workflow::InFlightTask": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::workflow::Workflow": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "importedBy": [
+          "workflow_utils:workflow_utils"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_core::workflow::WorkflowSummary": {
+        "crateName": "workflow_core",
+        "kind": "struct",
+        "importedBy": [
+          "workflow_utils:workflow_utils"
+        ],
+        "exportedBy": [
+          "workflow_core"
+        ]
+      },
+      "workflow_utils::executor::ExecutionHandle": {
+        "crateName": "workflow_utils",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::executor::ExecutionResult": {
+        "crateName": "workflow_utils",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::executor::SystemProcessHandle": {
+        "crateName": "workflow_utils",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::executor::SystemProcessRunner": {
+        "crateName": "workflow_utils",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::executor::TaskExecutor": {
+        "crateName": "workflow_utils",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::files::copy_file": {
+        "crateName": "workflow_utils",
+        "kind": "fn",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::files::create_dir": {
+        "crateName": "workflow_utils",
+        "kind": "fn",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::files::exists": {
+        "crateName": "workflow_utils",
+        "kind": "fn",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::files::read_file": {
+        "crateName": "workflow_utils",
+        "kind": "fn",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::files::remove_dir": {
+        "crateName": "workflow_utils",
+        "kind": "fn",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::files::write_file": {
+        "crateName": "workflow_utils",
+        "kind": "fn",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::monitoring::ShellHookExecutor": {
+        "crateName": "workflow_utils",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::queued::QueuedProcessHandle": {
+        "crateName": "workflow_utils",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::queued::QueuedRunner": {
+        "crateName": "workflow_utils",
+        "kind": "struct",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::queued::SchedulerKind": {
+        "crateName": "workflow_utils",
+        "kind": "enum",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      },
+      "workflow_utils::run_default": {
+        "crateName": "workflow_utils",
+        "kind": "fn",
+        "exportedBy": [
+          "workflow_utils"
+        ]
+      }
+    }
+  },
+  "symbols": {
+    "multi_param_sweep::config::SweepConfig": {
+      "crateName": "multi_param_sweep",
+      "module": "multi_param_sweep::config",
+      "file": "examples/multi_param_sweep/src/config.rs",
+      "line": 7,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Clone",
+        "Debug",
+        "Parser"
+      ]
+    },
+    "multi_param_sweep::config::parse_cutoffs": {
+      "crateName": "multi_param_sweep",
+      "module": "multi_param_sweep::config",
+      "file": "examples/multi_param_sweep/src/config.rs",
+      "line": 140,
+      "kind": "fn"
+    },
+    "multi_param_sweep::config::parse_kpoints": {
+      "crateName": "multi_param_sweep",
+      "module": "multi_param_sweep::config",
+      "file": "examples/multi_param_sweep/src/config.rs",
+      "line": 103,
+      "kind": "fn"
+    },
+    "multi_param_sweep::config::parse_u_values": {
+      "crateName": "multi_param_sweep",
+      "module": "multi_param_sweep::config",
+      "file": "examples/multi_param_sweep/src/config.rs",
+      "line": 82,
+      "kind": "fn"
+    },
+    "multi_param_sweep::job_script::generate_job_script": {
+      "crateName": "multi_param_sweep",
+      "module": "multi_param_sweep::job_script",
+      "file": "examples/multi_param_sweep/src/job_script.rs",
+      "line": 7,
+      "kind": "fn"
+    },
+    "scf_dos_chain::config::ChainConfig": {
+      "crateName": "scf_dos_chain",
+      "module": "scf_dos_chain::config",
+      "file": "examples/scf_dos_chain/src/config.rs",
+      "line": 9,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Debug",
+        "Parser"
+      ]
+    },
+    "scf_dos_chain::config::parse_u_values": {
+      "crateName": "scf_dos_chain",
+      "module": "scf_dos_chain::config",
+      "file": "examples/scf_dos_chain/src/config.rs",
+      "line": 73,
+      "kind": "fn"
+    },
+    "scf_dos_chain::job_script::generate_job_script": {
+      "crateName": "scf_dos_chain",
+      "module": "scf_dos_chain::job_script",
+      "file": "examples/scf_dos_chain/src/job_script.rs",
+      "line": 9,
+      "kind": "fn"
+    },
+    "workflow_core::dag::Dag": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::dag",
+      "file": "workflow_core/src/dag.rs",
+      "line": 6,
+      "kind": "struct"
+    },
+    "workflow_core::error::WorkflowError": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::error",
+      "file": "workflow_core/src/error.rs",
+      "line": 5,
+      "kind": "enum",
+      "deriveAttrs": [
+        "Debug",
+        "Error"
+      ]
+    },
+    "workflow_core::init_default_logging": {
+      "crateName": "workflow_core",
+      "module": "workflow_core",
+      "file": "workflow_core/src/lib.rs",
+      "line": 24,
+      "kind": "fn"
+    },
+    "workflow_core::monitoring::HookContext": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::monitoring",
+      "file": "workflow_core/src/monitoring.rs",
+      "line": 75,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Clone",
+        "Debug",
+        "Deserialize",
+        "Serialize"
+      ]
+    },
+    "workflow_core::monitoring::HookExecutor": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::monitoring",
+      "file": "workflow_core/src/monitoring.rs",
+      "line": 8,
+      "kind": "trait"
+    },
+    "workflow_core::monitoring::HookResult": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::monitoring",
+      "file": "workflow_core/src/monitoring.rs",
+      "line": 88,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Clone",
+        "Debug",
+        "Deserialize",
+        "Serialize"
+      ]
+    },
+    "workflow_core::monitoring::HookTrigger": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::monitoring",
+      "file": "workflow_core/src/monitoring.rs",
+      "line": 41,
+      "kind": "enum",
+      "deriveAttrs": [
+        "Clone",
+        "Debug",
+        "Deserialize",
+        "Serialize"
+      ]
+    },
+    "workflow_core::monitoring::MonitoringHook": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::monitoring",
+      "file": "workflow_core/src/monitoring.rs",
+      "line": 19,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Clone",
+        "Debug",
+        "Deserialize",
+        "Serialize"
+      ]
+    },
+    "workflow_core::monitoring::TaskPhase": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::monitoring",
+      "file": "workflow_core/src/monitoring.rs",
+      "line": 54,
+      "kind": "enum",
+      "deriveAttrs": [
+        "Clone",
+        "Copy",
+        "Debug",
+        "Deserialize",
+        "Eq",
+        "PartialEq",
+        "Serialize"
+      ]
+    },
+    "workflow_core::process::OutputLocation": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::process",
+      "file": "workflow_core/src/process.rs",
+      "line": 7,
+      "kind": "enum",
+      "deriveAttrs": [
+        "Clone",
+        "Debug"
+      ]
+    },
+    "workflow_core::process::ProcessHandle": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::process",
+      "file": "workflow_core/src/process.rs",
+      "line": 25,
+      "kind": "trait"
+    },
+    "workflow_core::process::ProcessResult": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::process",
+      "file": "workflow_core/src/process.rs",
+      "line": 45,
+      "kind": "struct"
+    },
+    "workflow_core::process::ProcessRunner": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::process",
+      "file": "workflow_core/src/process.rs",
+      "line": 12,
+      "kind": "trait"
+    },
+    "workflow_core::process::QueuedSubmitter": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::process",
+      "file": "workflow_core/src/process.rs",
+      "line": 51,
+      "kind": "trait"
+    },
+    "workflow_core::state::JsonStateStore": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::state",
+      "file": "workflow_core/src/state.rs",
+      "line": 190,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Debug",
+        "Deserialize",
+        "Serialize"
+      ]
+    },
+    "workflow_core::state::StateStore": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::state",
+      "file": "workflow_core/src/state.rs",
+      "line": 33,
+      "kind": "trait"
+    },
+    "workflow_core::state::StateStoreExt": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::state",
+      "file": "workflow_core/src/state.rs",
+      "line": 48,
+      "kind": "trait"
+    },
+    "workflow_core::state::StateSummary": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::state",
+      "file": "workflow_core/src/state.rs",
+      "line": 110,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Clone",
+        "Debug"
+      ]
+    },
+    "workflow_core::state::TaskStatus": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::state",
+      "file": "workflow_core/src/state.rs",
+      "line": 10,
+      "kind": "enum",
+      "deriveAttrs": [
+        "Clone",
+        "Debug",
+        "Deserialize",
+        "PartialEq",
+        "Serialize"
+      ]
+    },
+    "workflow_core::state::TaskSuccessors": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::state",
+      "file": "workflow_core/src/state.rs",
+      "line": 129,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Clone",
+        "Debug",
+        "Default",
+        "Deserialize",
+        "Serialize"
+      ]
+    },
+    "workflow_core::task::CollectFailurePolicy": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::task",
+      "file": "workflow_core/src/task.rs",
+      "line": 16,
+      "kind": "enum",
+      "deriveAttrs": [
+        "Clone",
+        "Copy",
+        "Debug",
+        "Default",
+        "Eq",
+        "PartialEq"
+      ]
+    },
+    "workflow_core::task::ExecutionMode": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::task",
+      "file": "workflow_core/src/task.rs",
+      "line": 26,
+      "kind": "enum",
+      "deriveAttrs": [
+        "Clone",
+        "Debug"
+      ]
+    },
+    "workflow_core::task::Task": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::task",
+      "file": "workflow_core/src/task.rs",
+      "line": 57,
+      "kind": "struct"
+    },
+    "workflow_core::task::TaskClosure": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::task",
+      "file": "workflow_core/src/task.rs",
+      "line": 8,
+      "kind": "type"
+    },
+    "workflow_core::workflow::FailedTask": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::workflow",
+      "file": "workflow_core/src/workflow.rs",
+      "line": 563,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Clone",
+        "Debug"
+      ]
+    },
+    "workflow_core::workflow::InFlightTask": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::workflow",
+      "file": "workflow_core/src/workflow.rs",
+      "line": 17,
+      "kind": "struct"
+    },
+    "workflow_core::workflow::Workflow": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::workflow",
+      "file": "workflow_core/src/workflow.rs",
+      "line": 27,
+      "kind": "struct"
+    },
+    "workflow_core::workflow::WorkflowSummary": {
+      "crateName": "workflow_core",
+      "module": "workflow_core::workflow",
+      "file": "workflow_core/src/workflow.rs",
+      "line": 570,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Clone",
+        "Debug"
+      ]
+    },
+    "workflow_utils::executor::ExecutionHandle": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::executor",
+      "file": "workflow_utils/src/executor.rs",
+      "line": 89,
+      "kind": "struct"
+    },
+    "workflow_utils::executor::ExecutionResult": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::executor",
+      "file": "workflow_utils/src/executor.rs",
+      "line": 76,
+      "kind": "struct"
+    },
+    "workflow_utils::executor::SystemProcessHandle": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::executor",
+      "file": "workflow_utils/src/executor.rs",
+      "line": 166,
+      "kind": "struct"
+    },
+    "workflow_utils::executor::SystemProcessRunner": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::executor",
+      "file": "workflow_utils/src/executor.rs",
+      "line": 110,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Default"
+      ]
+    },
+    "workflow_utils::executor::TaskExecutor": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::executor",
+      "file": "workflow_utils/src/executor.rs",
+      "line": 12,
+      "kind": "struct"
+    },
+    "workflow_utils::files::copy_file": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::files",
+      "file": "workflow_utils/src/files.rs",
+      "line": 21,
+      "kind": "fn"
+    },
+    "workflow_utils::files::create_dir": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::files",
+      "file": "workflow_utils/src/files.rs",
+      "line": 31,
+      "kind": "fn"
+    },
+    "workflow_utils::files::exists": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::files",
+      "file": "workflow_utils/src/files.rs",
+      "line": 41,
+      "kind": "fn"
+    },
+    "workflow_utils::files::read_file": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::files",
+      "file": "workflow_utils/src/files.rs",
+      "line": 8,
+      "kind": "fn"
+    },
+    "workflow_utils::files::remove_dir": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::files",
+      "file": "workflow_utils/src/files.rs",
+      "line": 36,
+      "kind": "fn"
+    },
+    "workflow_utils::files::write_file": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::files",
+      "file": "workflow_utils/src/files.rs",
+      "line": 13,
+      "kind": "fn"
+    },
+    "workflow_utils::monitoring::ShellHookExecutor": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::monitoring",
+      "file": "workflow_utils/src/monitoring.rs",
+      "line": 6,
+      "kind": "struct",
+      "deriveAttrs": [
+        "Debug"
+      ]
+    },
+    "workflow_utils::queued::QueuedProcessHandle": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::queued",
+      "file": "workflow_utils/src/queued.rs",
+      "line": 112,
+      "kind": "struct"
+    },
+    "workflow_utils::queued::QueuedRunner": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::queued",
+      "file": "workflow_utils/src/queued.rs",
+      "line": 24,
+      "kind": "struct"
+    },
+    "workflow_utils::queued::SchedulerKind": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils::queued",
+      "file": "workflow_utils/src/queued.rs",
+      "line": 13,
+      "kind": "enum",
+      "deriveAttrs": [
+        "Clone",
+        "Copy",
+        "Debug"
+      ]
+    },
+    "workflow_utils::run_default": {
+      "crateName": "workflow_utils",
+      "module": "workflow_utils",
+      "file": "workflow_utils/src/lib.rs",
+      "line": 31,
+      "kind": "fn"
+    }
+  },
+  "nameIndex": {
+    "ChainConfig": [
+      "scf_dos_chain::config::ChainConfig"
+    ],
+    "CollectFailurePolicy": [
+      "workflow_core::task::CollectFailurePolicy"
+    ],
+    "Dag": [
+      "workflow_core::dag::Dag"
+    ],
+    "ExecutionHandle": [
+      "workflow_utils::executor::ExecutionHandle"
+    ],
+    "ExecutionMode": [
+      "workflow_core::task::ExecutionMode"
+    ],
+    "ExecutionResult": [
+      "workflow_utils::executor::ExecutionResult"
+    ],
+    "FailedTask": [
+      "workflow_core::workflow::FailedTask"
+    ],
+    "HookContext": [
+      "workflow_core::monitoring::HookContext"
+    ],
+    "HookExecutor": [
+      "workflow_core::monitoring::HookExecutor"
+    ],
+    "HookResult": [
+      "workflow_core::monitoring::HookResult"
+    ],
+    "HookTrigger": [
+      "workflow_core::monitoring::HookTrigger"
+    ],
+    "InFlightTask": [
+      "workflow_core::workflow::InFlightTask"
+    ],
+    "JsonStateStore": [
+      "workflow_core::state::JsonStateStore"
+    ],
+    "MonitoringHook": [
+      "workflow_core::monitoring::MonitoringHook"
+    ],
+    "OutputLocation": [
+      "workflow_core::process::OutputLocation"
+    ],
+    "ProcessHandle": [
+      "workflow_core::process::ProcessHandle"
+    ],
+    "ProcessResult": [
+      "workflow_core::process::ProcessResult"
+    ],
+    "ProcessRunner": [
+      "workflow_core::process::ProcessRunner"
+    ],
+    "QueuedProcessHandle": [
+      "workflow_utils::queued::QueuedProcessHandle"
+    ],
+    "QueuedRunner": [
+      "workflow_utils::queued::QueuedRunner"
+    ],
+    "QueuedSubmitter": [
+      "workflow_core::process::QueuedSubmitter"
+    ],
+    "SchedulerKind": [
+      "workflow_utils::queued::SchedulerKind"
+    ],
+    "ShellHookExecutor": [
+      "workflow_utils::monitoring::ShellHookExecutor"
+    ],
+    "StateStore": [
+      "workflow_core::state::StateStore"
+    ],
+    "StateStoreExt": [
+      "workflow_core::state::StateStoreExt"
+    ],
+    "StateSummary": [
+      "workflow_core::state::StateSummary"
+    ],
+    "SweepConfig": [
+      "multi_param_sweep::config::SweepConfig"
+    ],
+    "SystemProcessHandle": [
+      "workflow_utils::executor::SystemProcessHandle"
+    ],
+    "SystemProcessRunner": [
+      "workflow_utils::executor::SystemProcessRunner"
+    ],
+    "Task": [
+      "workflow_core::task::Task"
+    ],
+    "TaskClosure": [
+      "workflow_core::task::TaskClosure"
+    ],
+    "TaskExecutor": [
+      "workflow_utils::executor::TaskExecutor"
+    ],
+    "TaskPhase": [
+      "workflow_core::monitoring::TaskPhase"
+    ],
+    "TaskStatus": [
+      "workflow_core::state::TaskStatus"
+    ],
+    "TaskSuccessors": [
+      "workflow_core::state::TaskSuccessors"
+    ],
+    "Workflow": [
+      "workflow_core::workflow::Workflow"
+    ],
+    "WorkflowError": [
+      "workflow_core::error::WorkflowError"
+    ],
+    "WorkflowSummary": [
+      "workflow_core::workflow::WorkflowSummary"
+    ],
+    "copy_file": [
+      "workflow_utils::files::copy_file"
+    ],
+    "create_dir": [
+      "workflow_utils::files::create_dir"
+    ],
+    "exists": [
+      "workflow_utils::files::exists"
+    ],
+    "generate_job_script": [
+      "multi_param_sweep::job_script::generate_job_script",
+      "scf_dos_chain::job_script::generate_job_script"
+    ],
+    "init_default_logging": [
+      "workflow_core::init_default_logging"
+    ],
+    "parse_cutoffs": [
+      "multi_param_sweep::config::parse_cutoffs"
+    ],
+    "parse_kpoints": [
+      "multi_param_sweep::config::parse_kpoints"
+    ],
+    "parse_u_values": [
+      "multi_param_sweep::config::parse_u_values",
+      "scf_dos_chain::config::parse_u_values"
+    ],
+    "read_file": [
+      "workflow_utils::files::read_file"
+    ],
+    "remove_dir": [
+      "workflow_utils::files::remove_dir"
+    ],
+    "run_default": [
+      "workflow_utils::run_default"
+    ],
+    "write_file": [
+      "workflow_utils::files::write_file"
+    ]
+  },
+  "files": {
+    "examples/hubbard_u_sweep/src/main.rs": {
+      "modulePath": "hubbard_u_sweep",
+      "isCrateRoot": true
+    },
+    "examples/multi_param_sweep/src/config.rs": {
+      "modulePath": "multi_param_sweep::config",
+      "parentModuleFile": "examples/multi_param_sweep/src/main.rs",
+      "isCrateRoot": false
+    },
+    "examples/multi_param_sweep/src/job_script.rs": {
+      "modulePath": "multi_param_sweep::job_script",
+      "parentModuleFile": "examples/multi_param_sweep/src/main.rs",
+      "isCrateRoot": false
+    },
+    "examples/multi_param_sweep/src/main.rs": {
+      "modulePath": "multi_param_sweep",
+      "isCrateRoot": true
+    },
+    "examples/scf_dos_chain/src/config.rs": {
+      "modulePath": "scf_dos_chain::config",
+      "parentModuleFile": "examples/scf_dos_chain/src/main.rs",
+      "isCrateRoot": false
+    },
+    "examples/scf_dos_chain/src/job_script.rs": {
+      "modulePath": "scf_dos_chain::job_script",
+      "parentModuleFile": "examples/scf_dos_chain/src/main.rs",
+      "isCrateRoot": false
+    },
+    "examples/scf_dos_chain/src/main.rs": {
+      "modulePath": "scf_dos_chain",
+      "isCrateRoot": true
+    },
+    "workflow-cli/src/main.rs": {
+      "modulePath": "workflow-cli",
+      "isCrateRoot": true
+    },
+    "workflow_core/src/dag.rs": {
+      "modulePath": "workflow_core::dag",
+      "parentModuleFile": "workflow_core/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_core/src/error.rs": {
+      "modulePath": "workflow_core::error",
+      "parentModuleFile": "workflow_core/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_core/src/lib.rs": {
+      "modulePath": "workflow_core",
+      "isCrateRoot": true
+    },
+    "workflow_core/src/monitoring.rs": {
+      "modulePath": "workflow_core::monitoring",
+      "parentModuleFile": "workflow_core/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_core/src/prelude.rs": {
+      "modulePath": "workflow_core::prelude",
+      "parentModuleFile": "workflow_core/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_core/src/process.rs": {
+      "modulePath": "workflow_core::process",
+      "parentModuleFile": "workflow_core/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_core/src/state.rs": {
+      "modulePath": "workflow_core::state",
+      "parentModuleFile": "workflow_core/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_core/src/task.rs": {
+      "modulePath": "workflow_core::task",
+      "parentModuleFile": "workflow_core/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_core/src/workflow.rs": {
+      "modulePath": "workflow_core::workflow",
+      "parentModuleFile": "workflow_core/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_utils/src/executor.rs": {
+      "modulePath": "workflow_utils::executor",
+      "parentModuleFile": "workflow_utils/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_utils/src/files.rs": {
+      "modulePath": "workflow_utils::files",
+      "parentModuleFile": "workflow_utils/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_utils/src/lib.rs": {
+      "modulePath": "workflow_utils",
+      "isCrateRoot": true
+    },
+    "workflow_utils/src/monitoring.rs": {
+      "modulePath": "workflow_utils::monitoring",
+      "parentModuleFile": "workflow_utils/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_utils/src/prelude.rs": {
+      "modulePath": "workflow_utils::prelude",
+      "parentModuleFile": "workflow_utils/src/lib.rs",
+      "isCrateRoot": false
+    },
+    "workflow_utils/src/queued.rs": {
+      "modulePath": "workflow_utils::queued",
+      "parentModuleFile": "workflow_utils/src/lib.rs",
+      "isCrateRoot": false
+    }
+  }
+}

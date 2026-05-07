@@ -1,0 +1,1124 @@
+[meta]
+title = "Phase 6 Fix: Rewrite example binaries for multi-parameter sweep & SCF+DOS chain"
+source_branch = "phase-6-fix"
+created = "2026-04-26"
+
+[dependencies]
+TASK-5 = ["TASK-1", "TASK-2", "TASK-3", "TASK-4"]
+
+[tasks.TASK-1]
+description = "Create multi_param_sweep binary source files (Cargo.toml, config.rs, job_script.rs, main.rs)"
+type = "create"
+acceptance = [
+    "test -f examples/multi_param_sweep/Cargo.toml",
+    "test -f examples/multi_param_sweep/src/config.rs",
+    "test -f examples/multi_param_sweep/src/job_script.rs",
+    "test -f examples/multi_param_sweep/src/main.rs",
+]
+
+[[tasks.TASK-1.changes]]
+file = "examples/multi_param_sweep/Cargo.toml"
+after = '''
+[package]
+name = "multi_param_sweep"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "multi_param_sweep"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+castep-cell-fmt = "0.1.0"
+castep-cell-io = "0.4.0"
+itertools = { workspace = true }
+workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
+workflow_utils = { path = "../../workflow_utils" }
+'''
+
+[[tasks.TASK-1.changes]]
+file = "examples/multi_param_sweep/src/config.rs"
+after = '''
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "multi_param_sweep", about = "Independent SCF parameter sweep")]
+pub struct SweepConfig {
+    /// Comma-separated Hubbard U values (eV)
+    #[arg(long, default_value = "0.0,1.0,2.0,3.0,4.0,5.0")]
+    pub u_values: String,
+
+    /// Comma-separated MP grids, e.g. "8x8x8,6x6x6"
+    #[arg(long)]
+    pub kpoints: Option<String>,
+
+    /// Comma-separated cutoff energies (eV), e.g. "300,500,800"
+    #[arg(long)]
+    pub cutoffs: Option<String>,
+
+    /// Sweep mode: "product" (cartesian product) or "pairwise" (zip)
+    #[arg(long, default_value = "product")]
+    pub sweep_mode: String,
+
+    /// Element to apply Hubbard U to
+    #[arg(long, default_value = "Zn")]
+    pub element: String,
+
+    /// Orbital for Hubbard U: 'd' or 'f'
+    #[arg(long, default_value = "d")]
+    pub orbital: char,
+
+    /// CASTEP input file prefix
+    #[arg(long, default_value = "ZnO")]
+    pub seed_name: String,
+
+    /// Maximum number of concurrent tasks
+    #[arg(long, default_value_t = 4)]
+    pub max_parallel: usize,
+
+    /// Run tasks locally via direct process execution instead of SLURM
+    #[arg(long, default_value_t = false)]
+    pub local: bool,
+
+    /// Dry-run mode: print topological order and exit without submitting
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
+
+    /// CASTEP binary name or path (used in --local mode)
+    #[arg(long, default_value = "castep")]
+    pub castep_command: String,
+
+    /// Root directory for runs/logs
+    #[arg(long, default_value = ".")]
+    pub workdir: String,
+
+    /// SLURM partition
+    #[arg(long, default_value = "defq")]
+    pub partition: String,
+
+    /// Number of MPI tasks (cores) per job
+    #[arg(long, default_value_t = 8)]
+    pub ntasks: usize,
+
+    /// Nix flake URI for the CASTEP environment
+    #[arg(long)]
+    pub nix_flake: Option<String>,
+
+    /// Network interface for OpenMPI TCP (e.g. "enp6s0")
+    #[arg(long)]
+    pub mpi_if: Option<String>,
+}
+'''
+
+[[tasks.TASK-1.changes]]
+file = "examples/multi_param_sweep/src/job_script.rs"
+after = '''
+use crate::config::SweepConfig;
+
+/// Generate a SLURM job script for a single task.
+///
+/// Uses a clean heredoc-style template string (no literal tabs mixed with spaces).
+/// SBATCH directives use consistent quoting: all string values are double-quoted.
+pub fn generate_job_script(config: &SweepConfig, task_id: &str, seed_name: &str) -> String {
+    let nix_flake = config
+        .nix_flake
+        .as_deref()
+        .unwrap_or("git+ssh://git@github.com/TonyWu20/CASTEP-25.12-nixos#castep_25_mkl");
+    let mpi_if = config.mpi_if.as_deref().unwrap_or("enp6s0");
+    format!(
+        "\
+#!/usr/bin/env bash
+#SBATCH --job-name=\"{task_id}\"
+#SBATCH --output=\"slurm_output_%j.txt\"
+#SBATCH --partition=\"{partition}\"
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node={ntasks}
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=30000m
+#SBATCH --nodelist=nixos
+nix develop {nix_flake} --command bash -c \\
+    \"mpirun --mca plm slurm \\
+        -x OMPI_MCA_btl_tcp_if_include={mpi_if} \\
+        -x OMPI_MCA_orte_keep_fqdn_hostnames=true \\
+        --mca pmix s1 \\
+        --mca btl tcp,self \\
+        --map-by numa --bind-to numa \\
+    castep.mpi {seed_name}\"
+",
+        task_id = task_id,
+        partition = config.partition,
+        ntasks = config.ntasks,
+        nix_flake = nix_flake,
+        mpi_if = mpi_if,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::SweepConfig;
+    use clap::Parser;
+
+    fn default_config() -> SweepConfig {
+        SweepConfig::parse_from(["test"])
+    }
+
+    #[test]
+    fn contains_sbatch_directives() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U1.0", "ZnO");
+        assert!(script.contains("#SBATCH --job-name=\"scf_U1.0\""));
+        assert!(script.contains("#SBATCH --partition=\"defq\""));
+        assert!(script.contains("#SBATCH --ntasks-per-node=8"));
+        assert!(script.contains("#SBATCH --mem=30000m"));
+    }
+
+    #[test]
+    fn contains_seed_name() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U0.0", "ZnO");
+        assert!(script.contains("castep.mpi ZnO"));
+    }
+
+    #[test]
+    fn no_literal_tabs() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U0.0", "ZnO");
+        assert!(
+            !script.contains('\t'),
+            "job script should not contain literal tab characters"
+        );
+    }
+
+    #[test]
+    fn starts_with_shebang() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf_U0.0", "ZnO");
+        assert!(script.starts_with("#!/usr/bin/env bash"));
+    }
+}
+'''
+
+[[tasks.TASK-1.changes]]
+file = "examples/multi_param_sweep/src/main.rs"
+after = '''
+mod config;
+mod job_script;
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::bz_sampling_kpoints::KpointsMpGrid;
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::param::basis_set::CutOffEnergy;
+use castep_cell_io::{CellDocument, ParamDocument};
+use clap::Parser;
+use itertools::iproduct;
+use workflow_utils::prelude::*;
+
+use config::SweepConfig;
+use job_script::generate_job_script;
+
+/// Parse comma-separated f64 values.
+/// Example: "0.0,1.0,2.0" -> Ok(vec![0.0, 1.0, 2.0])
+fn parse_u_values(s: &str) -> Result<Vec<f64>> {
+    s.split(',')
+        .map(|segment| {
+            let trimmed = segment.trim();
+            trimmed
+                .parse::<f64>()
+                .map_err(|e| anyhow::anyhow!("invalid U value '{}': {}", trimmed, e))
+        })
+        .collect::<Result<Vec<_>>>()
+}
+
+/// Parse comma-separated k-point MP grids.
+/// Example: "8x8x8,6x6x6" -> Ok(vec![[8,8,8], [6,6,6]])
+fn parse_kpoints(s: &str) -> Result<Vec<[u32; 3]>> {
+    s.split(',')
+        .map(|segment| {
+            let segment = segment.trim();
+            let parts: Vec<&str> = segment.split('x').collect();
+            if parts.len() != 3 {
+                return Err(anyhow::anyhow!(
+                    "invalid k-point grid '{}': expected format like '8x8x8' (3 axes, got {})",
+                    segment,
+                    parts.len()
+                ));
+            }
+            let mut grid = [0u32; 3];
+            for (i, p) in parts.iter().enumerate() {
+                grid[i] = p.trim().parse::<u32>().map_err(|e| {
+                    anyhow::anyhow!(
+                        "invalid k-point grid '{}': non-numeric axis '{}': {}",
+                        segment,
+                        p,
+                        e
+                    )
+                })?;
+            }
+            Ok(grid)
+        })
+        .collect::<Result<Vec<_>>>()
+}
+
+/// Parse comma-separated cutoff energies.
+/// Example: "300,500,800" -> Ok(vec![300.0, 500.0, 800.0])
+fn parse_cutoffs(s: &str) -> Result<Vec<f64>> {
+    s.split(',')
+        .map(|segment| {
+            let trimmed = segment.trim();
+            trimmed.parse::<f64>().map_err(|e| {
+                anyhow::anyhow!("invalid cutoff energy '{}': {}", trimmed, e)
+            })
+        })
+        .collect::<Result<Vec<_>>>()
+}
+
+/// Format a task ID for a sweep combination.
+fn format_sweep_task_id(
+    u_value: f64,
+    kpoint: Option<[u32; 3]>,
+    cutoff: Option<f64>,
+) -> String {
+    let mut id = format!("scf_U{:.1}", u_value);
+    if let Some(k) = kpoint {
+        id.push_str(&format!("_k{}x{}x{}", k[0], k[1], k[2]));
+    }
+    if let Some(c) = cutoff {
+        id.push_str(&format!("_c{}", c));
+    }
+    id
+}
+
+/// Format a workdir path for a sweep combination.
+fn format_sweep_workdir(
+    u_value: f64,
+    kpoint: Option<[u32; 3]>,
+    cutoff: Option<f64>,
+) -> PathBuf {
+    let dirname = format_sweep_task_id(u_value, kpoint, cutoff);
+    PathBuf::from("runs").join(dirname)
+}
+
+/// Generate the list of (u_value, kpoint, cutoff) combinations based on sweep mode.
+fn generate_sweep_combinations(
+    u_values: &[f64],
+    kpoints: Option<&[[u32; 3]]>,
+    cutoffs: Option<&[f64]>,
+    sweep_mode: &str,
+) -> Result<Vec<(f64, Option<[u32; 3]>, Option<f64>)>> {
+    match sweep_mode {
+        "product" => {
+            let kp: Vec<Option<[u32; 3]>> = match kpoints {
+                Some(k) => k.iter().map(|&v| Some(v)).collect(),
+                None => vec![None],
+            };
+            let co: Vec<Option<f64>> = match cutoffs {
+                Some(c) => c.iter().map(|&v| Some(v)).collect(),
+                None => vec![None],
+            };
+            Ok(iproduct!(u_values.iter(), kp.iter(), co.iter())
+                .map(|(u, k, c)| (*u, *k, *c))
+                .collect())
+        }
+        "pairwise" => {
+            let k = kpoints.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "pairwise mode requires --kpoints and --cutoffs to be specified"
+                )
+            })?;
+            let c = cutoffs.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "pairwise mode requires --kpoints and --cutoffs to be specified"
+                )
+            })?;
+            if u_values.len() != k.len() || u_values.len() != c.len() {
+                return Err(anyhow::anyhow!(
+                    "pairwise mode requires equal-length lists: u_values({}), kpoints({}), cutoffs({})",
+                    u_values.len(),
+                    k.len(),
+                    c.len()
+                ));
+            }
+            Ok(u_values
+                .iter()
+                .enumerate()
+                .map(|(i, &u)| (u, Some(k[i]), Some(c[i])))
+                .collect())
+        }
+        other => Err(anyhow::anyhow!(
+            "unsupported sweep mode '{}': expected 'product' or 'pairwise'",
+            other
+        )),
+    }
+}
+
+/// Build a single SCF sweep task for one (U, kpoint, cutoff) combination.
+fn build_sweep_task(
+    u_value: f64,
+    kpoint: Option<[u32; 3]>,
+    cutoff: Option<f64>,
+    element: &str,
+    orbital: char,
+    seed_name: &str,
+    seed_cell: &str,
+    seed_param: &str,
+    workdir_root: &Path,
+    castep_command: &str,
+    is_local: bool,
+    config: &SweepConfig,
+) -> Result<Task, WorkflowError> {
+    let task_id = format_sweep_task_id(u_value, kpoint, cutoff);
+    let workdir = workdir_root.join(format_sweep_workdir(u_value, kpoint, cutoff));
+
+    let seed_cell = seed_cell.to_owned();
+    let seed_param = seed_param.to_owned();
+    let element = element.to_string();
+    let seed_name_setup = seed_name.to_string();
+    let seed_name_collect = seed_name.to_string();
+    let castep_command = castep_command.to_string();
+
+    // Only generate job script for SLURM mode
+    let job_script = if !is_local {
+        Some(generate_job_script(config, &task_id, &seed_name_setup))
+    } else {
+        None
+    };
+
+    let mode = if is_local {
+        ExecutionMode::direct(&castep_command, &[&seed_name_setup])
+    } else {
+        ExecutionMode::Queued
+    };
+
+    let task = Task::new(&task_id, mode)
+        .workdir(workdir.clone())
+        .setup(move |workdir| -> Result<(), WorkflowError> {
+            create_dir(workdir)?;
+
+            // Parse seed cell and inject HubbardU
+            let mut cell_doc: CellDocument =
+                parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+            let orbital_u = match orbital {
+                'd' => OrbitalU::D(u_value),
+                'f' => OrbitalU::F(u_value),
+                c => {
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "unsupported orbital '{c}'"
+                    )))
+                }
+            };
+            let atom_u = AtomHubbardU::builder()
+                .species(Species::Symbol(element.clone()))
+                .orbitals(vec![orbital_u])
+                .build();
+            let hubbard_u = HubbardU::builder()
+                .unit(HubbardUUnit::ElectronVolt)
+                .atom_u_values(vec![atom_u])
+                .build();
+            cell_doc.hubbard_u = Some(hubbard_u);
+
+            // Build Cell blocks for serialization
+            let mut cells = cell_doc.to_cell_file();
+
+            // Inject KPOINTS_MP_GRID if provided (workaround: not a field on CellDocument)
+            if let Some(grid) = kpoint {
+                let kp_cell = KpointsMpGrid(grid).to_cell();
+                cells.push(kp_cell);
+            }
+
+            let cell_text = to_string_many_spaced(&cells);
+
+            // Inject cutoff energy into param if provided
+            let param_text = if let Some(co) = cutoff {
+                let mut param_doc: ParamDocument =
+                    parse(&seed_param).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+                param_doc.basis_set.cutoff_energy = Some(CutOffEnergy {
+                    value: co,
+                    unit: None,
+                });
+                to_string_many_spaced(&param_doc.to_cell_file())
+            } else {
+                seed_param.clone()
+            };
+
+            write_file(
+                workdir.join(format!("{seed_name_setup}.cell")),
+                &cell_text,
+            )?;
+            write_file(
+                workdir.join(format!("{seed_name_setup}.param")),
+                &param_text,
+            )?;
+
+            // Only write job script for SLURM mode
+            if let Some(ref script) = job_script {
+                write_file(workdir.join(JOB_SCRIPT_NAME), script)?;
+            }
+            Ok(())
+        });
+
+    Ok(task)
+}
+
+fn main() -> Result<()> {
+    workflow_core::init_default_logging().ok();
+    let config = SweepConfig::parse();
+
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+
+    // 1. Parse all input lists
+    let u_values = parse_u_values(&config.u_values)?;
+    let kpoints: Option<Vec<[u32; 3]>> = config
+        .kpoints
+        .as_ref()
+        .map(|s| parse_kpoints(s))
+        .transpose()?;
+    let cutoffs: Option<Vec<f64>> = config
+        .cutoffs
+        .as_ref()
+        .map(|s| parse_cutoffs(s))
+        .transpose()?;
+
+    // 2. Generate sweep combinations
+    let combos = generate_sweep_combinations(
+        &u_values,
+        kpoints.as_deref(),
+        cutoffs.as_deref(),
+        &config.sweep_mode,
+    )?;
+
+    // 3. Build tasks
+    let root = PathBuf::from(&config.workdir);
+    let mut workflow = Workflow::new("multi_param_sweep")
+        .with_max_parallel(config.max_parallel)?
+        .with_root_dir(root.clone());
+
+    if !config.local {
+        workflow = workflow
+            .with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));
+    }
+
+    workflow = workflow.with_log_dir(root.join("logs"));
+
+    for (u, k, c) in combos {
+        let task = build_sweep_task(
+            u,
+            k,
+            c,
+            &config.element,
+            config.orbital,
+            &config.seed_name,
+            seed_cell,
+            seed_param,
+            &root,
+            &config.castep_command,
+            config.local,
+            &config,
+        )?;
+        workflow.add_task(task)?;
+    }
+
+    // 4. Execute or dry-run
+    if config.dry_run {
+        let order = workflow.dry_run()?;
+        println!("Dry-run topological order:");
+        for task_id in &order {
+            println!("  {task_id}");
+        }
+        return Ok(());
+    }
+
+    let state_path = root.join(".multi_param_sweep.workflow.json");
+    let mut state = JsonStateStore::new("multi_param_sweep", state_path);
+
+    let summary = if config.local {
+        run_default(&mut workflow, &mut state)?
+    } else {
+        let runner: Arc<dyn ProcessRunner> =
+            Arc::new(SystemProcessRunner::new().with_log_dir(root.join("logs")));
+        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        workflow.run(&mut state, runner, executor)?
+    };
+
+    println!(
+        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
+        summary.succeeded.len(),
+        summary.failed.len(),
+        summary.skipped.len(),
+        summary.duration.as_secs_f64(),
+    );
+    Ok(())
+}
+'''
+
+[tasks.TASK-2]
+description = "Copy seed files for multi_param_sweep binary"
+type = "create"
+acceptance = [
+    "test -f examples/multi_param_sweep/seeds/ZnO.cell",
+    "test -f examples/multi_param_sweep/seeds/ZnO.param",
+]
+
+[[tasks.TASK-2.changes]]
+file = "examples/multi_param_sweep/seeds/ZnO.cell"
+after = '''%BLOCK LATTICE_CART
+  3.25 0.0 0.0
+  0.0 3.25 0.0
+  0.0 0.0 5.21
+%ENDBLOCK LATTICE_CART
+
+%BLOCK POSITIONS_FRAC
+Zn  0.333333  0.666667  0.0
+Zn  0.666667  0.333333  0.5
+O   0.333333  0.666667  0.375
+O   0.666667  0.333333  0.875
+%ENDBLOCK POSITIONS_FRAC
+'''
+
+[[tasks.TASK-2.changes]]
+file = "examples/multi_param_sweep/seeds/ZnO.param"
+after = '''task : SinglePoint
+'''
+
+[tasks.TASK-3]
+description = "Create scf_dos_chain binary source files (Cargo.toml, config.rs, job_script.rs, main.rs)"
+type = "create"
+acceptance = [
+    "test -f examples/scf_dos_chain/Cargo.toml",
+    "test -f examples/scf_dos_chain/src/config.rs",
+    "test -f examples/scf_dos_chain/src/job_script.rs",
+    "test -f examples/scf_dos_chain/src/main.rs",
+]
+
+[[tasks.TASK-3.changes]]
+file = "examples/scf_dos_chain/Cargo.toml"
+after = '''
+[package]
+name = "scf_dos_chain"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "scf_dos_chain"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+castep-cell-fmt = "0.1.0"
+castep-cell-io = "0.4.0"
+itertools = { workspace = true }
+workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
+workflow_utils = { path = "../../workflow_utils" }
+'''
+
+[[tasks.TASK-3.changes]]
+file = "examples/scf_dos_chain/src/config.rs"
+after = '''
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "scf_dos_chain", about = "SCF + DOS task chain")]
+pub struct ChainConfig {
+    /// Single Hubbard U value (eV)
+    #[arg(long, default_value_t = 3.0)]
+    pub u_value: f64,
+
+    /// Element to apply Hubbard U to
+    #[arg(long, default_value = "Zn")]
+    pub element: String,
+
+    /// Orbital for Hubbard U: 'd' or 'f'
+    #[arg(long, default_value = "d")]
+    pub orbital: char,
+
+    /// CASTEP input file prefix
+    #[arg(long, default_value = "ZnO")]
+    pub seed_name: String,
+
+    /// Maximum number of concurrent tasks
+    #[arg(long, default_value_t = 1)]
+    pub max_parallel: usize,
+
+    /// Run tasks locally via direct process execution instead of SLURM
+    #[arg(long, default_value_t = false)]
+    pub local: bool,
+
+    /// Dry-run mode: print topological order and exit without submitting
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
+
+    /// CASTEP binary name or path (used in --local mode)
+    #[arg(long, default_value = "castep")]
+    pub castep_command: String,
+
+    /// Root directory for runs/logs
+    #[arg(long, default_value = ".")]
+    pub workdir: String,
+
+    /// SLURM partition
+    #[arg(long, default_value = "defq")]
+    pub partition: String,
+
+    /// Number of MPI tasks (cores) per job
+    #[arg(long, default_value_t = 8)]
+    pub ntasks: usize,
+
+    /// Nix flake URI for the CASTEP environment
+    #[arg(long)]
+    pub nix_flake: Option<String>,
+
+    /// Network interface for OpenMPI TCP (e.g. "enp6s0")
+    #[arg(long)]
+    pub mpi_if: Option<String>,
+}
+'''
+
+[[tasks.TASK-3.changes]]
+file = "examples/scf_dos_chain/src/job_script.rs"
+after = '''
+use crate::config::ChainConfig;
+
+/// Generate a SLURM job script for a single task.
+///
+/// Uses a clean heredoc-style template string (no literal tabs mixed with spaces).
+/// SBATCH directives use consistent quoting: all string values are double-quoted.
+pub fn generate_job_script(config: &ChainConfig, task_id: &str, seed_name: &str) -> String {
+    let nix_flake = config
+        .nix_flake
+        .as_deref()
+        .unwrap_or("git+ssh://git@github.com/TonyWu20/CASTEP-25.12-nixos#castep_25_mkl");
+    let mpi_if = config.mpi_if.as_deref().unwrap_or("enp6s0");
+    format!(
+        "\
+#!/usr/bin/env bash
+#SBATCH --job-name=\"{task_id}\"
+#SBATCH --output=\"slurm_output_%j.txt\"
+#SBATCH --partition=\"{partition}\"
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node={ntasks}
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=30000m
+#SBATCH --nodelist=nixos
+nix develop {nix_flake} --command bash -c \\
+    \"mpirun --mca plm slurm \\
+        -x OMPI_MCA_btl_tcp_if_include={mpi_if} \\
+        -x OMPI_MCA_orte_keep_fqdn_hostnames=true \\
+        --mca pmix s1 \\
+        --mca btl tcp,self \\
+        --map-by numa --bind-to numa \\
+    castep.mpi {seed_name}\"
+",
+        task_id = task_id,
+        partition = config.partition,
+        ntasks = config.ntasks,
+        nix_flake = nix_flake,
+        mpi_if = mpi_if,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ChainConfig;
+    use clap::Parser;
+
+    fn default_config() -> ChainConfig {
+        ChainConfig::parse_from(["test"])
+    }
+
+    #[test]
+    fn contains_sbatch_directives() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf", "ZnO");
+        assert!(script.contains("#SBATCH --job-name=\"scf\""));
+        assert!(script.contains("#SBATCH --partition=\"defq\""));
+        assert!(script.contains("#SBATCH --ntasks-per-node=8"));
+        assert!(script.contains("#SBATCH --mem=30000m"));
+    }
+
+    #[test]
+    fn contains_seed_name() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf", "ZnO");
+        assert!(script.contains("castep.mpi ZnO"));
+    }
+
+    #[test]
+    fn no_literal_tabs() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf", "ZnO");
+        assert!(
+            !script.contains('\t'),
+            "job script should not contain literal tab characters"
+        );
+    }
+
+    #[test]
+    fn starts_with_shebang() {
+        let config = default_config();
+        let script = generate_job_script(&config, "scf", "ZnO");
+        assert!(script.starts_with("#!/usr/bin/env bash"));
+    }
+}
+'''
+
+[[tasks.TASK-3.changes]]
+file = "examples/scf_dos_chain/src/main.rs"
+after = '''
+mod config;
+mod job_script;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use anyhow::Result;
+use castep_cell_fmt::{format::to_string_many_spaced, parse, ToCellFile};
+use castep_cell_io::cell::species::{AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species};
+use castep_cell_io::param::general::Task;
+use castep_cell_io::{CellDocument, ParamDocument};
+use clap::Parser;
+use workflow_utils::prelude::*;
+
+use config::ChainConfig;
+use job_script::generate_job_script;
+
+/// Build the SCF task (Task 1 in the chain).
+/// Injects Hubbard U into the seed cell file.
+fn build_scf_task(
+    u_value: f64,
+    element: &str,
+    orbital: char,
+    seed_name: &str,
+    seed_cell: &str,
+    seed_param: &str,
+    workdir: &str,
+    castep_command: &str,
+    is_local: bool,
+    config: &ChainConfig,
+) -> Result<Task, WorkflowError> {
+    let task_id = "scf".to_string();
+    let workdir_path = PathBuf::from(workdir);
+
+    let seed_cell = seed_cell.to_owned();
+    let seed_param_clone = seed_param.to_owned();
+    let element = element.to_string();
+    let seed_name_setup = seed_name.to_string();
+    let seed_name_collect = seed_name.to_string();
+    let castep_command = castep_command.to_string();
+
+    // Only generate job script for SLURM mode
+    let job_script = if !is_local {
+        Some(generate_job_script(config, &task_id, &seed_name_setup))
+    } else {
+        None
+    };
+
+    let mode = if is_local {
+        ExecutionMode::direct(&castep_command, &[&seed_name_setup])
+    } else {
+        ExecutionMode::Queued
+    };
+
+    let task = Task::new(&task_id, mode)
+        .workdir(workdir_path.clone())
+        .setup(move |workdir| -> Result<(), WorkflowError> {
+            create_dir(workdir)?;
+
+            // Parse seed cell and inject HubbardU
+            let mut cell_doc: CellDocument =
+                parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+
+            let orbital_u = match orbital {
+                'd' => OrbitalU::D(u_value),
+                'f' => OrbitalU::F(u_value),
+                c => {
+                    return Err(WorkflowError::InvalidConfig(format!(
+                        "unsupported orbital '{c}'"
+                    )))
+                }
+            };
+            let atom_u = AtomHubbardU::builder()
+                .species(Species::Symbol(element.clone()))
+                .orbitals(vec![orbital_u])
+                .build();
+            let hubbard_u = HubbardU::builder()
+                .unit(HubbardUUnit::ElectronVolt)
+                .atom_u_values(vec![atom_u])
+                .build();
+            cell_doc.hubbard_u = Some(hubbard_u);
+
+            let cell_text = to_string_many_spaced(&cell_doc.to_cell_file());
+            write_file(
+                workdir.join(format!("{seed_name_setup}.cell")),
+                &cell_text,
+            )?;
+            write_file(
+                workdir.join(format!("{seed_name_setup}.param")),
+                &seed_param_clone,
+            )?;
+
+            // Only write job script for SLURM mode
+            if let Some(ref script) = job_script {
+                write_file(workdir.join(JOB_SCRIPT_NAME), script)?;
+            }
+            Ok(())
+        })
+        .collect(move |workdir| -> Result<(), WorkflowError> {
+            let castep_out = workdir.join(format!("{seed_name_collect}.castep"));
+            if !castep_out.exists() {
+                return Err(WorkflowError::InvalidConfig(format!(
+                    "missing output: {}",
+                    castep_out.display()
+                )));
+            }
+            let content = read_file(&castep_out)?;
+            if !content.contains("Total time") {
+                return Err(WorkflowError::InvalidConfig(
+                    "CASTEP output appears incomplete (no 'Total time' marker)".into(),
+                ));
+            }
+            Ok(())
+        });
+
+    Ok(task)
+}
+
+/// Build the DOS task (Task 2 in the chain, depends on Task 1).
+/// Modifies seed param to set task = BandStructure, copies SCF checkpoint.
+fn build_dos_task(
+    seed_name: &str,
+    seed_cell: &str,
+    seed_param: &str,
+    workdir: &str,
+    castep_command: &str,
+    is_local: bool,
+    config: &ChainConfig,
+) -> Result<Task, WorkflowError> {
+    let task_id = "dos".to_string();
+    let workdir_path = PathBuf::from(workdir);
+    let dos_seed_name = format!("{}_DOS", seed_name);
+
+    let seed_cell = seed_cell.to_owned();
+    let seed_param = seed_param.to_owned();
+    let seed_name_setup = seed_name.to_string();
+    let dos_seed_name_setup = dos_seed_name.clone();
+    let dos_seed_name_collect = dos_seed_name.clone();
+    let castep_command = castep_command.to_string();
+
+    // Only generate job script for SLURM mode
+    let job_script = if !is_local {
+        Some(generate_job_script(config, &task_id, &dos_seed_name_setup))
+    } else {
+        None
+    };
+
+    let mode = if is_local {
+        ExecutionMode::direct(&castep_command, &[&dos_seed_name_setup])
+    } else {
+        ExecutionMode::Queued
+    };
+
+    let task = Task::new(&task_id, mode)
+        .workdir(workdir_path.clone())
+        .depends_on("scf")
+        .setup(move |workdir| -> Result<(), WorkflowError> {
+            // 1. Parse in-memory seed cell, write to ZnO_DOS.cell
+            let cell_doc: CellDocument =
+                parse(&seed_cell).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+            let cell_text = to_string_many_spaced(&cell_doc.to_cell_file());
+            write_file(
+                workdir.join(format!("{dos_seed_name_setup}.cell")),
+                &cell_text,
+            )?;
+
+            // 2. Parse in-memory seed param, set task = BandStructure, write to ZnO_DOS.param
+            let mut param_doc: ParamDocument =
+                parse(&seed_param).map_err(|e| WorkflowError::InvalidConfig(e.to_string()))?;
+            param_doc.general.task = Some(Task::BandStructure);
+            let param_text = to_string_many_spaced(&param_doc.to_cell_file());
+            write_file(
+                workdir.join(format!("{dos_seed_name_setup}.param")),
+                &param_text,
+            )?;
+
+            // 3. Copy SCF checkpoint: ZnO.check -> ZnO_DOS.check
+            let check_src = workdir.join(format!("{seed_name_setup}.check"));
+            let check_dst = workdir.join(format!("{dos_seed_name_setup}.check"));
+            copy_file(&check_src, &check_dst)?;
+
+            // Only write job script for SLURM mode
+            if let Some(ref script) = job_script {
+                write_file(workdir.join(JOB_SCRIPT_NAME), script)?;
+            }
+            Ok(())
+        })
+        .collect(move |workdir| -> Result<(), WorkflowError> {
+            let castep_out = workdir.join(format!("{dos_seed_name_collect}.castep"));
+            if !castep_out.exists() {
+                return Err(WorkflowError::InvalidConfig(format!(
+                    "missing output: {}",
+                    castep_out.display()
+                )));
+            }
+            let content = read_file(&castep_out)?;
+            if !content.contains("Total time") {
+                return Err(WorkflowError::InvalidConfig(
+                    "CASTEP output appears incomplete (no 'Total time' marker)".into(),
+                ));
+            }
+            Ok(())
+        });
+
+    Ok(task)
+}
+
+fn main() -> Result<()> {
+    workflow_core::init_default_logging().ok();
+    let config = ChainConfig::parse();
+
+    let seed_cell = include_str!("../seeds/ZnO.cell");
+    let seed_param = include_str!("../seeds/ZnO.param");
+
+    let root = PathBuf::from(&config.workdir);
+    let workdir_str = "runs/scf_dos/";
+
+    // Build SCF task
+    let scf_task = build_scf_task(
+        config.u_value,
+        &config.element,
+        config.orbital,
+        &config.seed_name,
+        seed_cell,
+        seed_param,
+        workdir_str,
+        &config.castep_command,
+        config.local,
+        &config,
+    )?;
+
+    // Build DOS task (depends on SCF)
+    let dos_task = build_dos_task(
+        &config.seed_name,
+        seed_cell,
+        seed_param,
+        workdir_str,
+        &config.castep_command,
+        config.local,
+        &config,
+    )?;
+
+    let mut workflow = Workflow::new("scf_dos_chain")
+        .with_max_parallel(config.max_parallel)?
+        .with_root_dir(root.clone());
+
+    if !config.local {
+        workflow = workflow
+            .with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm)));
+    }
+
+    workflow = workflow.with_log_dir(root.join("logs"));
+
+    workflow.add_task(scf_task)?;
+    workflow.add_task(dos_task)?;
+
+    if config.dry_run {
+        let order = workflow.dry_run()?;
+        println!("Dry-run topological order:");
+        for task_id in &order {
+            println!("  {task_id}");
+        }
+        return Ok(());
+    }
+
+    let state_path = root.join(".scf_dos_chain.workflow.json");
+    let mut state = JsonStateStore::new("scf_dos_chain", state_path);
+
+    let summary = if config.local {
+        run_default(&mut workflow, &mut state)?
+    } else {
+        let runner: Arc<dyn ProcessRunner> =
+            Arc::new(SystemProcessRunner::new().with_log_dir(root.join("logs")));
+        let executor: Arc<dyn HookExecutor> = Arc::new(ShellHookExecutor);
+        workflow.run(&mut state, runner, executor)?
+    };
+
+    println!(
+        "Workflow complete: {} succeeded, {} failed, {} skipped ({:.1}s)",
+        summary.succeeded.len(),
+        summary.failed.len(),
+        summary.skipped.len(),
+        summary.duration.as_secs_f64(),
+    );
+    Ok(())
+}
+'''
+
+[tasks.TASK-4]
+description = "Copy seed files for scf_dos_chain binary"
+type = "create"
+acceptance = [
+    "test -f examples/scf_dos_chain/seeds/ZnO.cell",
+    "test -f examples/scf_dos_chain/seeds/ZnO.param",
+]
+
+[[tasks.TASK-4.changes]]
+file = "examples/scf_dos_chain/seeds/ZnO.cell"
+after = '''%BLOCK LATTICE_CART
+  3.25 0.0 0.0
+  0.0 3.25 0.0
+  0.0 0.0 5.21
+%ENDBLOCK LATTICE_CART
+
+%BLOCK POSITIONS_FRAC
+Zn  0.333333  0.666667  0.0
+Zn  0.666667  0.333333  0.5
+O   0.333333  0.666667  0.375
+O   0.666667  0.333333  0.875
+%ENDBLOCK POSITIONS_FRAC
+'''
+
+[[tasks.TASK-4.changes]]
+file = "examples/scf_dos_chain/seeds/ZnO.param"
+after = '''task : SinglePoint
+'''
+
+[tasks.TASK-5]
+description = "Update root Cargo.toml workspace members and delete old hubbard_u_sweep_slurm directory"
+type = "replace"
+acceptance = [
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "rm -rf examples/hubbard_u_sweep_slurm/",
+    "test ! -d examples/hubbard_u_sweep_slurm/",
+]
+
+[[tasks.TASK-5.changes]]
+file = "Cargo.toml"
+before = '''[workspace]
+members = [
+    "workflow_core",
+    "workflow_utils",
+    "examples/hubbard_u_sweep",
+    "examples/hubbard_u_sweep_slurm",
+    "workflow-cli",
+]
+resolver = "2"'''
+after = '''[workspace]
+members = [
+    "workflow_core",
+    "workflow_utils",
+    "examples/hubbard_u_sweep",
+    "examples/multi_param_sweep",
+    "examples/scf_dos_chain",
+    "workflow-cli",
+]
+resolver = "2"'''

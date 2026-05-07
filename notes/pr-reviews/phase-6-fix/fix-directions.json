@@ -1,0 +1,175 @@
+{
+  "meta": {
+    "title": "Phase 6 Fix: Fix directions for defects found in review",
+    "source_branch": "phase-6-fix"
+  },
+  "architecture_notes": [
+    "These fix directions address defects found during the make-judgement review of phase-6-fix. Two P1 runtime bugs in scf_dos_chain, one missing HubbardUUnit import in multi_param_sweep, one unused dependency, one architecture note discrepancy, and G3-1 workspace cleanup."
+  ],
+  "known_pitfalls": [
+    "Fix order: Apply P1 fixes first (functional correctness), then P2/P3 fixes (cleanup). G3-1 should run last since it modifies workspace-wide state."
+  ],
+  "task_groups": [
+    {
+      "group_id": "fixes",
+      "reason": "Fix 6 defects found during make-judgement review of phase-6-fix.",
+      "tasks": ["FIX-1", "FIX-2", "FIX-3", "FIX-4", "FIX-5", "FIX-6"]
+    },
+    {
+      "group_id": "cleanup",
+      "reason": "Execute G3-1 workspace cleanup that was not yet performed.",
+      "tasks": ["FIX-7"],
+      "depends_on_groups": ["fixes"]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "FIX-1",
+      "description": "Fix SCF task job script using wrong task_id in scf_dos_chain/src/main.rs. The first argument to generate_job_script should be \"scf\", not &seed_name.",
+      "files_in_scope": [
+        "examples/scf_dos_chain/src/main.rs"
+      ],
+      "changes": [
+        {
+          "path": "examples/scf_dos_chain/src/main.rs",
+          "action": "modify",
+          "guidance": "Change the SCF setup closure's generate_job_script call from generate_job_script(config, &seed_name, &seed_name) to generate_job_script(config, \"scf\", &seed_name). The first parameter is the task_id for the SBATCH --job-name directive, which should be \"scf\" to match the task ID."
+        }
+      ],
+      "acceptance": [
+        "cargo check -p scf_dos_chain",
+        "cargo test -p scf_dos_chain -- job_script::tests::contains_sbatch_directives (verify #SBATCH --job-name=\"scf\" is produced)"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "FIX-2",
+      "description": "Fix DOS collect closure ignoring workdir path in scf_dos_chain/src/main.rs. The collect closure must use the path argument to join the output filename.",
+      "files_in_scope": [
+        "examples/scf_dos_chain/src/main.rs"
+      ],
+      "changes": [
+        {
+          "path": "examples/scf_dos_chain/src/main.rs",
+          "action": "modify",
+          "guidance": "Change the DOS collect closure: replace |_: &Path| with |path: &Path| and replace PathBuf::from(\"ZnO_DOS.castep\") with path.join(\"ZnO_DOS.castep\"). This matches the SCF collect pattern which correctly uses the workdir path argument."
+        }
+      ],
+      "acceptance": [
+        "cargo check -p scf_dos_chain"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "FIX-3",
+      "description": "Add HubbardUUnit import and .unit() call in multi_param_sweep/src/main.rs. The HubbardU builder must include .unit(HubbardUUnit::ElectronVolt) for correctness.",
+      "files_in_scope": [
+        "examples/multi_param_sweep/src/main.rs"
+      ],
+      "changes": [
+        {
+          "path": "examples/multi_param_sweep/src/main.rs",
+          "action": "modify",
+          "guidance": "Add HubbardUUnit to the import from castep_cell_io::cell::species: change the import to include HubbardUUnit alongside the existing AtomHubbardU, HubbardU, OrbitalU, Species. Add .unit(HubbardUUnit::ElectronVolt) to the HubbardU::builder() chain before .atom_u_values(). The correct chain is: HubbardU::builder().unit(HubbardUUnit::ElectronVolt).atom_u_values(vec![atom_u]).build()"
+        }
+      ],
+      "acceptance": [
+        "cargo check -p multi_param_sweep",
+        "cargo test -p multi_param_sweep"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "FIX-4",
+      "description": "Remove unused itertools dependency from scf_dos_chain/Cargo.toml.",
+      "files_in_scope": [
+        "examples/scf_dos_chain/Cargo.toml"
+      ],
+      "changes": [
+        {
+          "path": "examples/scf_dos_chain/Cargo.toml",
+          "action": "modify",
+          "guidance": "Remove the line 'itertools = { workspace = true }' from [dependencies] in scf_dos_chain/Cargo.toml. itertools is not imported or used in any scf_dos_chain source file."
+        }
+      ],
+      "acceptance": [
+        "cargo check -p scf_dos_chain (must compile without itertools)",
+        "cargo test -p scf_dos_chain (all tests must pass)"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "FIX-5",
+      "description": "Update architecture notes to acknowledge workflow_core/src/task.rs changes, or revert the changes.",
+      "files_in_scope": [
+        "workflow_core/src/task.rs",
+        "notes/directions/phase-6-fix/directions-index.json"
+      ],
+      "changes": [
+        {
+          "path": "notes/directions/phase-6-fix/directions-index.json",
+          "action": "modify",
+          "guidance": "Update architecture_notes item 14: change 'no_new_library_crates: No new library crates are created' to acknowledge the TaskClosure type alias was added to workflow_core/src/task.rs. Accept the TaskClosure alias and manual Debug impl as necessary enablers for the binary crates. If desired, revert the changes to task.rs and inline the closure type in both binaries."
+        }
+      ],
+      "acceptance": [
+        "cargo check --workspace"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "FIX-6",
+      "description": "Document the castep-cell-fmt path dep deviation in hubbard_u_sweep/Cargo.toml.",
+      "files_in_scope": [
+        "examples/hubbard_u_sweep/Cargo.toml"
+      ],
+      "changes": [
+        {
+          "path": "examples/hubbard_u_sweep/Cargo.toml",
+          "action": "modify",
+          "guidance": "No code change needed — the path dep was likely necessary for Cargo resolution with the local castep-cell-io dependency. Verify with cargo check -p hubbard_u_sweep that it compiles. If it compiles, document this as an intentional deviation."
+        }
+      ],
+      "acceptance": [
+        "cargo check -p hubbard_u_sweep (must compile)"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "FIX-7",
+      "description": "Execute G3-1 workspace cleanup: remove hubbard_u_sweep_slurm from workspace members and delete the directory.",
+      "files_in_scope": [
+        "Cargo.toml (workspace root)",
+        "examples/hubbard_u_sweep_slurm/"
+      ],
+      "changes": [
+        {
+          "path": "Cargo.toml (workspace root)",
+          "action": "modify",
+          "guidance": "Remove 'examples/hubbard_u_sweep_slurm' from the [workspace] members array. The members list should contain exactly: 'workflow_core', 'workflow_utils', 'examples/hubbard_u_sweep', 'examples/multi_param_sweep', 'examples/scf_dos_chain', 'workflow-cli'. Do NOT change any other configuration."
+        },
+        {
+          "path": "examples/hubbard_u_sweep_slurm/",
+          "action": "delete",
+          "guidance": "Delete the entire examples/hubbard_u_sweep_slurm/ directory and all contents."
+        }
+      ],
+      "acceptance": [
+        "cargo build --workspace (all crates compile with zero errors, zero warnings)",
+        "cargo test --workspace (all tests pass)",
+        "cargo clippy --workspace --all-targets -- -W dead-code (no dead-code warnings)",
+        "cargo run --bin multi_param_sweep -- --dry-run (produces correct topological order with 6 default tasks)",
+        "cargo run --bin scf_dos_chain -- --dry-run (produces 'scf' then 'dos')",
+        "ls examples/hubbard_u_sweep_slurm/ 2>&1 | grep -q 'No such file' || false"
+      ],
+      "depends_on": [
+        "FIX-1",
+        "FIX-2",
+        "FIX-3",
+        "FIX-4",
+        "FIX-5",
+        "FIX-6"
+      ]
+    }
+  ]
+}

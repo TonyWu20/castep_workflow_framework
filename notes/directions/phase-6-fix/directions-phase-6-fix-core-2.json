@@ -1,0 +1,258 @@
+{
+  "meta": {
+    "title": "Phase 6 Fix: Rewrite example binaries for multi-parameter sweep & SCF+DOS chain",
+    "source_branch": "phase-6-fix"
+  },
+  "architecture_notes": [
+    "Summary: Replace the buggy hubbard_u_sweep_slurm binary with two purpose-built binaries \u2014 multi_param_sweep (independent SCF parameter sweep) and scf_dos_chain (SCF+DOS task chain) \u2014 using only local path deps for castep-cell-io v0.5.0.",
+    "parse_time_validation: Parse-time validation at CLI boundary \u2014 parse_kpoints and parse_cutoffs error immediately at CLI parse time, not inside setup closures. A malformed k-point like '8xx8' must fail before task construction begins (Pattern 3).",
+    "internal_type_choice: parse_kpoints uses [u32; 3] not a custom struct \u2014 The array type directly converts to KpointsMpGrid([kx, ky, kz]) with zero overhead. The type guarantee ('exactly 3 u32s') is enforced by the array type itself.",
+    "duplication_choice: parse_u_values and generate_job_script are duplicated, not extracted \u2014 Each function is ~15-30 lines with stable semantics. Extracting to a shared crate is overkill for 2 consumers. If a third consumer appears, extraction becomes justified.",
+    "task_naming_collision: Fully-qualified path for Task::BandStructure, not alias import \u2014 The collision between workflow_core::task::Task and castep_cell_io::param::general::Task is resolved by using the fully-qualified path at the single use-site where Task::BandStructure is set. No alias needed, no import shadow risk.",
+    "shared_workdir: Shared workdir for chained tasks \u2014 Both SCF and DOS tasks in scf_dos_chain use runs/scf_dos/. This makes checkpoint file access straightforward: the DOS setup copies ZnO.check to ZnO_DOS.check within the same directory (Pattern 6).",
+    "workspace_serialization: Workspace member additions serialize G1 and G2 skeleton tasks \u2014 Both new crates use workspace = true dependencies (anyhow, clap, itertools), which require workspace membership for cargo check to resolve. Since both crate skeletons must add themselves to the root Cargo.toml workspace.members, G2-1 depends on G1-1 to avoid a merge conflict on the same file. The groups remain logically independent at the code level.",
+    "no_new_library_crates: No new library crates are created \u2014 All new code lives in binary (example) crates. The new code is workflow usage (orchestration, not abstractions). The library crates (workflow_core, workflow_utils) are unchanged.",
+    "Crate boundaries:",
+    "  parse_u_values: Duplicated in multi_param_sweep/src/config.rs and scf_dos_chain/src/config.rs",
+    "  parse_kpoints: multi_param_sweep/src/config.rs only (not needed by Binary 2)",
+    "  parse_cutoffs: multi_param_sweep/src/config.rs only",
+    "  generate_job_script: Duplicated in both binaries' job_script.rs (D.2 fix applies to both)",
+    "  SweepConfig: multi_param_sweep/src/config.rs",
+    "  ChainConfig: scf_dos_chain/src/config.rs",
+    "  sweep_logic: multi_param_sweep/src/main.rs (build_one_scf_task, build_all_scf_tasks)",
+    "  chain_logic: scf_dos_chain/src/main.rs (build_scf_task, build_dos_task)",
+    "  seed_files: Each binary's seeds/ directory (identical content, self-contained)",
+    "Pattern: Purpose-specific binaries over mode-flags \u2014 check: Neither binary should have a flag that toggles between 'independent tasks' and 'chained tasks'. multi_param_sweep has a --sweep-mode flag for product vs pairwise (both are independent SCF sweeps, same workflow type). scf_dos_chain has no mode flag.",
+    "Pattern: Parameter encoding in task IDs \u2014 check: multi_param_sweep task IDs: scf_U{u}_k{k}_c{c} (e.g., scf_U3.0_k8x8x8_c500). scf_dos_chain task IDs: scf and dos (single parameter set, no collision risk).",
+    "Pattern: Parse-time validation gates \u2014 check: Every parsing function returns anyhow::Result<T> with messages containing the expected format and what went wrong. Examples: 'kpoints list is empty', 'invalid k-point: expected 3 axes, got 2'.",
+    "Pattern: Explicit defaults \u2014 check: --sweep-mode defaults to 'product'. --kpoints and --cutoffs are Option<String> defaulting to None (seed defaults used). Pairwise mode errors if either is None.",
+    "Pattern: In-memory document mutation \u2014 check: All CASTEP file modifications go through parse -> mutate typed fields -> to_cell_file() -> to_string_many_spaced(). Never use format! on raw strings to build .cell/.param content.",
+    "Pattern: Shared workdir for chained tasks \u2014 check: scf_dos_chain places both tasks in runs/scf_dos/. DOS setup copies ZnO.check to ZnO_DOS.check in the same directory.",
+    "Pattern: Clean heredoc template \u2014 check: The no_literal_tabs test must pass. Use consistent space-only indentation. SBATCH directives use consistent quoting (double-quotes around values that might contain spaces)."
+  ],
+  "known_pitfalls": [
+    "Task name collision in scf_dos_chain (P0): use workflow_utils::prelude::* brings workflow_core::task::Task into scope. Importing castep_cell_io::param::general::task::Task would shadow it. Resolution: use the fully-qualified path castep_cell_io::param::general::task::Task::BandStructure at the single use-site in the DOS setup closure. Verify the exact module path with LSP hover during implementation.. Mitigation: Do not add use castep_cell_io::param::general::task::Task. Instead use the fully-qualified path at the single use-site.",
+    "Local path dep must exist on the filesystem: The path ../castep-cell-io/castep_cell_io must resolve to a sibling directory containing a Cargo.toml with the castep-cell-io crate. Verify this exists before implementation.. Mitigation: Pre-implementation check: verify ../castep-cell-io/castep_cell_io/Cargo.toml exists.",
+    "castep-cell-fmt version compatibility: castep-cell-fmt = 0.1.0 from crates.io while castep-cell-io uses a local path dep at v0.5.0. If v0.5.0 depends on a newer castep-cell-fmt, Cargo resolves the semver-compatible version automatically. No conflict expected.. Mitigation: No action needed; Cargo handles this automatically.",
+    "Pairwise mode validation ordering: In pairwise mode, validate that both --kpoints and --cutoffs are provided BEFORE parsing them. If either is None, return a clear error immediately. After parsing, validate all three lists have the same length. The error message must state the expected and actual lengths.. Mitigation: Check sweep_mode first, then validate presence of both Option fields, then parse, then check lengths.",
+    "hubbard_u_sweep compatibility with v0.5.0 path dep: The existing hubbard_u_sweep/src/main.rs already uses the v0.5.0 parse API pattern (castep_cell_fmt::parse::<CellDocument>(&input)). However, v0.5.0 may have changed Species::Symbol signature, builder method names, or HubbardUUnit enum variants. If compilation fails after the path-dep change, fix these call sites based on compiler error messages.. Mitigation: After changing the path dep, run cargo check -p hubbard_u_sweep. If it fails, fix each error based on the compiler message. Common changes may include Species::Symbol type or builder method names.",
+    "Dead-code detection after refactoring (F.3 mitigation): After deleting hubbard_u_sweep_slurm, run cargo clippy --workspace --all-targets -- -W dead-code to detect any stale imports or dead functions left over from the refactoring.. Mitigation: Include clippy dead-code check in the Group 3 acceptance criteria.",
+    "D.2 formatting fix must be embedded in ported job_script.rs: The no_literal_tabs test from the old binary must be ported and must pass. The D.2 fix (clean heredoc template with all-space indentation, consistent double-quoting on SBATCH directives) must be applied to the ported generate_job_script function in BOTH new binaries.. Mitigation: Implementation checklist: all-space indentation, SBATCH directives use double-quotes consistently, shell continuation lines use backslash, no_literal_tabs test passes in both binaries.",
+    "Deferred items: what NOT to do: D.1 (portable SLURM config): Do NOT implement. D.3 (expanded unit tests for generate_job_script): Do NOT expand beyond ported tests. read_task_ids edge case: Do NOT fix. All three have unmet preconditions.. Mitigation: Review the deferred-and-patterns.md file for full details on each deferred item.",
+    "G1-1 and G2-1 both modify root Cargo.toml \u2014 serialized: Both multi_param_sweep and scf_dos_chain use workspace = true dependencies, requiring workspace membership. To avoid merge conflicts on the root Cargo.toml, TASK-G2-1 must run after TASK-G1-1 completes. The groups are logically independent at the code level; this dependency is solely a file collision on the workspace member list.. Mitigation: TASK-G2-1 depends_on TASK-G1-1. Only the skeleton creation tasks are serialized; all other tasks within each group can run in parallel with tasks in the other group."
+  ],
+  "task_groups": [
+    {
+      "group_id": "core-2",
+      "reason": "Create the examples/scf_dos_chain/ crate \u2014 a purpose-built binary for SCF+DOS task chain testing \u2014 and update the existing hubbard_u_sweep binary for castep-cell-io v0.5.0 path dep compatibility.",
+      "tasks": [
+        "G2-1",
+        "G2-2",
+        "G2-3",
+        "G2-4",
+        "G2-5"
+      ],
+      "depends_on_groups": [
+        "core-1"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "G2-1",
+      "description": "Create the directory structure, Cargo.toml, stub source files, seed files, and add the crate to workspace members. \u2014 Crate creation: Cargo.toml with all dependencies, minimal main.rs with mod declarations, empty config.rs, empty job_script.rs, seed files, and workspace member registration.",
+      "files_in_scope": [
+        "examples/scf_dos_chain (new crate)",
+        "examples/scf_dos_chain/Cargo.toml",
+        "examples/scf_dos_chain/src/main.rs",
+        "examples/scf_dos_chain/src/config.rs",
+        "examples/scf_dos_chain/src/job_script.rs",
+        "examples/scf_dos_chain/seeds/ZnO.cell",
+        "examples/scf_dos_chain/seeds/ZnO.param",
+        "Cargo.toml (workspace root)"
+      ],
+      "changes": [
+        {
+          "path": "examples/scf_dos_chain/Cargo.toml",
+          "action": "create",
+          "guidance": "Create Cargo.toml with [package] name = 'scf_dos_chain', edition 2021, [[bin]] path = src/main.rs. Same dependencies as multi_param_sweep: anyhow/clap/itertools = { workspace = true }, castep-cell-fmt = '0.1.0', castep-cell-io = { path = '../castep-cell-io/castep_cell_io' }, workflow_core = { path = '../../workflow_core', features = ['default-logging'] }, workflow_utils = { path = '../../workflow_utils' }."
+        },
+        {
+          "path": "examples/scf_dos_chain/src/main.rs",
+          "action": "create",
+          "guidance": "Create stub main.rs with mod config; and mod job_script; declarations. Add fn main() { println!('scf_dos_chain: skeleton'); }. No imports."
+        },
+        {
+          "path": "examples/scf_dos_chain/src/config.rs",
+          "action": "create",
+          "guidance": "Create empty config.rs with placeholder comment."
+        },
+        {
+          "path": "examples/scf_dos_chain/src/job_script.rs",
+          "action": "create",
+          "guidance": "Create empty job_script.rs with placeholder comment."
+        },
+        {
+          "path": "examples/scf_dos_chain/seeds/ZnO.cell",
+          "action": "modify",
+          "guidance": "Copy from examples/hubbard_u_sweep_slurm/seeds/ZnO.cell (or from examples/multi_param_sweep/seeds/ZnO.cell if already created)."
+        },
+        {
+          "path": "examples/scf_dos_chain/seeds/ZnO.param",
+          "action": "modify",
+          "guidance": "Copy from examples/hubbard_u_sweep_slurm/seeds/ZnO.param (or from examples/multi_param_sweep/seeds/ZnO.param if already created)."
+        },
+        {
+          "path": "Cargo.toml (workspace root)",
+          "action": "modify",
+          "guidance": "Add 'examples/scf_dos_chain' to the [workspace] members array. Insert it after 'examples/multi_param_sweep'. Keep 'examples/hubbard_u_sweep_slurm' in the list (it will be removed in G3-1)."
+        }
+      ],
+      "acceptance": [
+        "cargo check --workspace (both new crates + old slurm crate compile)",
+        "ls examples/scf_dos_chain/Cargo.toml examples/scf_dos_chain/src/main.rs examples/scf_dos_chain/src/config.rs examples/scf_dos_chain/src/job_script.rs examples/scf_dos_chain/seeds/ZnO.cell examples/scf_dos_chain/seeds/ZnO.param"
+      ],
+      "depends_on": [],
+      "wiring_checklist": [
+        {
+          "kind": "pub_mod",
+          "file": "examples/scf_dos_chain/src/main.rs",
+          "detail": "Add mod config; and mod job_script; before fn main()."
+        },
+        {
+          "kind": "pub_mod",
+          "file": "Cargo.toml (workspace root)",
+          "detail": "Add 'examples/scf_dos_chain' to the workspace members list."
+        }
+      ]
+    },
+    {
+      "id": "G2-2",
+      "description": "Implement the ChainConfig clap struct, parse_u_values function, and generate_job_script function (adapted for ChainConfig type) with tests written first. \u2014 CLI configuration (ChainConfig with single u-value, no sweep, no kpoints/cutoff), parse_u_values function (duplicated from multi_param_sweep), generate_job_script adapted for &ChainConfig parameter, and their in-file #[cfg(test)] tests.",
+      "files_in_scope": [
+        "examples/scf_dos_chain/src/config.rs and examples/scf_dos_chain/src/job_script.rs",
+        "examples/scf_dos_chain/src/config.rs",
+        "examples/scf_dos_chain/src/job_script.rs"
+      ],
+      "changes": [
+        {
+          "path": "examples/scf_dos_chain/src/config.rs",
+          "action": "modify",
+          "guidance": "Implement ChainConfig struct with #[derive(Parser, Debug)], #[command(name = 'scf_dos_chain')], and fields: u_value (f64, default 3.0), element (String, default 'Zn'), orbital (char, default 'd'), seed_name (String, default 'ZnO'), max_parallel (usize, default 1), local (bool), dry_run (bool), castep_command (String, default 'castep'), workdir (String, default '.'), plus SLURM fields (partition, ntasks, nix_flake, mpi_if \u2014 same as SweepConfig). Implement parse_u_values as a duplicate of the multi_param_sweep version (returning anyhow::Result<Vec<f64>>). Add #[cfg(test)] mod tests with the 7 ported parse_u_values tests. Place the parse_u_values tests directly in config.rs's test module."
+        },
+        {
+          "path": "examples/scf_dos_chain/src/job_script.rs",
+          "action": "modify",
+          "guidance": "Implement generate_job_script(config: &ChainConfig, task_id: &str, seed_name: &str) -> String. The function body is identical to the multi_param_sweep version (same SLURM fields on both config types). Use the exact same heredoc template with D.2 fix applied (all-space indentation, consistent SBATCH quoting). Import ChainConfig from crate::config. Add #[cfg(test)] mod tests with the 6 ported tests adapted for ChainConfig (using ChainConfig::parse_from(['test'])). Add use clap::Parser; in the test module. All 6 tests including no_literal_tabs must pass."
+        }
+      ],
+      "acceptance": [
+        "cargo check -p scf_dos_chain",
+        "cargo test -p scf_dos_chain -- config::tests (7 parse_u_values tests pass)",
+        "cargo test -p scf_dos_chain -- job_script::tests (6 tests pass, including no_literal_tabs)"
+      ],
+      "depends_on": [
+        "G2-1"
+      ],
+      "kind": "lib-tdd",
+      "tdd_interface": {
+        "test_file": "examples/scf_dos_chain/src/config.rs",
+        "test_module": "tests (in each file)",
+        "test_fn_name": "parse_basic_values",
+        "test_code": "// ===== config.rs tests =====\n// These are the same 7 parse_u_values tests as in multi_param_sweep,\n// duplicated here because parse_u_values is duplicated.\n\nuse crate::config::ChainConfig;\nuse clap::Parser;\n\n/// Helper: default config for job_script tests\nfn default_chain_config() -> ChainConfig {\n    ChainConfig::parse_from([\"test\"])\n}\n\n// --- parse_u_values tests (ported, adapted for anyhow::Result) ---\n\n#[test]\nfn parse_basic_values() {\n    let vals = parse_u_values(\"0.0,1.0,2.0\").unwrap();\n    assert_eq!(vals, vec![0.0, 1.0, 2.0]);\n}\n\n#[test]\nfn parse_with_whitespace() {\n    let vals = parse_u_values(\"  0.0 , 1.0 , 2.0  \").unwrap();\n    assert_eq!(vals, vec![0.0, 1.0, 2.0]);\n}\n\n#[test]\nfn parse_single_value() {\n    let vals = parse_u_values(\"42.0\").unwrap();\n    assert_eq!(vals, vec![42.0]);\n}\n\n#[test]\nfn parse_invalid_token() {\n    let err = parse_u_values(\"1.0,abc,2.0\").unwrap_err();\n    let msg = format!(\"{err}\");\n    assert!(msg.contains(\"abc\"), \"error should mention the invalid token: {msg}\");\n}\n\n#[test]\nfn parse_empty_token() {\n    let err = parse_u_values(\"1.0,,2.0\").unwrap_err();\n    let msg = format!(\"{err}\");\n    assert!(msg.contains(\"invalid\"), \"error should report parse failure: {msg}\");\n}\n\n#[test]\nfn parse_empty_string() {\n    let err = parse_u_values(\"\").unwrap_err();\n    let msg = format!(\"{err}\");\n    assert!(msg.contains(\"empty\") || msg.contains(\"invalid\"), \"expected parse failure on empty input, got: {msg}\");\n}\n\n#[test]\nfn parse_negative_values() {\n    let vals = parse_u_values(\"-1.0,2.0\").unwrap();\n    assert_eq!(vals, vec![-1.0, 2.0]);\n}\n\n// ===== job_script.rs tests =====\n\n#[test]\nfn contains_sbatch_directives() {\n    let config = default_chain_config();\n    let script = generate_job_script(&config, \"scf\", \"ZnO\");\n    assert!(script.contains(\"#SBATCH --job-name=\\\"scf\\\"\"));\n    assert!(script.contains(\"#SBATCH --partition=debug\"));\n    assert!(script.contains(\"#SBATCH --ntasks-per-node=16\"));\n    assert!(script.contains(\"#SBATCH --mem=30000m\"));\n}\n\n#[test]\nfn contains_seed_name() {\n    let config = default_chain_config();\n    let script = generate_job_script(&config, \"scf\", \"ZnO\");\n    assert!(script.contains(\"castep.mpi ZnO\"));\n}\n\n/// D.2 fix: no literal tabs\n#[test]\nfn no_literal_tabs() {\n    let config = default_chain_config();\n    let script = generate_job_script(&config, \"scf\", \"ZnO\");\n    assert!(!script.contains('\\t'), \"job script should not contain literal tab characters\");\n}\n\n#[test]\nfn starts_with_shebang() {\n    let config = default_chain_config();\n    let script = generate_job_script(&config, \"scf\", \"ZnO\");\n    assert!(script.starts_with(\"#!/usr/bin/env bash\"));\n}\n\n#[test]\nfn contains_nix_develop() {\n    let config = default_chain_config();\n    let script = generate_job_script(&config, \"scf\", \"ZnO\");\n    assert!(script.contains(\"nix develop\"));\n    assert!(script.contains(&config.nix_flake));\n}\n\n#[test]\nfn contains_mpi_interface() {\n    let config = default_chain_config();\n    let script = generate_job_script(&config, \"scf\", \"ZnO\");\n    assert!(script.contains(&format!(\"OMPI_MCA_btl_tcp_if_include={mpi_if}\", mpi_if = config.mpi_if)));\n}",
+        "signature": "pub fn parse_u_values(s: &str) -> anyhow::Result<Vec<f64>>",
+        "expected_behavior": "parse_u_values: identical behavior to the multi_param_sweep version \u2014 returns Vec<f64> for comma-separated numbers, errors with clear messages for non-numeric tokens and empty input. generate_job_script: identical template to the multi_param_sweep version but accepting &ChainConfig instead of &SweepConfig. Since SLURM fields are identical on both config types, the output is functionally the same. D.2 fix applied: all-space indentation, double-quoted SBATCH values, no literal tabs."
+      },
+      "wiring_checklist": [
+        {
+          "kind": "pub_mod",
+          "file": "examples/scf_dos_chain/src/config.rs",
+          "detail": "Add use clap::Parser; at the top."
+        },
+        {
+          "kind": "pub_mod",
+          "file": "examples/scf_dos_chain/src/job_script.rs",
+          "detail": "Add use crate::config::ChainConfig; at the top."
+        }
+      ]
+    },
+    {
+      "id": "G2-3",
+      "description": "Implement build_scf_task and build_dos_task functions that construct the two-task SCF+DOS chain, with tests for dependency structure and DOS setup logic. \u2014 Chain task construction: build_scf_task (SCF task with setup injecting hubbard_u, collect verifying .castep output), build_dos_task (DOS task depending on scf, setup copying checkpoint and setting Task::BandStructure), and in-file #[cfg(test)] tests verifying task IDs, dependency structure, workdir paths, and the DOS setup closure behavior.",
+      "files_in_scope": [
+        "examples/scf_dos_chain/src/main.rs"
+      ],
+      "changes": [
+        {
+          "path": "examples/scf_dos_chain/src/main.rs",
+          "action": "modify",
+          "guidance": "Add necessary imports: use config::{parse_u_values, ChainConfig}; use job_script::generate_job_script; plus castep_cell_fmt (parse, to_string_many_spaced, ToCellFile), castep_cell_io (CellDocument, ParamDocument, AtomHubbardU, HubbardU, HubbardUUnit, OrbitalU, Species, CutOffEnergy), workflow_utils::prelude::*. Note: do NOT import castep_cell_io::param::general::task::Task \u2014 use the fully-qualified path at the single use-site (see below).\n\nFunction build_scf_task(config, seed_cell, seed_param) -> Result<Task, WorkflowError>: Task ID 'scf', workdir PathBuf::from('runs/scf_dos'). Execution mode: if config.local, ExecutionMode::direct(&config.castep_command, &['ZnO']), else ExecutionMode::Queued. Setup closure: (1) create_dir(workdir), (2) parse seed_cell into CellDocument, inject hubbard_u using config.u_value/config.element/config.orbital (same builder pattern as multi_param_sweep), (3) serialize .cell + .param to workdir, (4) if !config.local, write job_script. Collect closure: verify <seed>.castep exists with 'Total time' marker.\n\nFunction build_dos_task(config, scf_task_id, seed_cell, seed_param) -> Result<Task, WorkflowError>: Task ID 'dos', workdir PathBuf::from('runs/scf_dos') (SAME workdir as SCF). Depends on scf_task_id. Execution mode: if config.local, ExecutionMode::direct(&config.castep_command, &['ZnO_DOS']), else ExecutionMode::Queued. Setup closure: (1) create_dir(workdir), (2) parse seed_cell into CellDocument, write to <workdir>/ZnO_DOS.cell (reuse seed cell, no hubbard_u injection needed since this is a DOS restart), (3) parse seed_param into ParamDocument, set doc.general.task = Some(castep_cell_io::param::general::task::Task::BandStructure) \u2014 THIS IS THE FULLY-QUALIFIED PATH, do not import the Task enum, (4) write to <workdir>/ZnO_DOS.param, (5) copy <workdir>/ZnO.check to <workdir>/ZnO_DOS.check using workflow_utils::files::copy_file or the prelude re-export, (6) if !config.local, write job_script via generate_job_script(&config, 'dos', 'ZnO_DOS'). Collect closure: verify ZnO_DOS.castep exists and contains 'Total time'.\n\nAdd #[cfg(test)] mod tests with the tests from tdd_interface.test_code. These tests verify structural correctness: task IDs, dependency structure, shared workdir, dependency counts."
+        }
+      ],
+      "acceptance": [
+        "cargo check -p scf_dos_chain",
+        "cargo test -p scf_dos_chain (config tests + job_script tests + chain logic tests all pass)",
+        "All chain structure tests pass: scf id is 'scf', dos id is 'dos', dos depends on scf, scf has no deps, dos has 1 dep, shared workdir, correct workdir path"
+      ],
+      "depends_on": [
+        "G2-2"
+      ],
+      "kind": "lib-tdd",
+      "tdd_interface": {
+        "test_file": "examples/scf_dos_chain/src/main.rs",
+        "test_module": "tests",
+        "test_fn_name": "scf_task_id",
+        "test_code": "use crate::config::ChainConfig;\nuse clap::Parser;\n\nfn default_config() -> ChainConfig {\n    ChainConfig::parse_from([\"test\"])\n}\n\nfn test_seeds() -> (&'static str, &'static str) {\n    (include_str!(\"../seeds/ZnO.cell\"), include_str!(\"../seeds/ZnO.param\"))\n}\n\n// --- Task ID and structure tests ---\n\n/// SCF task has ID 'scf'\n#[test]\nfn scf_task_id() {\n    let config = default_config();\n    let (cell, param) = test_seeds();\n    let task = build_scf_task(&config, cell, param).unwrap();\n    assert_eq!(task.id, \"scf\");\n}\n\n/// DOS task has ID 'dos'\n#[test]\nfn dos_task_id() {\n    let config = default_config();\n    let (cell, param) = test_seeds();\n    let task = build_dos_task(&config, \"scf\", cell, param).unwrap();\n    assert_eq!(task.id, \"dos\");\n}\n\n/// DOS task depends on SCF task\n#[test]\nfn dos_depends_on_scf() {\n    let config = default_config();\n    let (cell, param) = test_seeds();\n    let scf = build_scf_task(&config, cell, param).unwrap();\n    let dos = build_dos_task(&config, &scf.id, cell, param).unwrap();\n    assert!(dos.dependencies.contains(&\"scf\".to_string()));\n}\n\n/// SCF task has no dependencies\n#[test]\nfn scf_no_dependencies() {\n    let config = default_config();\n    let (cell, param) = test_seeds();\n    let task = build_scf_task(&config, cell, param).unwrap();\n    assert!(task.dependencies.is_empty());\n}\n\n/// DOS task has exactly 1 dependency\n#[test]\nfn dos_dependency_count() {\n    let config = default_config();\n    let (cell, param) = test_seeds();\n    let scf = build_scf_task(&config, cell, param).unwrap();\n    let dos = build_dos_task(&config, &scf.id, cell, param).unwrap();\n    assert_eq!(dos.dependencies.len(), 1);\n}\n\n/// Both tasks share the same workdir\n#[test]\nfn shared_workdir() {\n    let config = default_config();\n    let (cell, param) = test_seeds();\n    let scf = build_scf_task(&config, cell, param).unwrap();\n    let dos = build_dos_task(&config, &scf.id, cell, param).unwrap();\n    assert_eq!(scf.workdir, dos.workdir, \"SCF and DOS tasks should share the same workdir\");\n    let wd = scf.workdir.to_string_lossy();\n    assert!(wd.contains(\"scf_dos\"), \"workdir should contain 'scf_dos': {wd}\");\n}\n\n/// SCF task has correct workdir path\n#[test]\nfn scf_workdir_path() {\n    let config = default_config();\n    let (cell, param) = test_seeds();\n    let task = build_scf_task(&config, cell, param).unwrap();\n    let wd = task.workdir.to_string_lossy();\n    assert!(wd.ends_with(\"scf_dos\") || wd.contains(\"scf_dos\"), \"workdir should end with or contain 'scf_dos': {wd}\");\n}",
+        "signature": "fn build_scf_task(config: &ChainConfig, seed_cell: &str, seed_param: &str) -> Result<Task, WorkflowError>",
+        "expected_behavior": "build_scf_task: produces a Task with id 'scf', workdir ending in 'runs/scf_dos', no dependencies, and a setup closure that injects the Hubbard U value from config into the seed cell file. The collect closure verifies the .castep output. build_dos_task: produces a Task with id 'dos', same workdir as SCF, exactly 1 dependency on the SCF task ID. The setup closure copies ZnO.check to ZnO_DOS.check and sets general.task = Task::BandStructure in the param file. The collect closure verifies ZnO_DOS.castep output."
+      }
+    },
+    {
+      "id": "G2-4",
+      "description": "Implement the main() function that orchestrates config parsing, chain construction, workflow creation, dry-run display, and local/queued execution. \u2014 Binary entry point: main() function that parses ChainConfig, builds SCF and DOS tasks, constructs a Workflow with the two-task chain, and supports dry-run/local/queued execution paths.",
+      "files_in_scope": [
+        "examples/scf_dos_chain/src/main.rs"
+      ],
+      "changes": [
+        {
+          "path": "examples/scf_dos_chain/src/main.rs",
+          "action": "modify",
+          "guidance": "Implement the main() function following the same pattern as multi_param_sweep main(). Call workflow_core::init_default_logging().ok(). Parse ChainConfig::parse(). Load seed files via include_str!('../seeds/ZnO.cell') and include_str!('../seeds/ZnO.param'). Call build_scf_task(&config, seed_cell, seed_param)? to get the SCF task, then build_dos_task(&config, &scf_task.id, seed_cell, seed_param)? to get the DOS task. Construct workflow: Workflow::new('scf_dos_chain').with_max_parallel(config.max_parallel)?.with_log_dir('logs').with_root_dir(&config.workdir). If !config.local, add .with_queued_submitter(Arc::new(QueuedRunner::new(SchedulerKind::Slurm))). Add SCF task first, then DOS task via workflow.add_task(task)?. Dry-run: same pattern as multi_param_sweep (print topological order). For execution: JsonStateStore at '.scf_dos_chain.workflow.json', local via run_default, queued via Workflow::run with SystemProcessRunner + ShellHookExecutor. Print workflow summary on completion. Import std::sync::Arc."
+        }
+      ],
+      "acceptance": [
+        "cargo check -p scf_dos_chain",
+        "cargo run --bin scf_dos_chain -- --dry-run (prints 'scf' then 'dos' \u2014 chain dependency order, exactly 2 tasks)",
+        "cargo run --bin scf_dos_chain -- --local --dry-run (same output \u2014 local flag doesn't change dry-run topology)"
+      ],
+      "depends_on": [
+        "G2-3"
+      ]
+    },
+    {
+      "id": "G2-5",
+      "description": "Update the existing hubbard_u_sweep binary's Cargo.toml to use the local path dep for castep-cell-io v0.5.0 and fix any API breakage in main.rs. \u2014 Dependency update: change castep-cell-io from version 0.4.0 to local path dep, verify compilation, and fix any API breakage in main.rs (Species::Symbol signature, builder method changes, or enum variant renames).",
+      "files_in_scope": [
+        "examples/hubbard_u_sweep",
+        "examples/hubbard_u_sweep/Cargo.toml",
+        "examples/hubbard_u_sweep/src/main.rs"
+      ],
+      "changes": [
+        {
+          "path": "examples/hubbard_u_sweep/Cargo.toml",
+          "action": "modify",
+          "guidance": "Change the castep-cell-io dependency line from 'castep-cell-io = \"0.4.0\"' to 'castep-cell-io = { path = \"../castep-cell-io/castep_cell_io\" }'. All other dependencies (anyhow = \"1\", castep-cell-fmt = \"0.1.0\", workflow_core, workflow_utils) remain unchanged."
+        },
+        {
+          "path": "examples/hubbard_u_sweep/src/main.rs",
+          "action": "modify",
+          "guidance": "Run cargo check -p hubbard_u_sweep after the Cargo.toml change. If compilation fails due to v0.5.0 API changes, fix the call sites. Common breakage points: Species::Symbol may take a different type than String (e.g., &str or a newtype) \u2014 check with LSP hover on Species::Symbol. Builder method names on AtomHubbardU/HubbardU may have changed. HubbardUUnit enum variants may be renamed. Fix each error based on the compiler diagnostic. The existing code already uses castep_cell_fmt::parse::<CellDocument>(&input) which is the v0.5.0 parse API pattern, so the parse logic should work unchanged. Only fix what the compiler reports as errors."
+        }
+      ],
+      "acceptance": [
+        "cargo check -p hubbard_u_sweep (must compile with new path dep; zero errors, zero warnings)"
+      ],
+      "depends_on": []
+    }
+  ]
+}
