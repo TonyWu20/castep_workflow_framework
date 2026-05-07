@@ -38,7 +38,7 @@ fn build_scf_task(
     let queued_script = if local {
         None
     } else {
-        Some(generate_job_script(config, &seed_name, &seed_name))
+        Some(generate_job_script(config, "scf", &seed_name))
     };
 
     let setup_seed_cell = seed_cell.to_owned();
@@ -159,8 +159,8 @@ fn build_dos_task(
         Ok(())
     });
 
-    let boxed_collect: TaskClosure = Box::new(move |_: &Path| {
-        let output_str = read_file(PathBuf::from("ZnO_DOS.castep"))?;
+    let boxed_collect: TaskClosure = Box::new(move |path: &Path| {
+        let output_str = read_file(path.join("ZnO_DOS.castep"))?;
         if !output_str.contains("Total time") {
             return Err(Box::new(WorkflowError::InvalidConfig(
                 "CASTEP output missing 'Total time' marker".into(),
