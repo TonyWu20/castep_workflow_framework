@@ -1,24 +1,5 @@
 {
-  "directions_path": "/Users/tony/programming/castep_workflow_framework/notes/directions/phase-6-fix/directions-phase-6-fix-core-2.json",
-  "worktree_path": "/Users/tony/programming/castep_workflow_framework/.pipeline-worktrees/phase-6-fix-core-2",
-  "groups": {
-    "core-2": {
-      "status": "completed",
-      "tasks": [
-        "G2-1",
-        "G2-2",
-        "G2-3",
-        "G2-4",
-        "G2-5"
-      ],
-      "completed_tasks": [
-        "G2-1",
-        "G2-2",
-        "G2-3",
-        "G2-4",
-        "G2-5"
-      ],
-      "reason": "Create the examples/scf_dos_chain/ crate \u2014 a purpose-built binary for SCF+DOS task chain testing \u2014 and update the existing hubbard_u_sweep binary for castep-cell-io v0.5.0 path dep compatibility."
-    }
-  }
+  "tasks_path": "/Users/tony/programming/castep_workflow_framework/notes/pr-reviews/phase-6-fix/fix-tasks.md",
+  "worktree_path": "/Users/tony/programming/castep_workflow_framework/.pipeline-worktrees/phase-6-fix-fixes",
+  "groups": {}
 }

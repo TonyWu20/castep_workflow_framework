@@ -38,7 +38,7 @@ fn build_scf_task(
     let queued_script = if local {
         None
     } else {
-        Some(generate_job_script(config, &seed_name, &seed_name))
+        Some(generate_job_script(config, "scf", &seed_name))
     };
 
     let setup_seed_cell = seed_cell.to_owned();
