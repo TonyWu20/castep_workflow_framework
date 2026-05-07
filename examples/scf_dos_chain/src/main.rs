@@ -159,8 +159,8 @@ fn build_dos_task(
         Ok(())
     });
 
-    let boxed_collect: TaskClosure = Box::new(move |_: &Path| {
-        let output_str = read_file(PathBuf::from("ZnO_DOS.castep"))?;
+    let boxed_collect: TaskClosure = Box::new(move |path: &Path| {
+        let output_str = read_file(path.join("ZnO_DOS.castep"))?;
         if !output_str.contains("Total time") {
             return Err(Box::new(WorkflowError::InvalidConfig(
                 "CASTEP output missing 'Total time' marker".into(),
