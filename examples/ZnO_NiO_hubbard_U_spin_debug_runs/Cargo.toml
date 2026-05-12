@@ -1,0 +1,20 @@
+[package]
+name = "ZnO_NiO_hubbard_U_spin_debug_runs"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ZnO_NiO_hubbard_U_spin_debug_runs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+itertools = { workspace = true }
+castep-cell-fmt = "=0.2.0"
+# Pinned to v0.5.0 — the version where CellDocument lacks
+# quantization_axis (see QuantizationAxis workaround in main.rs).
+# If castep-cell-io later adds that field, keep the pin so this
+# example's workaround remains the source of truth for this version.
+castep-cell-io = "=0.5.0"
+workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
+workflow_utils = { path = "../../workflow_utils" }
