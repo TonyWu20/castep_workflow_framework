@@ -149,11 +149,11 @@ fn build_one_scf_task(
             .unit(HubbardUUnit::ElectronVolt)
             .atom_u_values(vec![atom_u])
             .build();
-        cell_doc.hubbard_u = Some(hubbard_u);
+        cell_doc.species.hubbard_u = Some(hubbard_u);
 
         // Set kpoints if provided
         if let Some(k) = kpoint {
-            cell_doc.kpoints_mp_grid = Some(KpointsMpGrid(k));
+            cell_doc.kpoints.kpoints_mp_grid = Some(KpointsMpGrid(k));
         }
 
         // Parse and modify param document

@@ -7,8 +7,8 @@ name = "ZnO_NiO_hubbard_U_spin_debug_runs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "castep-cell-fmt 0.2.0",
- "castep-cell-io 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "castep-cell-fmt",
+ "castep-cell-io 0.5.0",
  "itertools",
  "workflow_core",
  "workflow_utils",
@@ -144,16 +144,6 @@ dependencies = [
 
 [[package]]
 name = "castep-cell-fmt"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ariadne",
- "chumsky",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "castep-cell-fmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f44cbe2dc62e617a632209df65118c73f8ba5a4166280fbc1440d3a78a110def"
@@ -167,20 +157,22 @@ dependencies = [
 [[package]]
 name = "castep-cell-io"
 version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea96aef154466d9b6d898e3faabebe6a2d4146b98f3eafb7075a327dcce5c35e"
 dependencies = [
  "bon",
- "castep-cell-fmt 0.1.0",
+ "castep-cell-fmt",
  "serde",
 ]
 
 [[package]]
 name = "castep-cell-io"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea96aef154466d9b6d898e3faabebe6a2d4146b98f3eafb7075a327dcce5c35e"
+checksum = "4291e754e12476601da3e5adc4ede42c1c4bcab77839bc3d6e7a9de98622f4ca"
 dependencies = [
  "bon",
- "castep-cell-fmt 0.2.0",
+ "castep-cell-fmt",
  "serde",
 ]
 
@@ -451,8 +443,8 @@ name = "hubbard_u_sweep"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "castep-cell-fmt 0.1.0",
- "castep-cell-io 0.5.0",
+ "castep-cell-fmt",
+ "castep-cell-io 0.6.0",
  "workflow_core",
  "workflow_utils",
 ]
@@ -572,8 +564,8 @@ name = "multi_param_sweep"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "castep-cell-fmt 0.1.0",
- "castep-cell-io 0.5.0",
+ "castep-cell-fmt",
+ "castep-cell-io 0.6.0",
  "clap",
  "itertools",
  "workflow_core",
@@ -783,8 +775,8 @@ name = "scf_dos_chain"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "castep-cell-fmt 0.1.0",
- "castep-cell-io 0.5.0",
+ "castep-cell-fmt",
+ "castep-cell-io 0.6.0",
  "clap",
  "workflow_core",
  "workflow_utils",

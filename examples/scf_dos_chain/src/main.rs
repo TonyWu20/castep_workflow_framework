@@ -68,7 +68,7 @@ fn build_scf_task(
         let hubbard_u = HubbardU::builder()
             .atom_u_values(vec![atom_u])
             .build();
-        cell_doc.hubbard_u = Some(hubbard_u);
+        cell_doc.species.hubbard_u = Some(hubbard_u);
 
         // Parse param document (no modification needed for SCF)
         let param_doc: ParamDocument = parse(&setup_seed_param)?;

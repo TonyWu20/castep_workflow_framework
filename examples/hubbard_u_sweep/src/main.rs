@@ -33,7 +33,7 @@ fn main() -> Result<()> {
                     .unit(HubbardUUnit::ElectronVolt)
                     .atom_u_values(vec![atom_u])
                     .build();
-                cell_doc.hubbard_u = Some(hubbard_u);
+                cell_doc.species.hubbard_u = Some(hubbard_u);
 
                 let output = to_string_many_spaced(&cell_doc.to_cell_file());
                 write_file(workdir.join("ZnO.cell"), &output)?;
