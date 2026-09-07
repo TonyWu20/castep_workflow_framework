@@ -6,6 +6,8 @@ members = [
     "examples/multi_param_sweep",
     "examples/scf_dos_chain",
     "examples/ZnO_NiO_hubbard_U_spin_debug_runs",
+    "examples/s4u_damping_sweep",
+    "examples/nio_single_point",
     "workflow-cli",
 ]
 resolver = "2"

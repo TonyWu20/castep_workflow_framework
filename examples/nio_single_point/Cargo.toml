@@ -1,0 +1,14 @@
+[package]
+name = "nio_single_point"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "nio_single_point"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+workflow_core = { path = "../../workflow_core", features = ["default-logging"] }
+workflow_utils = { path = "../../workflow_utils" }
